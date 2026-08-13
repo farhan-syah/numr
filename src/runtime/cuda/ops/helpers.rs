@@ -672,22 +672,18 @@ pub(crate) fn native_reduce_op(
     sorted_dims.sort_unstable();
     sorted_dims.reverse();
 
-    // Reduce one dimension at a time
+    // Reduce one dimension at a time, always keeping dims so each step's indexing
+    // stays aligned with the original layout.
     let mut current = a.clone();
-    for (i, &dim) in sorted_dims.iter().enumerate() {
-        // For all but the last dimension, always keepdim to preserve indexing
-        let keep = if i == sorted_dims.len() - 1 {
-            keepdim
-        } else {
-            true
-        };
-        current = native_reduce_op(client, &current, op, &[dim], keep, precision)?;
+    for &dim in &sorted_dims {
+        current = native_reduce_op(client, &current, op, &[dim], true, precision)?;
     }
 
-    // If keepdim was false but we kept dims during iteration, squeeze them now
-    if !keepdim && sorted_dims.len() > 1 {
-        // The output shape is already correct from the final reduction with keepdim=false
-        // We just need to return what we have
+    // Every reduced dim is still present as size 1, so drop them in one step.
+    // Squeezing only at the end is what makes a full reduction with keepdim=false
+    // collapse to a scalar rather than leaving a trailing size-1 dimension.
+    if current.shape() != out_shape.as_slice() {
+        current = current.reshape(&out_shape)?;
     }
 
     Ok(current)

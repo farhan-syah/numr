@@ -4,6 +4,7 @@ use super::helpers::*;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::ScalarOps;
+use crate::ops::reduce::reduce_output_shape;
 use crate::runtime::ensure_contiguous;
 use crate::runtime::wgpu::shaders::reduce;
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
@@ -34,17 +35,11 @@ pub(crate) fn native_reduce_op(
             result = native_single_dim_reduce(client, op, &result, dim, true)?;
         }
 
-        // Remove dims if !keepdim
-        // sorted_dims is in descending order, so we remove from highest to lowest
-        // to avoid index shifting issues
+        // Every reduced dim is still present as size 1, so drop them in one step.
+        // Reducing every dim must collapse to a scalar, not to `[1]`, or the
+        // result stops matching CPU and broadcasts wrongly in autograd.
         if !keepdim {
-            let mut out_shape: Vec<usize> = shape.to_vec();
-            for &dim in &sorted_dims {
-                out_shape.remove(dim);
-            }
-            if out_shape.is_empty() {
-                out_shape.push(1);
-            }
+            let out_shape = reduce_output_shape(shape, dims, false);
             result = result.reshape(&out_shape)?;
         }
 
