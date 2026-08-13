@@ -1,4 +1,4 @@
-// Auto-generated special functions for f32
+// Special functions for f32
 // Algorithms: A&S for erf, Lanczos for gamma, asymptotic for digamma
 
 const WORKGROUP_SIZE: u32 = 256u;

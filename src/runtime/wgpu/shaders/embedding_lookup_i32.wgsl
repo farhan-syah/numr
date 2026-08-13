@@ -1,4 +1,4 @@
-// Auto-generated embedding_lookup operation for i32
+// embedding_lookup operation for i32
 // Industry-standard embedding table lookup used in neural networks.
 // Each thread handles one index lookup and copies the full embedding row.
 

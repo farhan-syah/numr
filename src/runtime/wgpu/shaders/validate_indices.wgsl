@@ -1,4 +1,4 @@
-// Auto-generated index bounds validation kernel
+// Index bounds validation kernel
 
 const WORKGROUP_SIZE: u32 = 256u;
 

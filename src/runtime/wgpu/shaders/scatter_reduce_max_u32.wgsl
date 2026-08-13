@@ -1,4 +1,4 @@
-// Auto-generated scatter_reduce_max for u32
+// scatter_reduce_max for u32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

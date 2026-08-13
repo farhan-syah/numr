@@ -1,4 +1,4 @@
-// Auto-generated pad operation for u32
+// Pad operation for u32
 
 const WORKGROUP_SIZE: u32 = 256u;
 const MAX_DIMS: u32 = 8u;

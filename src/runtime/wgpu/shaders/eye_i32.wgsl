@@ -1,4 +1,4 @@
-// Auto-generated eye (identity matrix) operation for i32
+// Eye (identity matrix) operation for i32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

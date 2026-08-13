@@ -1,4 +1,4 @@
-// Auto-generated randint operation for i32 (signed)
+// Randint operation for i32 (signed)
 
 // PCG hash function for random number generation
 // Based on PCG Random Number Generation by Melissa O'Neill

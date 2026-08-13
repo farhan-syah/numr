@@ -1,4 +1,4 @@
-// Auto-generated scatter_reduce_sum for f32
+// scatter_reduce_sum for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

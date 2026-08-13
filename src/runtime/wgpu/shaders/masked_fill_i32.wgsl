@@ -1,4 +1,4 @@
-// Auto-generated masked_fill operations for i32
+// masked_fill operations for i32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

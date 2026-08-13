@@ -1,4 +1,4 @@
-// Auto-generated cat operations for f32
+// Cat operations for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

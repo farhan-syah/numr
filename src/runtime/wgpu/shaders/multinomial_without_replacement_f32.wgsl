@@ -1,4 +1,4 @@
-// Auto-generated multinomial_without_replacement operation for f32
+// multinomial_without_replacement operation for f32
 
 // PCG hash function for random number generation
 // Based on PCG Random Number Generation by Melissa O'Neill

@@ -1,4 +1,4 @@
-// Auto-generated linspace operation for f32
+// Linspace operation for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

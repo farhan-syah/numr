@@ -1,4 +1,4 @@
-// Auto-generated masked_select operations for f32
+// masked_select operations for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

@@ -1,4 +1,4 @@
-// Auto-generated rand operation for f32
+// Rand operation for f32
 
 // PCG hash function for random number generation
 // Based on PCG Random Number Generation by Melissa O'Neill

@@ -1,4 +1,4 @@
-// Auto-generated scatter operations for i32
+// Scatter operations for i32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

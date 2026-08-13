@@ -1,4 +1,4 @@
-// Auto-generated gather_nonzero operations for f32
+// gather_nonzero operations for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

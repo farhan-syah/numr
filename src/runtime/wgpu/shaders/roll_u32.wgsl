@@ -1,4 +1,4 @@
-// Auto-generated roll operation for u32
+// Roll operation for u32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

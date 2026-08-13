@@ -1,4 +1,4 @@
-// Auto-generated index_put operations for f32
+// index_put operations for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

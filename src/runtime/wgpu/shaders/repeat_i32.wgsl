@@ -1,4 +1,4 @@
-// Auto-generated repeat operation for i32
+// Repeat operation for i32
 
 const WORKGROUP_SIZE: u32 = 256u;
 const MAX_DIMS: u32 = 8u;

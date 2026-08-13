@@ -1,4 +1,4 @@
-// Auto-generated gather operations for f32
+// Gather operations for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 const MAX_DIMS: u32 = 4u;

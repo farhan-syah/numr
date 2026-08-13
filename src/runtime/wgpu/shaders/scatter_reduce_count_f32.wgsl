@@ -1,4 +1,4 @@
-// Auto-generated scatter_reduce_count for mean computation
+// scatter_reduce_count for mean computation
 
 const WORKGROUP_SIZE: u32 = 256u;
 

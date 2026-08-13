@@ -1,4 +1,4 @@
-// Auto-generated count_nonzero operations for f32
+// count_nonzero operations for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

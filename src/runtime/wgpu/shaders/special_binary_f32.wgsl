@@ -1,4 +1,4 @@
-// Auto-generated special binary functions for f32
+// Special binary functions for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 const PI: f32 = 3.14159265358979323846;

@@ -1,4 +1,4 @@
-// Auto-generated index_select operations for u32
+// index_select operations for u32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

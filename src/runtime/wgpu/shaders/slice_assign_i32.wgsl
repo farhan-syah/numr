@@ -1,4 +1,4 @@
-// Auto-generated slice_assign operations for i32
+// slice_assign operations for i32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

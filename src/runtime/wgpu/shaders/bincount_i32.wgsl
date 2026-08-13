@@ -1,4 +1,4 @@
-// Auto-generated unweighted bincount
+// Unweighted bincount
 
 const WORKGROUP_SIZE: u32 = 256u;
 

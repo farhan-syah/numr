@@ -1,4 +1,4 @@
-// Auto-generated gather_2d operation for f32
+// gather_2d operation for f32
 // Gathers elements from a 2D matrix at (row, col) positions.
 
 const WORKGROUP_SIZE: u32 = 256u;

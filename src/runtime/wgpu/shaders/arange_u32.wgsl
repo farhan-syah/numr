@@ -1,4 +1,4 @@
-// Auto-generated arange operation for u32
+// Arange operation for u32
 
 const WORKGROUP_SIZE: u32 = 256u;
 

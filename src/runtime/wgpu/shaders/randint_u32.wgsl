@@ -1,4 +1,4 @@
-// Auto-generated randint operation for u32 (unsigned)
+// Randint operation for u32 (unsigned)
 
 // PCG hash function for random number generation
 // Based on PCG Random Number Generation by Melissa O'Neill

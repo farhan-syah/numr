@@ -1,4 +1,4 @@
-// Auto-generated weighted bincount for f32
+// Weighted bincount for f32
 
 const WORKGROUP_SIZE: u32 = 256u;
 
