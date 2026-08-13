@@ -75,7 +75,7 @@ macro_rules! impl_var_unary_op_id {
             let output = client.$op_method(a.tensor())?;
 
             if a.requires_grad() {
-                let grad_fn = $backward_ty::<R>::new(a.id());
+                let grad_fn = $backward_ty::<R>::new(a.id(), a.grad_fn().cloned());
                 Ok(Var::from_op(output, std::sync::Arc::new(grad_fn)))
             } else {
                 Ok(Var::new(output, false))
@@ -97,7 +97,7 @@ macro_rules! impl_var_unary_op_output {
             let output = client.$op_method(a.tensor())?;
 
             if a.requires_grad() {
-                let grad_fn = $backward_ty::<R>::new(a.id(), output.clone());
+                let grad_fn = $backward_ty::<R>::new(a.id(), output.clone(), a.grad_fn().cloned());
                 Ok(Var::from_op(output, std::sync::Arc::new(grad_fn)))
             } else {
                 Ok(Var::new(output, false))
@@ -119,7 +119,8 @@ macro_rules! impl_var_unary_op_input {
             let output = client.$op_method(a.tensor())?;
 
             if a.requires_grad() {
-                let grad_fn = $backward_ty::<R>::new(a.id(), a.tensor().clone());
+                let grad_fn =
+                    $backward_ty::<R>::new(a.id(), a.tensor().clone(), a.grad_fn().cloned());
                 Ok(Var::from_op(output, std::sync::Arc::new(grad_fn)))
             } else {
                 Ok(Var::new(output, false))
@@ -187,7 +188,7 @@ macro_rules! impl_var_unary_op_output_scalar {
             let output = client.$op_method(a.tensor())?;
 
             if a.requires_grad() {
-                let grad_fn = $backward_ty::<R>::new(a.id(), output.clone());
+                let grad_fn = $backward_ty::<R>::new(a.id(), output.clone(), a.grad_fn().cloned());
                 Ok(Var::from_op(output, std::sync::Arc::new(grad_fn)))
             } else {
                 Ok(Var::new(output, false))
@@ -211,7 +212,8 @@ macro_rules! impl_var_unary_op_input_scalar {
             let output = client.$op_method(a.tensor())?;
 
             if a.requires_grad() {
-                let grad_fn = $backward_ty::<R>::new(a.id(), a.tensor().clone());
+                let grad_fn =
+                    $backward_ty::<R>::new(a.id(), a.tensor().clone(), a.grad_fn().cloned());
                 Ok(Var::from_op(output, std::sync::Arc::new(grad_fn)))
             } else {
                 Ok(Var::new(output, false))

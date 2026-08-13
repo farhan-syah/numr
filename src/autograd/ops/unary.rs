@@ -22,14 +22,16 @@ use std::sync::Arc;
 /// Gradient: dL/da = -dL/dz
 pub struct NegBackward<R: Runtime> {
     input_id: TensorId,
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
     _marker: std::marker::PhantomData<R>,
 }
 
 impl<R: Runtime> NegBackward<R> {
     /// Create a new NegBackward
-    pub fn new(input_id: TensorId) -> Self {
+    pub fn new(input_id: TensorId, input_grad_fn: Option<Arc<dyn GradFn<R>>>) -> Self {
         Self {
             input_id,
+            input_grad_fn,
             _marker: std::marker::PhantomData,
         }
     }
@@ -55,6 +57,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn name(&self) -> &'static str {
         "NegBackward"
     }
@@ -70,14 +76,20 @@ where
 pub struct ExpBackward<R: Runtime> {
     input_id: TensorId,
     saved_output: Tensor<R>, // exp(a)
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> ExpBackward<R> {
     /// Create a new ExpBackward
-    pub fn new(input_id: TensorId, output: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        output: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_output: output,
+            input_grad_fn,
         }
     }
 }
@@ -106,6 +118,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_output)
     }
@@ -125,14 +141,20 @@ where
 pub struct LogBackward<R: Runtime> {
     input_id: TensorId,
     saved_input: Tensor<R>,
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> LogBackward<R> {
     /// Create a new LogBackward
-    pub fn new(input_id: TensorId, input: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        input: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_input: input,
+            input_grad_fn,
         }
     }
 }
@@ -161,6 +183,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_input)
     }
@@ -180,14 +206,20 @@ where
 pub struct SqrtBackward<R: Runtime> {
     input_id: TensorId,
     saved_output: Tensor<R>, // sqrt(a)
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> SqrtBackward<R> {
     /// Create a new SqrtBackward
-    pub fn new(input_id: TensorId, output: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        output: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_output: output,
+            input_grad_fn,
         }
     }
 }
@@ -219,6 +251,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_output)
     }
@@ -238,14 +274,20 @@ where
 pub struct SinBackward<R: Runtime> {
     input_id: TensorId,
     saved_input: Tensor<R>,
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> SinBackward<R> {
     /// Create a new SinBackward
-    pub fn new(input_id: TensorId, input: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        input: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_input: input,
+            input_grad_fn,
         }
     }
 }
@@ -275,6 +317,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_input)
     }
@@ -294,14 +340,20 @@ where
 pub struct CosBackward<R: Runtime> {
     input_id: TensorId,
     saved_input: Tensor<R>,
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> CosBackward<R> {
     /// Create a new CosBackward
-    pub fn new(input_id: TensorId, input: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        input: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_input: input,
+            input_grad_fn,
         }
     }
 }
@@ -333,6 +385,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_input)
     }
@@ -352,14 +408,20 @@ where
 pub struct TanhBackward<R: Runtime> {
     input_id: TensorId,
     saved_output: Tensor<R>, // tanh(a)
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> TanhBackward<R> {
     /// Create a new TanhBackward
-    pub fn new(input_id: TensorId, output: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        output: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_output: output,
+            input_grad_fn,
         }
     }
 }
@@ -403,6 +465,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_output)
     }
@@ -422,14 +488,20 @@ where
 pub struct SquareBackward<R: Runtime> {
     input_id: TensorId,
     saved_input: Tensor<R>,
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> SquareBackward<R> {
     /// Create a new SquareBackward
-    pub fn new(input_id: TensorId, input: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        input: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_input: input,
+            input_grad_fn,
         }
     }
 }
@@ -460,6 +532,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_input)
     }
@@ -479,14 +555,20 @@ where
 pub struct RecipBackward<R: Runtime> {
     input_id: TensorId,
     saved_output: Tensor<R>, // 1/a
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> RecipBackward<R> {
     /// Create a new RecipBackward
-    pub fn new(input_id: TensorId, output: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        output: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_output: output,
+            input_grad_fn,
         }
     }
 }
@@ -519,6 +601,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_output)
     }
@@ -538,14 +624,20 @@ where
 pub struct TanBackward<R: Runtime> {
     input_id: TensorId,
     saved_input: Tensor<R>,
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> TanBackward<R> {
     /// Create a new TanBackward
-    pub fn new(input_id: TensorId, input: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        input: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_input: input,
+            input_grad_fn,
         }
     }
 }
@@ -578,6 +670,10 @@ where
         std::slice::from_ref(&self.input_id)
     }
 
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
+    }
+
     fn saved_tensors(&self) -> &[Tensor<R>] {
         std::slice::from_ref(&self.saved_input)
     }
@@ -598,14 +694,20 @@ where
 pub struct AbsBackward<R: Runtime> {
     input_id: TensorId,
     saved_input: Tensor<R>,
+    input_grad_fn: Option<Arc<dyn GradFn<R>>>,
 }
 
 impl<R: Runtime> AbsBackward<R> {
     /// Create a new AbsBackward
-    pub fn new(input_id: TensorId, input: Tensor<R>) -> Self {
+    pub fn new(
+        input_id: TensorId,
+        input: Tensor<R>,
+        input_grad_fn: Option<Arc<dyn GradFn<R>>>,
+    ) -> Self {
         Self {
             input_id,
             saved_input: input,
+            input_grad_fn,
         }
     }
 }
@@ -640,6 +742,10 @@ where
 
     fn inputs(&self) -> &[TensorId] {
         std::slice::from_ref(&self.input_id)
+    }
+
+    fn input_grad_fns(&self) -> Vec<Option<Arc<dyn GradFn<R>>>> {
+        vec![self.input_grad_fn.clone()]
     }
 
     fn saved_tensors(&self) -> &[Tensor<R>] {
@@ -789,7 +895,7 @@ mod tests {
         let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
-        let backward = NegBackward::<CpuRuntime>::new(a.id());
+        let backward = NegBackward::<CpuRuntime>::new(a.id(), None);
         let grads = backward.backward(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
@@ -807,7 +913,7 @@ mod tests {
 
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
-        let backward = ExpBackward::<CpuRuntime>::new(a.id(), output);
+        let backward = ExpBackward::<CpuRuntime>::new(a.id(), output, None);
         let grads = backward.backward(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
@@ -823,7 +929,7 @@ mod tests {
 
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
-        let backward = LogBackward::<CpuRuntime>::new(a.id(), a.clone());
+        let backward = LogBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
         let grads = backward.backward(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
@@ -841,7 +947,7 @@ mod tests {
 
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
-        let backward = SqrtBackward::<CpuRuntime>::new(a.id(), output);
+        let backward = SqrtBackward::<CpuRuntime>::new(a.id(), output, None);
         let grads = backward.backward(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
@@ -860,7 +966,7 @@ mod tests {
 
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
-        let backward = TanhBackward::<CpuRuntime>::new(a.id(), output);
+        let backward = TanhBackward::<CpuRuntime>::new(a.id(), output, None);
         let grads = backward.backward(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
@@ -876,7 +982,7 @@ mod tests {
 
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
-        let backward = SquareBackward::<CpuRuntime>::new(a.id(), a.clone());
+        let backward = SquareBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
         let grads = backward.backward(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
@@ -893,7 +999,7 @@ mod tests {
 
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
-        let backward = TanBackward::<CpuRuntime>::new(a.id(), a.clone());
+        let backward = TanBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
         let grads = backward.backward(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();

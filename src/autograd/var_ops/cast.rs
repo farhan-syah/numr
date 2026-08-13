@@ -32,7 +32,7 @@ where
     let output = client.cast(a.tensor(), dtype)?;
 
     if a.requires_grad() {
-        let grad_fn = CastBackward::<R>::new(a.id(), input_dtype);
+        let grad_fn = CastBackward::<R>::new(a.id(), input_dtype, a.grad_fn().cloned());
         Ok(Var::from_op(output, Arc::new(grad_fn)))
     } else {
         Ok(Var::new(output, false))
