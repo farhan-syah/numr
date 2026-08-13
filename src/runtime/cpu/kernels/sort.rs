@@ -46,9 +46,9 @@ pub unsafe fn sort_kernel<T: Element + PartialOrd>(
 
             // Stable sort by value
             if descending {
-                pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+                pairs.sort_by(|a, b| b.0.sort_cmp(&a.0));
             } else {
-                pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+                pairs.sort_by(|a, b| a.0.sort_cmp(&b.0));
             }
 
             // Scatter results back
@@ -101,9 +101,9 @@ pub unsafe fn sort_values_kernel<T: Element + PartialOrd>(
 
             // Sort values
             if descending {
-                values.sort_by(|a, b| b.partial_cmp(a).unwrap_or(Ordering::Equal));
+                values.sort_by(|a, b| b.sort_cmp(a));
             } else {
-                values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+                values.sort_by(|a, b| a.sort_cmp(b));
             }
 
             // Scatter results back
@@ -155,9 +155,9 @@ pub unsafe fn argsort_kernel<T: Element + PartialOrd>(
 
             // Stable sort by value
             if descending {
-                pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+                pairs.sort_by(|a, b| b.0.sort_cmp(&a.0));
             } else {
-                pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+                pairs.sort_by(|a, b| a.0.sort_cmp(&b.0));
             }
 
             // Scatter indices
@@ -220,9 +220,9 @@ pub unsafe fn topk_kernel<T: Element + PartialOrd>(
 
             // Sort to find top-k
             if largest {
-                pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+                pairs.sort_by(|a, b| b.0.sort_cmp(&a.0));
             } else {
-                pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+                pairs.sort_by(|a, b| a.0.sort_cmp(&b.0));
             }
 
             // Take first k elements
@@ -478,17 +478,13 @@ pub unsafe fn searchsorted_kernel<T: Element + PartialOrd>(
     for i in 0..num_values {
         let val = *values.add(i);
 
-        // Binary search
+        // Binary search under the same total order the sequence was sorted by
         let idx = if right {
             // Find rightmost position where we can insert val
-            seq_slice.partition_point(|x| {
-                x.partial_cmp(&val).unwrap_or(Ordering::Less) != Ordering::Greater
-            })
+            seq_slice.partition_point(|x| x.sort_cmp(&val) != Ordering::Greater)
         } else {
             // Find leftmost position where we can insert val
-            seq_slice.partition_point(|x| {
-                x.partial_cmp(&val).unwrap_or(Ordering::Greater) == Ordering::Less
-            })
+            seq_slice.partition_point(|x| x.sort_cmp(&val) == Ordering::Less)
         };
 
         *out.add(i) = idx as i64;
@@ -618,5 +614,133 @@ mod tests {
         let a = [0.0f32, 1.0, 0.0, 2.0, 3.0, 0.0];
         let count = unsafe { count_nonzero_kernel(a.as_ptr(), 6) };
         assert_eq!(count, 3);
+    }
+
+    /// A single NaN used to leave the whole slice unsorted (issue #9).
+    #[test]
+    fn test_sort_nan_last_ascending() {
+        let a = [3.0f32, f32::NAN, 1.0, 2.0, f32::NAN, 0.0];
+        let mut values = [0.0f32; 6];
+
+        unsafe {
+            sort_values_kernel(a.as_ptr(), values.as_mut_ptr(), 1, 6, 1, false);
+        }
+
+        assert_eq!(&values[..4], &[0.0, 1.0, 2.0, 3.0]);
+        assert!(values[4].is_nan() && values[5].is_nan());
+    }
+
+    #[test]
+    fn test_sort_nan_first_descending() {
+        let a = [3.0f32, f32::NAN, 1.0, 2.0, f32::NAN, 0.0];
+        let mut values = [0.0f32; 6];
+
+        unsafe {
+            sort_values_kernel(a.as_ptr(), values.as_mut_ptr(), 1, 6, 1, true);
+        }
+
+        assert!(values[0].is_nan() && values[1].is_nan());
+        assert_eq!(&values[2..], &[3.0, 2.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn test_sort_nan_beats_infinity() {
+        let a = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY];
+        let mut values = [0.0f32; 3];
+
+        unsafe {
+            sort_values_kernel(a.as_ptr(), values.as_mut_ptr(), 1, 3, 1, false);
+        }
+
+        assert_eq!(&values[..2], &[f32::NEG_INFINITY, f32::INFINITY]);
+        assert!(values[2].is_nan());
+    }
+
+    #[test]
+    fn test_sort_all_nan() {
+        let a = [f32::NAN; 4];
+        let mut values = [0.0f32; 4];
+        let mut indices = [0i64; 4];
+
+        unsafe {
+            sort_kernel(
+                a.as_ptr(),
+                values.as_mut_ptr(),
+                indices.as_mut_ptr(),
+                1,
+                4,
+                1,
+                false,
+            );
+        }
+
+        assert!(values.iter().all(|v| v.is_nan()));
+        // NaNs tie, so the stable sort preserves input order.
+        assert_eq!(indices, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_argsort_nan_indices() {
+        let a = [1.0f32, f32::NAN, 0.0];
+        let mut out = [0i64; 3];
+
+        unsafe {
+            argsort_kernel(a.as_ptr(), out.as_mut_ptr(), 1, 3, 1, false);
+        }
+
+        assert_eq!(out, [2, 0, 1]);
+    }
+
+    /// `-0.0` and `+0.0` tie, so ties break by input order in both directions.
+    #[test]
+    fn test_signed_zero_tie_is_stable() {
+        let a = [0.0f32, -0.0, 0.0, -0.0];
+
+        for descending in [false, true] {
+            let mut out = [0i64; 4];
+            unsafe {
+                argsort_kernel(a.as_ptr(), out.as_mut_ptr(), 1, 4, 1, descending);
+            }
+            assert_eq!(out, [0, 1, 2, 3], "descending={descending}");
+        }
+    }
+
+    #[test]
+    fn test_topk_largest_ranks_nan_first() {
+        let a = [1.0f32, f32::NAN, 5.0, 2.0];
+        let mut values = [0.0f32; 2];
+        let mut indices = [0i64; 2];
+
+        unsafe {
+            topk_kernel(
+                a.as_ptr(),
+                values.as_mut_ptr(),
+                indices.as_mut_ptr(),
+                1,
+                4,
+                1,
+                2,
+                true,
+                true,
+            );
+        }
+
+        assert!(values[0].is_nan());
+        assert_eq!(values[1], 5.0);
+        assert_eq!(indices, [1, 2]);
+    }
+
+    #[test]
+    fn test_searchsorted_nan_goes_to_end() {
+        let seq = [1.0f32, 2.0, 3.0, f32::NAN];
+        let values = [f32::NAN, 2.5];
+        let mut out = [0i64; 2];
+
+        unsafe {
+            searchsorted_kernel(seq.as_ptr(), values.as_ptr(), out.as_mut_ptr(), 4, 2, false);
+        }
+
+        // NaN inserts at the head of the trailing NaN run, 2.5 between 2 and 3.
+        assert_eq!(out, [3, 2]);
     }
 }

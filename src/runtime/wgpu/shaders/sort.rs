@@ -9,6 +9,7 @@
 use wgpu::{Buffer, Queue};
 
 use super::pipeline::{LayoutKey, PipelineCache, workgroup_count};
+use super::sort_cmp::{sort_cmp_f32_wgsl, sort_rank_f32_wgsl};
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
@@ -16,7 +17,13 @@ use crate::error::{Error, Result};
 // Static shaders — sort ops (F32 / I32 / U32)
 // ============================================================================
 
-const SORT_SHADER_F32: &str = include_str!("sort_f32.wgsl");
+// The f32 shaders share one total order (NaN-greatest, -0.0 == +0.0), prepended
+// from sort_cmp.rs so a change to the ordering cannot miss one of them.
+const SORT_SHADER_F32: &str = concat!(
+    sort_cmp_f32_wgsl!(),
+    sort_rank_f32_wgsl!(),
+    include_str!("sort_f32.wgsl")
+);
 const SORT_SHADER_I32: &str = include_str!("sort_i32.wgsl");
 const SORT_SHADER_U32: &str = include_str!("sort_u32.wgsl");
 
@@ -24,8 +31,13 @@ const SORT_SHADER_U32: &str = include_str!("sort_u32.wgsl");
 // Static shaders — topk/searchsorted (F32 only)
 // ============================================================================
 
-const TOPK_SHADER_F32: &str = include_str!("topk_f32.wgsl");
-const SEARCHSORTED_SHADER_F32: &str = include_str!("searchsorted_f32.wgsl");
+const TOPK_SHADER_F32: &str = concat!(
+    sort_cmp_f32_wgsl!(),
+    sort_rank_f32_wgsl!(),
+    include_str!("topk_f32.wgsl")
+);
+const SEARCHSORTED_SHADER_F32: &str =
+    concat!(sort_cmp_f32_wgsl!(), include_str!("searchsorted_f32.wgsl"));
 
 // ============================================================================
 // Static shaders — data-movement ops (F32 / I32 / U32)

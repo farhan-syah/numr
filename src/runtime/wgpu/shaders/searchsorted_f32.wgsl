@@ -1,4 +1,4 @@
-// Auto-generated searchsorted operations for f32
+// Searchsorted operations for f32. Ordering helpers are prepended from sort_cmp.rs.
 
 const WORKGROUP_SIZE: u32 = 256u;
 
@@ -34,12 +34,10 @@ fn searchsorted_f32(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let mid = lo + (hi - lo) / 2u;
         let seq_val = ss_seq[mid];
 
-        var go_right: bool;
-        if (right) {
-            go_right = seq_val <= value;
-        } else {
-            go_right = seq_val < value;
-        }
+        // Same total order the sequence was sorted by, so NaN keys land at the
+        // trailing NaN run instead of collapsing to position 0.
+        let c = sort_cmp_f32(seq_val, value);
+        let go_right = select(c < 0, c <= 0, right);
 
         if (go_right) {
             lo = mid + 1u;

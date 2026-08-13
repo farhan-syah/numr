@@ -1,4 +1,4 @@
-// Auto-generated sort operations for f32
+// Sort operations for f32. Ordering helpers are prepended from sort_cmp.rs.
 
 const WORKGROUP_SIZE: u32 = 256u;
 const MAX_SORT_SIZE: u32 = 512u;
@@ -38,26 +38,17 @@ struct CountParams {
 @group(0) @binding(2) var<storage, read_write> sort_indices: array<i32>;
 @group(0) @binding(3) var<uniform> sort_params: SortParams;
 
-// Comparison helper
-fn compare_less_f32(a: f32, b: f32) -> bool {
-    return a < b;
-}
-
-// Stable comparison: use original index as tiebreaker for equal values
-fn compare_less_stable_f32(a: f32, b: f32, idx_a: i32, idx_b: i32) -> bool {
-    if (a == b) {
-        return idx_a < idx_b;
-    }
-    return a < b;
-}
-
 // Bitonic compare and swap for sort with indices (stable)
-fn bitonic_cas_f32(i: u32, j: u32, dir: bool) {
+fn bitonic_cas_f32(i: u32, j: u32, ascending_local: bool, descending: bool) {
     let vi = shared_vals[i];
     let vj = shared_vals[j];
     let ii = shared_idxs[i];
     let ij = shared_idxs[j];
-    let swap = select(compare_less_stable_f32(vi, vj, ii, ij), compare_less_stable_f32(vj, vi, ij, ii), dir);
+    let swap = select(
+        sort_rank_less_f32(vi, ii, vj, ij, descending),
+        sort_rank_less_f32(vj, ij, vi, ii, descending),
+        ascending_local
+    );
     if (swap) {
         shared_vals[i] = vj;
         shared_vals[j] = vi;
@@ -67,10 +58,14 @@ fn bitonic_cas_f32(i: u32, j: u32, dir: bool) {
 }
 
 // Bitonic compare and swap for sort values only
-fn bitonic_cas_values_f32(i: u32, j: u32, dir: bool) {
+fn bitonic_cas_values_f32(i: u32, j: u32, ascending_local: bool, descending: bool) {
     let vi = shared_vals[i];
     let vj = shared_vals[j];
-    let swap = select(compare_less_f32(vi, vj), compare_less_f32(vj, vi), dir);
+    var c = sort_cmp_f32(vi, vj);
+    if (descending) {
+        c = -c;
+    }
+    let swap = select(c < 0, (c > 0), ascending_local);
     if (swap) {
         shared_vals[i] = vj;
         shared_vals[j] = vi;
@@ -114,7 +109,7 @@ fn sort_f32(
             shared_idxs[i] = i32(i);
         } else {
             // Pad with max/min based on sort direction
-            shared_vals[i] = select(f32(3.402823e+38), f32(-3.402823e+38), descending);
+            shared_vals[i] = sort_pad_f32(descending);
             shared_idxs[i] = i32(i);
         }
     }
@@ -129,10 +124,10 @@ fn sort_f32(
                 let ij_pair = ij + j;
 
                 // Direction depends on which half of the network we're in
-                let ascending_local = ((ij / k) % 2u == 0u) != descending;
+                let ascending_local = ((ij / k) % 2u == 0u);
 
                 if (ij_pair < n) {
-                    bitonic_cas_f32(ij, ij_pair, ascending_local);
+                    bitonic_cas_f32(ij, ij_pair, ascending_local, descending);
                 }
             }
             workgroupBarrier();
@@ -180,7 +175,7 @@ fn sort_values_only_f32(
             let idx = base_offset + i * inner_size;
             shared_vals[i] = sort_input[idx];
         } else {
-            shared_vals[i] = select(f32(3.402823e+38), f32(-3.402823e+38), descending);
+            shared_vals[i] = sort_pad_f32(descending);
         }
     }
     workgroupBarrier();
@@ -194,10 +189,10 @@ fn sort_values_only_f32(
                 let ij_pair = ij + j;
 
                 // Direction depends on which half of the network we're in
-                let ascending_local = ((ij / k) % 2u == 0u) != descending;
+                let ascending_local = ((ij / k) % 2u == 0u);
 
                 if (ij_pair < n) {
-                    bitonic_cas_values_f32(ij, ij_pair, ascending_local);
+                    bitonic_cas_values_f32(ij, ij_pair, ascending_local, descending);
                 }
             }
             workgroupBarrier();
@@ -244,7 +239,7 @@ fn argsort_f32(
             shared_vals[i] = sort_input[idx];
             shared_idxs[i] = i32(i);
         } else {
-            shared_vals[i] = select(f32(3.402823e+38), f32(-3.402823e+38), descending);
+            shared_vals[i] = sort_pad_f32(descending);
             shared_idxs[i] = i32(i);
         }
     }
@@ -259,10 +254,10 @@ fn argsort_f32(
                 let ij_pair = ij + j;
 
                 // Direction depends on which half of the network we're in
-                let ascending_local = ((ij / k) % 2u == 0u) != descending;
+                let ascending_local = ((ij / k) % 2u == 0u);
 
                 if (ij_pair < n) {
-                    bitonic_cas_f32(ij, ij_pair, ascending_local);
+                    bitonic_cas_f32(ij, ij_pair, ascending_local, descending);
                 }
             }
             workgroupBarrier();

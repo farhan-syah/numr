@@ -1,4 +1,4 @@
-// Auto-generated topk operations for f32
+// Top-k operations for f32. Ordering helpers are prepended from sort_cmp.rs.
 
 const WORKGROUP_SIZE: u32 = 256u;
 const MAX_SORT_SIZE: u32 = 512u;
@@ -20,20 +20,21 @@ struct TopkParams {
 @group(0) @binding(2) var<storage, read_write> topk_indices: array<i32>;
 @group(0) @binding(3) var<uniform> topk_params: TopkParams;
 
-fn compare_less_f32(a: f32, b: f32) -> bool {
-    return a < b;
-}
-
-fn bitonic_cas_f32(i: u32, j: u32, dir: bool) {
+fn bitonic_cas_f32(i: u32, j: u32, ascending_local: bool, descending: bool) {
     let vi = shared_vals[i];
     let vj = shared_vals[j];
-    let swap = select(compare_less_f32(vi, vj), compare_less_f32(vj, vi), dir);
+    let ii = shared_idxs[i];
+    let ij = shared_idxs[j];
+    let swap = select(
+        sort_rank_less_f32(vi, ii, vj, ij, descending),
+        sort_rank_less_f32(vj, ij, vi, ii, descending),
+        ascending_local
+    );
     if (swap) {
         shared_vals[i] = vj;
         shared_vals[j] = vi;
-        let ti = shared_idxs[i];
-        shared_idxs[i] = shared_idxs[j];
-        shared_idxs[j] = ti;
+        shared_idxs[i] = ij;
+        shared_idxs[j] = ii;
     }
 }
 
@@ -71,7 +72,7 @@ fn topk_f32(
             shared_vals[i] = topk_input[idx];
             shared_idxs[i] = i32(i);
         } else {
-            shared_vals[i] = select(f32(3.402823e+38), f32(-3.402823e+38), largest);
+            shared_vals[i] = sort_pad_f32(largest);
             shared_idxs[i] = i32(i);
         }
     }
@@ -87,10 +88,10 @@ fn topk_f32(
 
                 // Direction depends on which half of the network we're in
                 // For largest: descending (true), for smallest: ascending (false)
-                let ascending_local = ((ij / k_) % 2u == 0u) != largest;
+                let ascending_local = ((ij / k_) % 2u == 0u);
 
                 if (ij_pair < n) {
-                    bitonic_cas_f32(ij, ij_pair, ascending_local);
+                    bitonic_cas_f32(ij, ij_pair, ascending_local, largest);
                 }
             }
             workgroupBarrier();

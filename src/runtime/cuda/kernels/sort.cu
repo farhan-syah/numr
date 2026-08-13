@@ -70,40 +70,85 @@ template<> __device__ __forceinline__ numr_fp8_e5m2 sort_pad_min<numr_fp8_e5m2>(
 // Comparison helpers for sorting
 // ============================================================================
 
+// NaN detection. Integer types have no NaN, so the default is always false.
+// __half/__nv_bfloat16 need __hisnan because their operator!= is ordered and
+// returns false when either operand is NaN.
+template<typename T> __device__ __forceinline__ bool sort_is_nan(T) { return false; }
+template<> __device__ __forceinline__ bool sort_is_nan<float>(float v) { return isnan(v); }
+template<> __device__ __forceinline__ bool sort_is_nan<double>(double v) { return isnan(v); }
+template<> __device__ __forceinline__ bool sort_is_nan<__half>(__half v) { return __hisnan(v); }
+template<> __device__ __forceinline__ bool sort_is_nan<__nv_bfloat16>(__nv_bfloat16 v) { return __hisnan(v); }
+template<> __device__ __forceinline__ bool sort_is_nan<numr_fp8_e4m3>(numr_fp8_e4m3 v) { return isnan(fp8_e4m3_to_f32(v.data)); }
+template<> __device__ __forceinline__ bool sort_is_nan<numr_fp8_e5m2>(numr_fp8_e5m2 v) { return isnan(fp8_e5m2_to_f32(v.data)); }
+
+// Total order shared by every backend: NaN compares greater than all non-NaN
+// values, NaNs tie with each other, and -0.0 ties with +0.0. Mirrors
+// `Element::sort_cmp` on the CPU side.
 template<typename T>
-__device__ __forceinline__ bool compare_ascending(T a, T b) {
-    return a < b;
+__device__ __forceinline__ int sort_cmp(T a, T b) {
+    bool a_nan = sort_is_nan(a);
+    bool b_nan = sort_is_nan(b);
+    if (a_nan || b_nan) {
+        if (a_nan && b_nan) return 0;
+        return a_nan ? 1 : -1;
+    }
+    if (a < b) return -1;
+    if (b < a) return 1;
+    return 0;
 }
 
-template<typename T>
-__device__ __forceinline__ bool compare_descending(T a, T b) {
-    return a > b;
+// Padding value of maximum rank, so pad entries sort into the discarded tail.
+// Ascending that is NaN for float types (NaN is the greatest value); descending
+// it is -inf. Both must be beyond any real value, otherwise real infinities get
+// pushed past the padding and dropped.
+template<typename T> __device__ __forceinline__ T sort_pad_rank(bool descending) {
+    return descending ? sort_pad_min<T>() : sort_pad_max<T>();
+}
+template<> __device__ __forceinline__ float sort_pad_rank<float>(bool descending) {
+    return descending ? -INFINITY : NAN;
+}
+template<> __device__ __forceinline__ double sort_pad_rank<double>(bool descending) {
+    return descending ? -INFINITY : NAN;
+}
+template<> __device__ __forceinline__ __half sort_pad_rank<__half>(bool descending) {
+    return __float2half(descending ? -INFINITY : NAN);
+}
+template<> __device__ __forceinline__ __nv_bfloat16 sort_pad_rank<__nv_bfloat16>(bool descending) {
+    return __float2bfloat16(descending ? -INFINITY : NAN);
+}
+template<> __device__ __forceinline__ numr_fp8_e4m3 sort_pad_rank<numr_fp8_e4m3>(bool descending) {
+    return numr_fp8_e4m3(f32_to_fp8_e4m3(descending ? -INFINITY : NAN));
+}
+template<> __device__ __forceinline__ numr_fp8_e5m2 sort_pad_rank<numr_fp8_e5m2>(bool descending) {
+    return numr_fp8_e5m2(f32_to_fp8_e5m2(descending ? -INFINITY : NAN));
 }
 
 // ============================================================================
 // Bitonic sort primitives (for small arrays in shared memory)
 // ============================================================================
 
-// Bitonic compare-and-swap
+// Rank order: the requested output order, ties broken by original index. The
+// network always sorts ascending in this rank space, so `descending` flips the
+// value comparison only and stability holds in both directions.
 template<typename T>
-__device__ __forceinline__ void bitonic_cas(T& a, T& b, bool ascending) {
-    if (ascending ? (a > b) : (a < b)) {
-        T tmp = a;
-        a = b;
-        b = tmp;
-    }
+__device__ __forceinline__ int sort_rank_cmp(T a_val, long long a_idx,
+                                             T b_val, long long b_idx,
+                                             bool descending) {
+    int c = sort_cmp(a_val, b_val);
+    if (descending) c = -c;
+    if (c != 0) return c;
+    if (a_idx == b_idx) return 0;
+    return a_idx < b_idx ? -1 : 1;
 }
 
 // Bitonic compare-and-swap with indices
 template<typename T>
 __device__ __forceinline__ void bitonic_cas_indexed(T& a_val, long long& a_idx,
                                                      T& b_val, long long& b_idx,
-                                                     bool ascending) {
-    bool swap = ascending ? (a_val > b_val) : (a_val < b_val);
-    // For equal values, maintain stability by comparing indices
-    if (a_val == b_val) {
-        swap = ascending ? (a_idx > b_idx) : (a_idx < b_idx);
-    }
+                                                     bool ascending_local,
+                                                     bool descending) {
+    int c = sort_rank_cmp(a_val, a_idx, b_val, b_idx, descending);
+    bool swap = ascending_local ? (c > 0) : (c < 0);
     if (swap) {
         T tmp_val = a_val;
         a_val = b_val;
@@ -154,7 +199,7 @@ __device__ void sort_dim_impl(
     __syncthreads();
 
     // Pad with max/min values
-    T pad_val = descending ? sort_pad_min<T>() : sort_pad_max<T>();
+    T pad_val = sort_pad_rank<T>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size; // Invalid index
@@ -168,13 +213,13 @@ __device__ void sort_dim_impl(
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
 
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(
                         shared_vals[ij], shared_idx[ij],
                         shared_vals[ij_pair], shared_idx[ij_pair],
-                        ascending_local
+                        ascending_local, descending
                     );
                 }
             }
@@ -230,7 +275,7 @@ __device__ void topk_dim_impl(
 
     // Full bitonic sort for simplicity (can optimize for partial sort later)
 
-    T pad_val = largest ? sort_pad_min<T>() : sort_pad_max<T>();
+    T pad_val = sort_pad_rank<T>(largest);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -245,13 +290,13 @@ __device__ void topk_dim_impl(
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
 
-                bool ascending_local = ((ij / kk) % 2 == 0) != descending;
+                bool ascending_local = ((ij / kk) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(
                         shared_vals[ij], shared_idx[ij],
                         shared_vals[ij_pair], shared_idx[ij_pair],
-                        ascending_local
+                        ascending_local, descending
                     );
                 }
             }
@@ -346,12 +391,10 @@ __device__ void searchsorted_impl(
             unsigned int mid = lo + (hi - lo) / 2;
             T mid_val = sorted_seq[mid];
 
-            bool go_left;
-            if (right) {
-                go_left = !(mid_val > val);  // mid_val <= val
-            } else {
-                go_left = mid_val < val;
-            }
+            // Same total order the sequence was sorted by, so NaN keys land at
+            // the trailing NaN run instead of collapsing to position 0.
+            int c = sort_cmp(mid_val, val);
+            bool go_left = right ? (c <= 0) : (c < 0);
 
             if (go_left) {
                 lo = mid + 1;
@@ -456,7 +499,7 @@ __device__ void argsort_dim_impl(
     }
     __syncthreads();
 
-    T pad_val = descending ? sort_pad_min<T>() : sort_pad_max<T>();
+    T pad_val = sort_pad_rank<T>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -468,12 +511,12 @@ __device__ void argsort_dim_impl(
             for (unsigned int i = tid; i < n / 2; i += blockDim.x) {
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(shared_vals[ij], shared_idx[ij],
                                        shared_vals[ij_pair], shared_idx[ij_pair],
-                                       ascending_local);
+                                       ascending_local, descending);
                 }
             }
             __syncthreads();
@@ -560,7 +603,7 @@ __global__ void argsort_f32(
     }
     __syncthreads();
 
-    float pad_val = descending ? -1e38f : 1e38f;
+    float pad_val = sort_pad_rank<float>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -572,12 +615,12 @@ __global__ void argsort_f32(
             for (unsigned int i = tid; i < n / 2; i += blockDim.x) {
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(shared_vals[ij], shared_idx[ij],
                                        shared_vals[ij_pair], shared_idx[ij_pair],
-                                       ascending_local);
+                                       ascending_local, descending);
                 }
             }
             __syncthreads();
@@ -639,7 +682,7 @@ __global__ void argsort_f64(
     }
     __syncthreads();
 
-    double pad_val = descending ? -1e308 : 1e308;
+    double pad_val = sort_pad_rank<double>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -651,12 +694,12 @@ __global__ void argsort_f64(
             for (unsigned int i = tid; i < n / 2; i += blockDim.x) {
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(shared_vals[ij], shared_idx[ij],
                                        shared_vals[ij_pair], shared_idx[ij_pair],
-                                       ascending_local);
+                                       ascending_local, descending);
                 }
             }
             __syncthreads();
@@ -717,7 +760,7 @@ __global__ void argsort_i32(
     }
     __syncthreads();
 
-    int pad_val = descending ? INT_MIN : INT_MAX;
+    int pad_val = sort_pad_rank<int>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -729,12 +772,12 @@ __global__ void argsort_i32(
             for (unsigned int i = tid; i < n / 2; i += blockDim.x) {
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(shared_vals[ij], shared_idx[ij],
                                        shared_vals[ij_pair], shared_idx[ij_pair],
-                                       ascending_local);
+                                       ascending_local, descending);
                 }
             }
             __syncthreads();
@@ -795,7 +838,7 @@ __global__ void argsort_i64(
     }
     __syncthreads();
 
-    long long pad_val = descending ? LLONG_MIN : LLONG_MAX;
+    long long pad_val = sort_pad_rank<long long>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -807,12 +850,12 @@ __global__ void argsort_i64(
             for (unsigned int i = tid; i < n / 2; i += blockDim.x) {
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(shared_vals[ij], shared_idx[ij],
                                        shared_vals[ij_pair], shared_idx[ij_pair],
-                                       ascending_local);
+                                       ascending_local, descending);
                 }
             }
             __syncthreads();
@@ -873,7 +916,7 @@ __global__ void argsort_u32(
     }
     __syncthreads();
 
-    unsigned int pad_val = descending ? 0u : UINT_MAX;
+    unsigned int pad_val = sort_pad_rank<unsigned int>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -885,12 +928,12 @@ __global__ void argsort_u32(
             for (unsigned int i = tid; i < n / 2; i += blockDim.x) {
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(shared_vals[ij], shared_idx[ij],
                                        shared_vals[ij_pair], shared_idx[ij_pair],
-                                       ascending_local);
+                                       ascending_local, descending);
                 }
             }
             __syncthreads();
@@ -951,7 +994,7 @@ __global__ void argsort_u64(
     }
     __syncthreads();
 
-    unsigned long long pad_val = descending ? 0ull : ULLONG_MAX;
+    unsigned long long pad_val = sort_pad_rank<unsigned long long>(descending);
     for (unsigned int i = tid + sort_size; i < n; i += blockDim.x) {
         shared_vals[i] = pad_val;
         shared_idx[i] = sort_size;
@@ -963,12 +1006,12 @@ __global__ void argsort_u64(
             for (unsigned int i = tid; i < n / 2; i += blockDim.x) {
                 unsigned int ij = (i / j) * 2 * j + (i % j);
                 unsigned int ij_pair = ij + j;
-                bool ascending_local = ((ij / k) % 2 == 0) != descending;
+                bool ascending_local = ((ij / k) % 2 == 0);
 
                 if (ij_pair < n) {
                     bitonic_cas_indexed(shared_vals[ij], shared_idx[ij],
                                        shared_vals[ij_pair], shared_idx[ij_pair],
-                                       ascending_local);
+                                       ascending_local, descending);
                 }
             }
             __syncthreads();

@@ -2,6 +2,7 @@
 
 use super::DType;
 use bytemuck::{Pod, Zeroable};
+use std::cmp::Ordering;
 use std::ops::{Add, Div, Mul, Sub};
 
 /// Trait for types that can be elements of a tensor
@@ -69,6 +70,37 @@ pub trait Element:
     #[inline]
     fn from_f32(v: f32) -> Self {
         Self::from_f64(v as f64)
+    }
+
+    /// Total-order comparison used by all sorting operations.
+    ///
+    /// `PartialOrd` is not total for floats, and a non-transitive comparator makes
+    /// both comparison sorts and bitonic networks return unsorted output.
+    ///
+    /// Ordering matches PyTorch and NumPy: NaN compares greater than every non-NaN
+    /// value (last ascending, first descending), NaNs compare equal to each other,
+    /// and `-0.0` compares equal to `+0.0`. This differs from [`f32::total_cmp`],
+    /// which orders `-0.0` before `+0.0` and negative NaN below `-inf`.
+    ///
+    /// The default is already correct for integer types, whose `PartialOrd` is total.
+    #[inline]
+    fn sort_cmp(&self, other: &Self) -> Ordering {
+        match self.partial_cmp(other) {
+            Some(ord) => ord,
+            None => {
+                // `partial_cmp` returns `None` only for NaN, the sole value that
+                // compares unequal to itself.
+                #[allow(clippy::eq_op)]
+                let self_nan = self != self;
+                #[allow(clippy::eq_op)]
+                let other_nan = other != other;
+                match (self_nan, other_nan) {
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                    _ => Ordering::Equal,
+                }
+            }
+        }
     }
 
     /// Zero value

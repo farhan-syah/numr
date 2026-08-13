@@ -43,6 +43,7 @@ pub mod scalar;
 pub mod semiring_matmul;
 pub mod shape;
 pub mod sort;
+pub mod sort_nan;
 #[cfg(feature = "sparse")]
 pub mod sparse;
 #[cfg(feature = "sparse")]

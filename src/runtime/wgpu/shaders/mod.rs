@@ -20,6 +20,7 @@ pub mod logical;
 pub mod quasirandom;
 pub mod shape;
 pub mod sort;
+pub mod sort_cmp;
 pub mod special;
 pub mod statistics;
 

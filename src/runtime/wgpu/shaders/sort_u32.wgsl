@@ -1,4 +1,4 @@
-// Auto-generated sort operations for u32
+// Sort operations for u32.
 
 const WORKGROUP_SIZE: u32 = 256u;
 const MAX_SORT_SIZE: u32 = 512u;
@@ -18,26 +18,31 @@ struct SortParams {
 @group(0) @binding(2) var<storage, read_write> sort_indices: array<i32>;
 @group(0) @binding(3) var<uniform> sort_params: SortParams;
 
-// Comparison helper
-fn compare_less_u32(a: u32, b: u32) -> bool {
-    return a < b;
+// Rank order: the requested output order with ties broken by original index, so
+// the network sorts by a single total order and is stable in both directions.
+fn sort_rank_less_u32(a: u32, idx_a: i32, b: u32, idx_b: i32, descending: bool) -> bool {
+    if (a != b) {
+        return select(a < b, (a > b), descending);
+    }
+    return idx_a < idx_b;
 }
 
-// Stable comparison: use original index as tiebreaker for equal values
-fn compare_less_stable_u32(a: u32, b: u32, idx_a: i32, idx_b: i32) -> bool {
-    if (a == b) {
-        return idx_a < idx_b;
-    }
-    return a < b;
+// Rank order without indices, for the values-only kernel.
+fn sort_value_rank_less_u32(a: u32, b: u32, descending: bool) -> bool {
+    return select(a < b, (a > b), descending);
 }
 
 // Bitonic compare and swap for sort with indices (stable)
-fn bitonic_cas_u32(i: u32, j: u32, dir: bool) {
+fn bitonic_cas_u32(i: u32, j: u32, ascending_local: bool, descending: bool) {
     let vi = shared_vals[i];
     let vj = shared_vals[j];
     let ii = shared_idxs[i];
     let ij = shared_idxs[j];
-    let swap = select(compare_less_stable_u32(vi, vj, ii, ij), compare_less_stable_u32(vj, vi, ij, ii), dir);
+    let swap = select(
+        sort_rank_less_u32(vi, ii, vj, ij, descending),
+        sort_rank_less_u32(vj, ij, vi, ii, descending),
+        ascending_local
+    );
     if (swap) {
         shared_vals[i] = vj;
         shared_vals[j] = vi;
@@ -47,10 +52,14 @@ fn bitonic_cas_u32(i: u32, j: u32, dir: bool) {
 }
 
 // Bitonic compare and swap for sort values only
-fn bitonic_cas_values_u32(i: u32, j: u32, dir: bool) {
+fn bitonic_cas_values_u32(i: u32, j: u32, ascending_local: bool, descending: bool) {
     let vi = shared_vals[i];
     let vj = shared_vals[j];
-    let swap = select(compare_less_u32(vi, vj), compare_less_u32(vj, vi), dir);
+    let swap = select(
+        sort_value_rank_less_u32(vi, vj, descending),
+        sort_value_rank_less_u32(vj, vi, descending),
+        ascending_local
+    );
     if (swap) {
         shared_vals[i] = vj;
         shared_vals[j] = vi;
@@ -109,10 +118,10 @@ fn sort_u32(
                 let ij_pair = ij + j;
 
                 // Direction depends on which half of the network we're in
-                let ascending_local = ((ij / k) % 2u == 0u) != descending;
+                let ascending_local = ((ij / k) % 2u == 0u);
 
                 if (ij_pair < n) {
-                    bitonic_cas_u32(ij, ij_pair, ascending_local);
+                    bitonic_cas_u32(ij, ij_pair, ascending_local, descending);
                 }
             }
             workgroupBarrier();
@@ -174,10 +183,10 @@ fn sort_values_only_u32(
                 let ij_pair = ij + j;
 
                 // Direction depends on which half of the network we're in
-                let ascending_local = ((ij / k) % 2u == 0u) != descending;
+                let ascending_local = ((ij / k) % 2u == 0u);
 
                 if (ij_pair < n) {
-                    bitonic_cas_values_u32(ij, ij_pair, ascending_local);
+                    bitonic_cas_values_u32(ij, ij_pair, ascending_local, descending);
                 }
             }
             workgroupBarrier();
@@ -239,10 +248,10 @@ fn argsort_u32(
                 let ij_pair = ij + j;
 
                 // Direction depends on which half of the network we're in
-                let ascending_local = ((ij / k) % 2u == 0u) != descending;
+                let ascending_local = ((ij / k) % 2u == 0u);
 
                 if (ij_pair < n) {
-                    bitonic_cas_u32(ij, ij_pair, ascending_local);
+                    bitonic_cas_u32(ij, ij_pair, ascending_local, descending);
                 }
             }
             workgroupBarrier();

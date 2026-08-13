@@ -8,6 +8,20 @@ use crate::tensor::Tensor;
 ///
 /// Provides operations for sorting tensors, finding top-k elements, searching,
 /// and computing unique values.
+///
+/// # Ordering
+///
+/// All backends sort by the total order in
+/// [`Element::sort_cmp`](crate::dtype::Element::sort_cmp): NaN is greater than
+/// every non-NaN value (last ascending, first descending, and top-ranked for
+/// `topk` with `largest`), NaNs tie with each other, `-0.0` ties with `+0.0`,
+/// and ties keep input order in both directions. `searchsorted` expects its
+/// sequence sorted by this same order.
+///
+/// # Index dtype
+///
+/// Index outputs are `I64` on CPU and CUDA but `I32` on WebGPU, a 32-bit-only
+/// backend. Read them back in the returned tensor's own dtype.
 pub trait SortingOps<R: Runtime> {
     /// Sort tensor along a dimension.
     ///
