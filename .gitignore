@@ -97,3 +97,4 @@ dmypy.json
 
 .cargo/
 /releases/
+.agents/
