@@ -3,6 +3,7 @@ pub mod helpers;
 
 pub mod activation;
 pub mod advanced_random;
+pub mod autograd_indexing;
 pub mod binary;
 pub mod cast;
 pub mod compare;
