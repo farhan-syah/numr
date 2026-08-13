@@ -876,13 +876,16 @@ __global__ void scatter_reduce_sum_f32(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicAdd(&dst[dst_idx], src[src_idx]);
 }
@@ -906,13 +909,16 @@ __global__ void scatter_reduce_max_f32(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicMaxFloat(&dst[dst_idx], src[src_idx]);
 }
@@ -936,13 +942,16 @@ __global__ void scatter_reduce_min_f32(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicMinFloat(&dst[dst_idx], src[src_idx]);
 }
@@ -966,13 +975,16 @@ __global__ void scatter_reduce_sum_f64(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicAdd(&dst[dst_idx], src[src_idx]);
 }
@@ -996,13 +1008,16 @@ __global__ void scatter_reduce_max_f64(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicMaxDouble(&dst[dst_idx], src[src_idx]);
 }
@@ -1026,13 +1041,16 @@ __global__ void scatter_reduce_min_f64(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicMinDouble(&dst[dst_idx], src[src_idx]);
 }
@@ -1056,13 +1074,16 @@ __global__ void scatter_reduce_sum_i32(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicAdd(&dst[dst_idx], src[src_idx]);
 }
@@ -1086,13 +1107,16 @@ __global__ void scatter_reduce_max_i32(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicMax(&dst[dst_idx], src[src_idx]);
 }
@@ -1116,13 +1140,16 @@ __global__ void scatter_reduce_min_i32(
     unsigned int src_d = (idx / inner_size) % src_dim_size;
     unsigned int outer = idx / (src_dim_size * inner_size);
 
-    long long index_val = indices[src_d];
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
+
+    // The index tensor is element-wise (same shape as src), so the index is read
+    // at the source element's own position, not at its coordinate along dim.
+    long long index_val = indices[src_idx];
     if (index_val < 0 || (unsigned int)index_val >= dim_size) {
         return;
     }
 
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner;
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner;
 
     atomicMin(&dst[dst_idx], src[src_idx]);
 }
@@ -1232,13 +1259,14 @@ __global__ void scatter_reduce_prod_##suffix( \
     unsigned int src_d = (idx / inner_size) % src_dim_size; \
     unsigned int outer = idx / (src_dim_size * inner_size); \
     \
-    long long index_val = indices[src_d]; \
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner; \
+    \
+    long long index_val = indices[src_idx]; \
     if (index_val < 0 || (unsigned int)index_val >= dim_size) { \
         return; \
     } \
     \
     unsigned int dst_idx = outer * dim_size * inner_size + (unsigned int)index_val * inner_size + inner; \
-    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner; \
     \
     atomic_mul_fn(&dst[dst_idx], src[src_idx]); \
 }
@@ -1269,7 +1297,9 @@ __global__ void scatter_reduce_count_##suffix( \
     unsigned int src_d = (idx / inner_size) % src_dim_size; \
     unsigned int outer = idx / (src_dim_size * inner_size); \
     \
-    long long index_val = indices[src_d]; \
+    unsigned int src_idx = outer * src_dim_size * inner_size + src_d * inner_size + inner; \
+    \
+    long long index_val = indices[src_idx]; \
     if (index_val < 0 || (unsigned int)index_val >= dim_size) { \
         return; \
     } \
