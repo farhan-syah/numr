@@ -39,11 +39,10 @@ impl<R: Runtime> GradFn<R> for AddScalarBackward<R> {
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
-        // Gradient passes through unchanged - just clone the Var
-        Ok(vec![Some(Var::new(
-            grad_output.tensor().clone(),
-            grad_output.requires_grad(),
-        ))])
+        // Gradient passes through unchanged — clone the Var itself.
+        // Rebuilding it from `grad_output.tensor()` with `Var::new` would drop
+        // the grad_fn and stop second-order backward here.
+        Ok(vec![Some(grad_output.clone())])
     }
 
     fn inputs(&self) -> &[TensorId] {
@@ -88,11 +87,10 @@ impl<R: Runtime> GradFn<R> for SubScalarBackward<R> {
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
-        // Gradient passes through unchanged - just clone the Var
-        Ok(vec![Some(Var::new(
-            grad_output.tensor().clone(),
-            grad_output.requires_grad(),
-        ))])
+        // Gradient passes through unchanged — clone the Var itself.
+        // Rebuilding it from `grad_output.tensor()` with `Var::new` would drop
+        // the grad_fn and stop second-order backward here.
+        Ok(vec![Some(grad_output.clone())])
     }
 
     fn inputs(&self) -> &[TensorId] {

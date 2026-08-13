@@ -37,7 +37,15 @@ where
             a.tensor().dtype(),
             a.tensor().device(),
         );
-        return Ok((Var::new(a.tensor().clone(), a.requires_grad()), mask));
+        // Identity must preserve the grad_fn. Rebuilding with `Var::new` would
+        // create a leaf and silently sever the graph for every caller that
+        // passes p == 0.0 to disable dropout.
+        let identity = if a.requires_grad() {
+            Var::with_id_and_grad_fn(a.tensor().clone(), a.id(), a.grad_fn().cloned())
+        } else {
+            Var::with_id(a.tensor().clone(), a.id(), false)
+        };
+        return Ok((identity, mask));
     }
 
     if p >= 1.0 {
@@ -154,6 +162,36 @@ mod tests {
 
         let data: Vec<f32> = output.tensor().to_vec();
         assert_eq!(data, vec![1.0, 2.0, 3.0]);
+    }
+
+    /// p == 0.0 is an identity, and an identity must not break the graph.
+    ///
+    /// Regression: this path returned `Var::new(a.tensor().clone(), ...)`, a
+    /// LEAF with no grad_fn. Disabling dropout by setting p = 0.0 therefore
+    /// silently detached everything upstream of it — the layers before the
+    /// dropout simply stopped training, with no error and no NaN.
+    #[test]
+    fn dropout_zero_rate_preserves_gradient_flow() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+
+        let w = Var::new(
+            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.5f32, -2.0, 3.0], &[3], &device),
+            true,
+        );
+        // An upstream op so the dropout input carries a grad_fn.
+        let upstream = crate::autograd::var_mul(&w, &w, &client).unwrap();
+
+        let (output, _mask) = var_dropout(&upstream, 0.0, &client).unwrap();
+        let loss = crate::autograd::var_sum(&output, &[0], false, &client).unwrap();
+        let grads = backward(&loss, &client).unwrap();
+
+        let grad = grads
+            .get(w.id())
+            .expect("p=0.0 dropout must not detach upstream parameters");
+        let values: Vec<f32> = grad.contiguous().unwrap().to_vec();
+        // d(sum(w^2))/dw = 2w
+        assert_eq!(values, vec![3.0, -4.0, 6.0]);
     }
 
     #[test]
