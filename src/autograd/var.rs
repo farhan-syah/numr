@@ -110,6 +110,27 @@ impl<R: Runtime> Var<R> {
         self.grad_fn.as_ref()
     }
 
+    /// Identity alias: same tensor, same [`TensorId`], same `requires_grad`,
+    /// same `grad_fn`.
+    ///
+    /// Use this — NOT [`Clone::clone`] — whenever a layer returns its input
+    /// unchanged (e.g. `Dropout` in eval mode, a disabled residual scale).
+    /// `clone` mints a FRESH `TensorId`, which silently breaks two things:
+    ///
+    /// 1. If the input is a leaf parameter, `backward` records its gradient
+    ///    under the clone's new id, so `GradStore::get(param.id())` returns
+    ///    `None` and the parameter never updates.
+    /// 2. Optimizer state (AdamW) is keyed by `TensorId`, so a drifting id
+    ///    orphans the moment estimates.
+    pub fn alias(&self) -> Self {
+        Self {
+            tensor: self.tensor.clone(),
+            id: self.id,
+            requires_grad: self.requires_grad,
+            grad_fn: self.grad_fn.clone(),
+        }
+    }
+
     /// Detach from the computation graph
     ///
     /// Returns a new variable that doesn't track gradients.
@@ -170,5 +191,45 @@ impl<R: Runtime> std::fmt::Debug for Var<R> {
             .field("requires_grad", &self.requires_grad)
             .field("has_grad_fn", &self.grad_fn.is_some())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dtype::DType;
+    use crate::runtime::cpu::CpuRuntime;
+
+    /// `alias` preserves the id (so gradients and TensorId-keyed optimizer
+    /// state still find the variable); `clone` deliberately does not.
+    #[test]
+    fn alias_preserves_id_but_clone_does_not() {
+        let device = <CpuRuntime as Runtime>::default_device();
+        let t = Tensor::<CpuRuntime>::zeros(&[2, 3], DType::F32, &device);
+        let v = Var::new(t, true);
+
+        let aliased = v.alias();
+        assert_eq!(aliased.id(), v.id(), "alias must keep the same TensorId");
+        assert_eq!(aliased.requires_grad(), v.requires_grad());
+        assert_eq!(aliased.shape(), v.shape());
+
+        let cloned = v.clone();
+        assert_ne!(
+            cloned.id(),
+            v.id(),
+            "clone is documented to mint a fresh TensorId — if this ever \
+             changes, the `alias` call sites can be simplified"
+        );
+    }
+
+    /// A no-op layer path must not strip `requires_grad == false`.
+    #[test]
+    fn alias_preserves_requires_grad_false() {
+        let device = <CpuRuntime as Runtime>::default_device();
+        let t = Tensor::<CpuRuntime>::zeros(&[4], DType::F32, &device);
+        let v = Var::new(t, false);
+        let aliased = v.alias();
+        assert!(!aliased.requires_grad());
+        assert_eq!(aliased.id(), v.id());
     }
 }
