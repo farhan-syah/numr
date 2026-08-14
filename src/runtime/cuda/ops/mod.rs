@@ -4,6 +4,7 @@
 //! This module provides shared helpers, kernel launchers, and TensorOps.
 
 pub(crate) mod helpers;
+pub(crate) mod matmul_broadcast;
 mod statistics;
 mod tensor;
 

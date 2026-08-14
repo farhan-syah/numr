@@ -48,16 +48,10 @@ impl MatmulOps<CpuRuntime> for CpuClient {
             .product();
         let batch_size = batch_size.max(1);
 
-        let a_batch: usize = a_shape
-            .iter()
-            .take(a_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
-        let b_batch: usize = b_shape
-            .iter()
-            .take(b_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+        // Batch dims broadcast per dimension, so each output batch needs its own
+        // source index per operand rather than a single batch count.
+        let (a_batch_idx, b_batch_idx) =
+            crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
 
         // GEMV-BT fast path: detect transposed B and use dot-product kernel
         // When B has shape [K,N] with strides [1,K], it's a transpose of contiguous [N,K].
@@ -83,8 +77,8 @@ impl MatmulOps<CpuRuntime> for CpuClient {
 
                 dispatch_dtype!(dtype, T => {
                     for batch in 0..batch_size {
-                        let a_offset = if a_batch > 1 { batch * m * k } else { 0 };
-                        let b_offset = if b_batch > 1 { batch * n * k } else { 0 };
+                        let a_offset = a_batch_idx[batch] * m * k;
+                        let b_offset = b_batch_idx[batch] * n * k;
                         let out_offset = batch * m * n;
 
                         #[cfg(feature = "rayon")]
@@ -182,8 +176,8 @@ impl MatmulOps<CpuRuntime> for CpuClient {
                             .into_par_iter()
                             .with_min_len(min_len)
                             .for_each(|batch| unsafe {
-                                let a_offset = if a_batch > 1 { batch * m * k } else { 0 };
-                                let b_offset = if b_batch > 1 { batch * k * n } else { 0 };
+                                let a_offset = a_batch_idx[batch] * m * k;
+                                let b_offset = b_batch_idx[batch] * k * n;
                                 let out_offset = batch * m * n;
 
                                 matmul_i8_to_i32_kernel(
@@ -219,8 +213,8 @@ impl MatmulOps<CpuRuntime> for CpuClient {
             #[cfg(not(feature = "rayon"))]
             unsafe {
                 for batch in 0..batch_size {
-                    let a_offset = if a_batch > 1 { batch * m * k } else { 0 };
-                    let b_offset = if b_batch > 1 { batch * k * n } else { 0 };
+                    let a_offset = a_batch_idx[batch] * m * k;
+                    let b_offset = b_batch_idx[batch] * k * n;
                     let out_offset = batch * m * n;
 
                     matmul_i8_to_i32_kernel(
@@ -257,8 +251,8 @@ impl MatmulOps<CpuRuntime> for CpuClient {
                             .into_par_iter()
                             .with_min_len(min_len)
                             .for_each(|batch| unsafe {
-                            let a_offset = if a_batch > 1 { batch * m * k } else { 0 };
-                            let b_offset = if b_batch > 1 { batch * k * n } else { 0 };
+                            let a_offset = a_batch_idx[batch] * m * k;
+                            let b_offset = b_batch_idx[batch] * k * n;
                             let out_offset = batch * m * n;
 
                             <Self as Kernel<CpuRuntime>>::matmul::<T>(
@@ -299,8 +293,8 @@ impl MatmulOps<CpuRuntime> for CpuClient {
             #[cfg(not(feature = "rayon"))]
             unsafe {
                 for batch in 0..batch_size {
-                    let a_offset = if a_batch > 1 { batch * m * k } else { 0 };
-                    let b_offset = if b_batch > 1 { batch * k * n } else { 0 };
+                    let a_offset = a_batch_idx[batch] * m * k;
+                    let b_offset = b_batch_idx[batch] * k * n;
                     let out_offset = batch * m * n;
 
                     <Self as Kernel<CpuRuntime>>::matmul::<T>(
@@ -365,16 +359,10 @@ impl MatmulOps<CpuRuntime> for CpuClient {
             .product();
         let batch_size = batch_size.max(1);
 
-        let a_batch: usize = a_shape
-            .iter()
-            .take(a_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
-        let b_batch: usize = b_shape
-            .iter()
-            .take(b_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+        // Batch dims broadcast per dimension, so each output batch needs its own
+        // source index per operand rather than a single batch count.
+        let (a_batch_idx, b_batch_idx) =
+            crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
 
         // Create output tensor
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device);
@@ -402,8 +390,8 @@ impl MatmulOps<CpuRuntime> for CpuClient {
                             .into_par_iter()
                             .with_min_len(min_len)
                             .for_each(|batch| unsafe {
-                            let a_offset = if a_batch > 1 { batch * m * k } else { 0 };
-                            let b_offset = if b_batch > 1 { batch * k * n } else { 0 };
+                            let a_offset = a_batch_idx[batch] * m * k;
+                            let b_offset = b_batch_idx[batch] * k * n;
                             let out_offset = batch * m * n;
 
                             matmul_bias_kernel::<T>(
@@ -445,8 +433,8 @@ impl MatmulOps<CpuRuntime> for CpuClient {
             #[cfg(not(feature = "rayon"))]
             unsafe {
                 for batch in 0..batch_size {
-                    let a_offset = if a_batch > 1 { batch * m * k } else { 0 };
-                    let b_offset = if b_batch > 1 { batch * k * n } else { 0 };
+                    let a_offset = a_batch_idx[batch] * m * k;
+                    let b_offset = b_batch_idx[batch] * k * n;
                     let out_offset = batch * m * n;
 
                     matmul_bias_kernel::<T>(

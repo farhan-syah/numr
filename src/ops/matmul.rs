@@ -129,6 +129,54 @@ pub fn matmul_output_shape(a_shape: &[usize], b_shape: &[usize]) -> Option<Vec<u
     Some(result)
 }
 
+/// Map each output batch to the batch index each operand should read.
+///
+/// Batch dims broadcast per dimension, so an operand's batch count is not enough
+/// to locate its data: with `A[2, 4, m, k] @ B[2, 1, k, n]` the output has 8
+/// batches while `B` has 2, and `B`'s index advances only every 4 outputs.
+/// Treating an operand as "broadcast everything" or "same batch as output" reads
+/// out of bounds for any case in between.
+///
+/// Returns `(a_indices, b_indices)`, both of length `prod(out_shape[..-2])`.
+pub fn matmul_batch_indices(
+    a_shape: &[usize],
+    b_shape: &[usize],
+    out_shape: &[usize],
+) -> (Vec<usize>, Vec<usize>) {
+    let out_batch = &out_shape[..out_shape.len().saturating_sub(2)];
+    let a_batch = &a_shape[..a_shape.len().saturating_sub(2)];
+    let b_batch = &b_shape[..b_shape.len().saturating_sub(2)];
+
+    let total: usize = out_batch.iter().product::<usize>().max(1);
+    let mut a_indices = Vec::with_capacity(total);
+    let mut b_indices = Vec::with_capacity(total);
+    let mut coord = vec![0usize; out_batch.len()];
+
+    // Operand batch dims are right-aligned against the output's, and a size-1 dim
+    // holds index 0 while the output coordinate advances.
+    let project = |coord: &[usize], batch: &[usize]| -> usize {
+        let offset = coord.len() - batch.len();
+        let mut idx = 0;
+        for (d, &size) in batch.iter().enumerate() {
+            let c = if size == 1 { 0 } else { coord[offset + d] };
+            idx = idx * size + c;
+        }
+        idx
+    };
+
+    for flat in 0..total {
+        let mut rem = flat;
+        for d in (0..out_batch.len()).rev() {
+            coord[d] = rem % out_batch[d];
+            rem /= out_batch[d];
+        }
+        a_indices.push(project(&coord, a_batch));
+        b_indices.push(project(&coord, b_batch));
+    }
+
+    (a_indices, b_indices)
+}
+
 /// Validate matmul_bias shapes and return dimensions (m, k, n)
 ///
 /// Checks that:
@@ -204,6 +252,46 @@ pub fn validate_matmul_bias_dtypes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A middle batch dim broadcasting under a leading batch > 1: B's index must
+    /// advance once every 4 outputs, which a batch count alone cannot express.
+    #[test]
+    fn test_matmul_batch_indices_middle_broadcast() {
+        let (a, b) = matmul_batch_indices(&[2, 4, 3, 2], &[2, 1, 2, 1], &[2, 4, 3, 1]);
+        assert_eq!(a, vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(b, vec![0, 0, 0, 0, 1, 1, 1, 1]);
+    }
+
+    /// A leading broadcast dim does cycle, which is why wrapping by a count
+    /// appeared to work.
+    #[test]
+    fn test_matmul_batch_indices_leading_broadcast() {
+        let (a, b) = matmul_batch_indices(&[2, 4, 3, 2], &[1, 4, 2, 3], &[2, 4, 3, 3]);
+        assert_eq!(a, vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(b, vec![0, 1, 2, 3, 0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_matmul_batch_indices_fewer_batch_dims() {
+        // B's batch dims are right-aligned against the output's.
+        let (a, b) = matmul_batch_indices(&[2, 4, 3, 2], &[4, 2, 3], &[2, 4, 3, 3]);
+        assert_eq!(a, vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(b, vec![0, 1, 2, 3, 0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_matmul_batch_indices_both_broadcast() {
+        let (a, b) = matmul_batch_indices(&[2, 1, 3, 2], &[1, 4, 2, 3], &[2, 4, 3, 3]);
+        assert_eq!(a, vec![0, 0, 0, 0, 1, 1, 1, 1]);
+        assert_eq!(b, vec![0, 1, 2, 3, 0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_matmul_batch_indices_unbatched() {
+        let (a, b) = matmul_batch_indices(&[3, 2], &[2, 4], &[3, 4]);
+        assert_eq!(a, vec![0]);
+        assert_eq!(b, vec![0]);
+    }
 
     #[test]
     fn test_validate_matmul_shapes() {

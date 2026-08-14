@@ -12,6 +12,7 @@ use super::super::kernels::{
     launch_scalar_op_c64, launch_scalar_op_c128, launch_scalar_op_i32, launch_scalar_op_i64,
 };
 use super::super::{CudaClient, CudaRuntime};
+use super::matmul_broadcast::resolve_batched_operands;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::{matmul_bias_output_shape, matmul_output_shape, reduce_output_shape};
@@ -120,22 +121,6 @@ fn is_batched_transpose_last2(tensor: &Tensor<CudaRuntime>) -> bool {
     strides[1] == 1 && strides[2] == k as isize && strides[0] == (n * k) as isize
 }
 
-/// Compute batch count for A and B from their shapes.
-/// Returns (a_batch_count, b_batch_count) where each is the product of
-/// the leading dimensions (all dims except the last two).
-/// Returns 1 for 2D tensors (no batch dimension).
-fn compute_batch_counts(a_shape: &[usize], b_shape: &[usize]) -> (usize, usize) {
-    let a_batch: usize = a_shape
-        .iter()
-        .take(a_shape.len().saturating_sub(2))
-        .product();
-    let b_batch: usize = b_shape
-        .iter()
-        .take(b_shape.len().saturating_sub(2))
-        .product();
-    (a_batch.max(1), b_batch.max(1))
-}
-
 /// Native batched matrix multiplication using tiled CUDA kernel.
 pub(crate) fn matmul_batched_native(
     client: &CudaClient,
@@ -152,7 +137,11 @@ pub(crate) fn matmul_batched_native(
         got: b.shape().to_vec(),
     })?;
 
-    let (a_batch, b_batch) = compute_batch_counts(a.shape(), b.shape());
+    // Pointers and batch counts must come from the same tensors, so both are taken
+    // from one resolver rather than derived separately.
+    let operands = resolve_batched_operands(a, b, &out_shape)?;
+    let (a, b) = (&operands.a, &operands.b);
+    let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
     // Fast path: transposed B with small M → gemv_bt
     if m <= 16 && is_batched_transpose_last2(b) {
@@ -269,8 +258,6 @@ pub(crate) fn matmul_bias_batched_native(
     k: usize,
     n: usize,
 ) -> Result<Tensor<CudaRuntime>> {
-    let a_contig = ensure_contiguous(a)?;
-    let b_contig = ensure_contiguous(b)?;
     let bias_contig = ensure_contiguous(bias)?;
 
     let out_shape = matmul_bias_output_shape(a.shape(), b.shape(), bias.shape()).ok_or(
@@ -280,7 +267,11 @@ pub(crate) fn matmul_bias_batched_native(
         },
     )?;
 
-    let (a_batch, b_batch) = compute_batch_counts(a.shape(), b.shape());
+    // Pointers and batch counts must come from the same tensors, so both are taken
+    // from one resolver rather than derived separately.
+    let operands = resolve_batched_operands(a, b, &out_shape)?;
+    let (a_contig, b_contig) = operands.contiguous()?;
+    let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
     let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
 
@@ -808,15 +799,16 @@ pub(crate) fn semiring_matmul_batched_native(
     n: usize,
     semiring_op: u32,
 ) -> Result<Tensor<CudaRuntime>> {
-    let a_contig = ensure_contiguous(a)?;
-    let b_contig = ensure_contiguous(b)?;
-
     let out_shape = matmul_output_shape(a.shape(), b.shape()).ok_or(Error::ShapeMismatch {
         expected: a.shape().to_vec(),
         got: b.shape().to_vec(),
     })?;
 
-    let (a_batch, b_batch) = compute_batch_counts(a.shape(), b.shape());
+    // Pointers and batch counts must come from the same tensors, so both are taken
+    // from one resolver rather than derived separately.
+    let operands = resolve_batched_operands(a, b, &out_shape)?;
+    let (a_contig, b_contig) = operands.contiguous()?;
+    let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
     let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
 

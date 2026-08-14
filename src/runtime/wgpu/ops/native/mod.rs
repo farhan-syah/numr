@@ -41,6 +41,7 @@ pub(crate) use indexing::{
     native_gather, native_index_put, native_index_select, native_scatter, native_slice_assign,
 };
 pub(crate) use masking::{native_embedding_lookup, native_masked_fill, native_masked_select};
+pub(crate) mod matmul_broadcast;
 pub(crate) use matmul::{native_matmul, native_matmul_bias};
 pub(crate) use normalization::{
     native_fused_add_layer_norm, native_fused_add_layer_norm_bwd, native_fused_add_rms_norm,

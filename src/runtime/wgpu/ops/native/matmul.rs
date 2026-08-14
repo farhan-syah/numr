@@ -1,6 +1,7 @@
 //! Matrix multiplication operation implementations for WebGPU.
 
 use super::helpers::*;
+use super::matmul_broadcast::flatten_batched_operands;
 use crate::error::Error;
 use crate::error::Result;
 use crate::ops::{matmul_bias_output_shape, matmul_output_shape, validate_matmul_bias_dtypes};
@@ -46,6 +47,12 @@ pub(crate) fn native_matmul(
 
     let a_shape = a.shape();
     let b_shape = b.shape();
+
+    // Operands the batched kernel cannot index directly are flattened to 3D first;
+    // the recursive call then lands on the batched path below.
+    if let Some((a3, b3)) = flatten_batched_operands(a, b, &out_shape)? {
+        return native_matmul(client, &a3, &b3)?.reshape(&out_shape);
+    }
 
     // Handle 2D case
     if a_shape.len() == 2 && b_shape.len() == 2 {
@@ -317,6 +324,12 @@ pub(crate) fn native_matmul_bias(
     // Validate shapes and compute output shape
     let out_shape = matmul_bias_output_shape(a.shape(), b.shape(), bias.shape())
         .ok_or_else(|| Error::shape_mismatch(a.shape(), b.shape()))?;
+
+    // Operands the batched kernel cannot index directly are flattened to 3D first;
+    // bias is 1-D over N and is unaffected by batch normalization.
+    if let Some((a3, b3)) = flatten_batched_operands(a, b, &out_shape)? {
+        return native_matmul_bias(client, &a3, &b3, bias)?.reshape(&out_shape);
+    }
 
     let a_shape = a.shape();
     let b_shape = b.shape();

@@ -64,16 +64,10 @@ impl SemiringMatmulOps<CpuRuntime> for CpuClient {
             .product();
         let batch_size = batch_size.max(1);
 
-        let a_batch_count: usize = a_shape
-            .iter()
-            .take(a_shape.len().saturating_sub(2))
-            .product();
-        let a_batch_count = a_batch_count.max(1);
-        let b_batch_count: usize = b_shape
-            .iter()
-            .take(b_shape.len().saturating_sub(2))
-            .product();
-        let b_batch_count = b_batch_count.max(1);
+        // Batch dims broadcast per dimension, so each output batch needs its own
+        // source index per operand rather than a wrapping batch count.
+        let (a_batch_idx, b_batch_idx) =
+            crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
 
         // Create output tensor
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device);
@@ -91,8 +85,8 @@ impl SemiringMatmulOps<CpuRuntime> for CpuClient {
             // Bool is stored as u8 internally
             unsafe {
                 for batch in 0..batch_size {
-                    let a_offset = (batch % a_batch_count) * m * k;
-                    let b_offset = (batch % b_batch_count) * k * n;
+                    let a_offset = a_batch_idx[batch] * m * k;
+                    let b_offset = b_batch_idx[batch] * k * n;
                     let out_offset = batch * m * n;
 
                     or_and_kernel(
@@ -115,8 +109,8 @@ impl SemiringMatmulOps<CpuRuntime> for CpuClient {
         dispatch_dtype!(dtype, T => {
             unsafe {
                 for batch in 0..batch_size {
-                    let a_offset = (batch % a_batch_count) * m * k;
-                    let b_offset = (batch % b_batch_count) * k * n;
+                    let a_offset = a_batch_idx[batch] * m * k;
+                    let b_offset = b_batch_idx[batch] * k * n;
                     let out_offset = batch * m * n;
 
                     semiring_matmul_kernel::<T>(

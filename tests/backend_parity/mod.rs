@@ -31,6 +31,7 @@ pub mod linalg;
 pub mod logical;
 pub mod matmul;
 pub mod matmul_bias;
+pub mod matmul_broadcast;
 pub mod matrix_functions_expm;
 pub mod matrix_functions_logm;
 pub mod matrix_functions_other;

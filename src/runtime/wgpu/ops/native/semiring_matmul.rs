@@ -1,6 +1,7 @@
 //! Native WebGPU semiring matrix multiplication implementation.
 
 use super::helpers::*;
+use super::matmul_broadcast::flatten_batched_operands;
 use crate::error::{Error, Result};
 use crate::ops::matmul_output_shape;
 use crate::ops::semiring::SemiringOp;
@@ -33,6 +34,11 @@ pub(crate) fn native_semiring_matmul(
 
     let out_shape = matmul_output_shape(a.shape(), b.shape())
         .ok_or_else(|| Error::shape_mismatch(a.shape(), b.shape()))?;
+
+    // Operands the batched kernel cannot index directly are flattened to 3D first.
+    if let Some((a3, b3)) = flatten_batched_operands(a, b, &out_shape)? {
+        return native_semiring_matmul(client, &a3, &b3, op)?.reshape(&out_shape);
+    }
 
     let a_shape = a.shape();
     let b_shape = b.shape();
