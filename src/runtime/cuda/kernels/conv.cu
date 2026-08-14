@@ -72,6 +72,79 @@ __global__ void conv1d_##suffix( \
 }
 
 // ============================================================================
+// ConvTranspose1d Kernel Template
+// Input:  (N, C_in, L)
+// Weight: (C_in, C_out/groups, K)   <-- input channels lead, unlike conv1d
+// Output: (N, C_out, L_out)
+//
+// Written in GATHER form: each thread owns one output element and searches for
+// the input samples that scatter into it. The scatter form would need atomics
+// (many inputs hit the same output when stride < kernel), which would cost
+// both speed and bit-reproducibility.
+//
+// An input index j contributes to output t through tap k when
+//   t = j*stride - padding + k*dilation
+// so j = (t + padding - k*dilation) / stride, and only when that divides evenly.
+// ============================================================================
+
+#define DEFINE_CONV_TRANSPOSE1D_KERNEL(suffix, dtype) \
+__global__ void conv_transpose1d_##suffix( \
+    const dtype* __restrict__ input, \
+    const dtype* __restrict__ weight, \
+    const dtype* __restrict__ bias, \
+    dtype* __restrict__ output, \
+    unsigned int batch, \
+    unsigned int c_in, \
+    unsigned int length, \
+    unsigned int c_out, \
+    unsigned int kernel_size, \
+    unsigned int output_length, \
+    unsigned int stride, \
+    unsigned int padding, \
+    unsigned int dilation, \
+    unsigned int groups, \
+    unsigned int has_bias \
+) { \
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x; \
+    unsigned int total = batch * c_out * output_length; \
+    if (idx >= total) return; \
+    \
+    unsigned int ox = idx % output_length; \
+    unsigned int oc = (idx / output_length) % c_out; \
+    unsigned int b = idx / (c_out * output_length); \
+    \
+    unsigned int c_in_per_group = c_in / groups; \
+    unsigned int c_out_per_group = c_out / groups; \
+    unsigned int g = oc / c_out_per_group; \
+    unsigned int oc_local = oc % c_out_per_group; \
+    unsigned int c_in_start = g * c_in_per_group; \
+    \
+    dtype sum = (dtype)0; \
+    \
+    for (unsigned int kx = 0; kx < kernel_size; kx++) { \
+        int shifted = (int)(ox + padding) - (int)(kx * dilation); \
+        if (shifted < 0) continue; \
+        if ((unsigned int)shifted % stride != 0u) continue; \
+        unsigned int j = (unsigned int)shifted / stride; \
+        if (j >= length) continue; \
+        \
+        for (unsigned int ic = 0; ic < c_in_per_group; ic++) { \
+            unsigned int c_in_idx = c_in_start + ic; \
+            unsigned int input_idx = b * c_in * length + c_in_idx * length + j; \
+            unsigned int weight_idx = c_in_idx * c_out_per_group * kernel_size \
+                                    + oc_local * kernel_size + kx; \
+            sum = sum + input[input_idx] * weight[weight_idx]; \
+        } \
+    } \
+    \
+    if (has_bias != 0u && bias != nullptr) { \
+        sum = sum + bias[oc]; \
+    } \
+    \
+    output[idx] = sum; \
+}
+
+// ============================================================================
 // Conv2d Kernel Template
 // Input: (N, C_in, H, W)
 // Weight: (C_out, C_in/groups, K_h, K_w)
@@ -220,21 +293,25 @@ extern "C" {
 
 // F32 kernels
 DEFINE_CONV1D_KERNEL(f32, float)
+DEFINE_CONV_TRANSPOSE1D_KERNEL(f32, float)
 DEFINE_CONV2D_KERNEL(f32, float)
 DEFINE_DEPTHWISE_CONV2D_KERNEL(f32, float)
 
 // F64 kernels
 DEFINE_CONV1D_KERNEL(f64, double)
+DEFINE_CONV_TRANSPOSE1D_KERNEL(f64, double)
 DEFINE_CONV2D_KERNEL(f64, double)
 DEFINE_DEPTHWISE_CONV2D_KERNEL(f64, double)
 
 // F16 kernels (half precision)
 DEFINE_CONV1D_KERNEL(f16, __half)
+DEFINE_CONV_TRANSPOSE1D_KERNEL(f16, __half)
 DEFINE_CONV2D_KERNEL(f16, __half)
 DEFINE_DEPTHWISE_CONV2D_KERNEL(f16, __half)
 
 // BF16 kernels (bfloat16)
 DEFINE_CONV1D_KERNEL(bf16, __nv_bfloat16)
+DEFINE_CONV_TRANSPOSE1D_KERNEL(bf16, __nv_bfloat16)
 DEFINE_CONV2D_KERNEL(bf16, __nv_bfloat16)
 DEFINE_DEPTHWISE_CONV2D_KERNEL(bf16, __nv_bfloat16)
 

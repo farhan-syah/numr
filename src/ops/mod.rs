@@ -74,6 +74,7 @@ pub(crate) mod activation;
 mod arithmetic;
 pub(crate) mod common;
 pub(crate) mod conv_common;
+pub(crate) mod conv_transpose_common;
 mod dispatch;
 pub(crate) mod distance_common;
 pub(crate) mod impl_generic;

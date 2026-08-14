@@ -3,6 +3,7 @@
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::conv_common::{validate_conv1d, validate_conv2d, validate_depthwise_conv2d};
+use crate::ops::conv_transpose_common::validate_conv_transpose1d;
 use crate::ops::{ConvOps, PaddingMode};
 #[cfg(target_arch = "x86_64")]
 use crate::runtime::cpu::kernels::simd::conv as simd_conv;
@@ -314,70 +315,32 @@ fn conv_transpose1d_cpu(
     dilation: usize,
     groups: usize,
 ) -> Result<Tensor<CpuRuntime>> {
-    use crate::ops::conv_common;
-
     let op = "conv_transpose1d";
     let dtype = input.dtype();
-    conv_common::validate_3d_tensor(input.shape(), "input", op)?;
-    conv_common::validate_3d_tensor(weight.shape(), "weight", op)?;
-    conv_common::validate_float_dtype(dtype, op)?;
-    conv_common::validate_same_dtype(dtype, weight.dtype(), op)?;
-    conv_common::validate_positive(stride, "stride", op)?;
-    conv_common::validate_positive(dilation, "dilation", op)?;
-    conv_common::validate_positive(groups, "groups", op)?;
 
-    if stride > 0 && output_padding >= stride {
-        return Err(Error::InvalidArgument {
-            arg: "output_padding",
-            reason: format!("must be < stride ({stride}), got {output_padding}"),
-        });
-    }
+    // Shared with the CUDA/WebGPU backends so all three agree on shapes,
+    // padding and the `Same` upsampling convention.
+    let params = validate_conv_transpose1d(
+        input.shape(),
+        weight.shape(),
+        bias.map(|b| b.shape()),
+        stride,
+        padding,
+        output_padding,
+        dilation,
+        groups,
+        dtype,
+        weight.dtype(),
+        bias.map(|b| b.dtype()),
+    )?;
 
-    let (b, c_in, l_in) = (input.shape()[0], input.shape()[1], input.shape()[2]);
-    let (w_c_in, c_out_per_group, kernel) =
-        (weight.shape()[0], weight.shape()[1], weight.shape()[2]);
-    if w_c_in != c_in {
-        return Err(Error::InvalidArgument {
-            arg: "weight",
-            reason: format!(
-                "expected weight shape [{c_in}, C_out/groups, K], got {:?}",
-                weight.shape()
-            ),
-        });
-    }
-    if c_in % groups != 0 {
-        return Err(Error::InvalidArgument {
-            arg: "groups",
-            reason: format!("C_in ({c_in}) not divisible by groups ({groups})"),
-        });
-    }
-    let c_out = c_out_per_group * groups;
-    if let Some(b_tensor) = bias {
-        conv_common::validate_1d_tensor(b_tensor.shape(), "bias", op)?;
-        conv_common::validate_same_dtype(dtype, b_tensor.dtype(), op)?;
-        conv_common::validate_bias_length(b_tensor.shape()[0], c_out, op)?;
-    }
+    let (b, c_in, l_in) = (params.batch, params.c_in, params.length);
+    let (c_out, kernel) = (params.c_out, params.kernel_size);
+    let (pad_left, pad_right) = (params.pad_left, params.pad_right);
+    let l_out = params.output_length;
 
-    let (pad_left, pad_right) = match padding {
-        PaddingMode::Valid => (0usize, 0usize),
-        PaddingMode::Same => {
-            // For transposed conv, "same" means output length = input_length * stride.
-            // Derive symmetric padding matching that convention.
-            let desired = l_in * stride;
-            let unpadded = (l_in - 1) * stride + dilation * (kernel - 1) + output_padding + 1;
-            if unpadded < desired {
-                return Err(Error::InvalidArgument {
-                    arg: "padding",
-                    reason: "PaddingMode::Same cannot shrink output below target length".into(),
-                });
-            }
-            let total = unpadded - desired;
-            (total / 2, total - total / 2)
-        }
-        PaddingMode::Custom(left, right, _, _) => (left, right),
-    };
-
-    let unpadded_len = (l_in - 1) * stride + dilation * (kernel - 1) + output_padding + 1;
+    let unpadded_len =
+        (l_in - 1) * params.stride + params.dilation * (kernel - 1) + params.output_padding + 1;
     if pad_left + pad_right > unpadded_len {
         return Err(Error::InvalidArgument {
             arg: "padding",
@@ -387,7 +350,6 @@ fn conv_transpose1d_cpu(
             ),
         });
     }
-    let l_out = unpadded_len - pad_left - pad_right;
 
     if b == 0 || l_out == 0 {
         return Ok(Tensor::<CpuRuntime>::empty(
@@ -415,7 +377,7 @@ fn conv_transpose1d_cpu(
                 bias_ptr.map(|p| p as *const T),
                 output_ptr as *mut T,
                 b, c_in, c_out, l_in, l_out, kernel,
-                stride, dilation, pad_left, groups,
+                params.stride, params.dilation, pad_left, params.groups,
             );
         }
     }, op);

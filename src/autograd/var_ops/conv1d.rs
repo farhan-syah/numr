@@ -148,7 +148,7 @@ impl<R: Runtime> Conv1dBackward<R> {
 /// is performed through the client, which works on any backend. The Rust loop
 /// structures the iteration, but actual mathematical operations (matmul, add)
 /// happen on the device via the client.
-fn conv1d_input_backward<R, C>(
+pub(super) fn conv1d_input_backward<R, C>(
     client: &C,
     grad_output: &crate::tensor::Tensor<R>,
     weight: &crate::tensor::Tensor<R>,
@@ -240,7 +240,7 @@ where
 ///
 /// This function uses only tensor operations (no to_vec/to_cpu). All computation
 /// is performed through the client, which works on any backend.
-fn conv1d_weight_backward<R, C>(
+pub(super) fn conv1d_weight_backward<R, C>(
     client: &C,
     grad_output: &crate::tensor::Tensor<R>,
     input: &crate::tensor::Tensor<R>,

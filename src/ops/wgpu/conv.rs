@@ -2,6 +2,7 @@
 
 use crate::error::Result;
 use crate::ops::conv_common::{validate_conv1d, validate_conv2d, validate_depthwise_conv2d};
+use crate::ops::conv_transpose_common::validate_conv_transpose1d;
 use crate::ops::{ConvOps, PaddingMode};
 use crate::runtime::RuntimeClient;
 use crate::runtime::ensure_contiguous;
@@ -157,6 +158,94 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
         let total_output = params.batch * params.c_out * params.output_length;
 
         conv_launcher::launch_conv1d(
+            self.pipeline_cache(),
+            self.wgpu_queue(),
+            &input_buf,
+            &weight_buf,
+            &bias_buf,
+            &output_buf,
+            &params_buf,
+            total_output,
+            dtype,
+        )?;
+
+        Ok(output)
+    }
+
+    fn conv_transpose1d(
+        &self,
+        input: &Tensor<WgpuRuntime>,
+        weight: &Tensor<WgpuRuntime>,
+        bias: Option<&Tensor<WgpuRuntime>>,
+        stride: usize,
+        padding: PaddingMode,
+        output_padding: usize,
+        dilation: usize,
+        groups: usize,
+    ) -> Result<Tensor<WgpuRuntime>> {
+        let dtype = input.dtype();
+
+        let params = validate_conv_transpose1d(
+            input.shape(),
+            weight.shape(),
+            bias.map(|b| b.shape()),
+            stride,
+            padding,
+            output_padding,
+            dilation,
+            groups,
+            dtype,
+            weight.dtype(),
+            bias.map(|b| b.dtype()),
+        )?;
+
+        if params.output_length == 0 || params.batch == 0 {
+            return Ok(Tensor::<WgpuRuntime>::empty(
+                &[params.batch, params.c_out, params.output_length],
+                dtype,
+                self.device(),
+            ));
+        }
+
+        let input = ensure_contiguous(input)?;
+        let weight = ensure_contiguous(weight)?;
+        let bias = bias.map(ensure_contiguous).transpose()?;
+
+        let output = alloc_output(
+            self,
+            &[params.batch, params.c_out, params.output_length],
+            dtype,
+        );
+
+        let input_buf = get_tensor_buffer(&input)?;
+        let weight_buf = get_tensor_buffer(&weight)?;
+        let output_buf = get_tensor_buffer(&output)?;
+        let bias_buf = if let Some(ref b) = bias {
+            get_tensor_buffer(b)?
+        } else {
+            let dummy = Tensor::<WgpuRuntime>::empty(&[1], dtype, self.device());
+            get_tensor_buffer(&dummy)?
+        };
+
+        let shader_params = Conv1dParams {
+            batch: params.batch as u32,
+            c_in: params.c_in as u32,
+            length: params.length as u32,
+            c_out: params.c_out as u32,
+            kernel_size: params.kernel_size as u32,
+            output_length: params.output_length as u32,
+            stride: params.stride as u32,
+            padding: params.pad_left as u32,
+            dilation: params.dilation as u32,
+            groups: params.groups as u32,
+            has_bias: if bias.is_some() { 1 } else { 0 },
+            _pad: 0,
+        };
+        let params_buf = create_params_buffer(self, &shader_params);
+
+        let total_output = params.batch * params.c_out * params.output_length;
+
+        conv_launcher::launch_conv_transpose1d(
             self.pipeline_cache(),
             self.wgpu_queue(),
             &input_buf,
