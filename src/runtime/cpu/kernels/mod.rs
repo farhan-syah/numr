@@ -10,6 +10,7 @@ pub mod binary;
 pub mod compare;
 pub mod complex;
 pub mod conv;
+pub mod conv_transpose;
 pub mod cumulative;
 pub mod distance;
 pub mod distributions;
@@ -53,6 +54,7 @@ pub use complex::{
     real_complex128,
 };
 pub use conv::{conv1d_kernel, conv2d_kernel, depthwise_conv2d_kernel};
+pub use conv_transpose::conv_transpose1d_kernel;
 pub use cumulative::{
     cumprod_kernel, cumprod_strided_kernel, cumsum_kernel, cumsum_strided_kernel, logsumexp_kernel,
     logsumexp_strided_kernel,

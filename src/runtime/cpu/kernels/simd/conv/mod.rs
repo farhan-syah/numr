@@ -22,6 +22,7 @@ mod aarch64;
 #[cfg(feature = "f16")]
 mod half;
 mod scalar;
+mod transpose1d;
 
 use super::{SimdLevel, detect_simd};
 use crate::ops::conv_common::{Conv1dParams, Conv2dParams};
@@ -29,6 +30,7 @@ use crate::ops::conv_common::{Conv1dParams, Conv2dParams};
 #[cfg(feature = "f16")]
 pub use half::*;
 pub use scalar::*;
+pub use transpose1d::{conv_transpose1d_f32, conv_transpose1d_f64};
 
 /// Minimum input channels to justify SIMD overhead for f32
 const SIMD_THRESHOLD_F32: usize = 8;

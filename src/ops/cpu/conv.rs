@@ -5,7 +5,7 @@ use crate::error::{Error, Result};
 use crate::ops::conv_common::{validate_conv1d, validate_conv2d, validate_depthwise_conv2d};
 use crate::ops::conv_transpose_common::validate_conv_transpose1d;
 use crate::ops::{ConvOps, PaddingMode};
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::runtime::cpu::kernels::simd::conv as simd_conv;
 use crate::runtime::cpu::{CpuClient, CpuRuntime, helpers::ensure_contiguous, kernels};
 use crate::tensor::Tensor;
@@ -52,14 +52,18 @@ macro_rules! dispatch_float_dtype {
     };
 }
 
-/// Dispatch to SIMD kernels for F32/F64 on x86_64, scalar for other types/platforms.
+/// Dispatch to SIMD kernels for F32/F64 on x86_64 and aarch64, scalar for other
+/// types/platforms.
 ///
-/// This macro eliminates duplication across conv1d, conv2d, and depthwise_conv2d dispatch blocks.
+/// This macro eliminates duplication across the conv1d, conv2d, depthwise_conv2d
+/// and conv_transpose1d dispatch blocks. The `simd_conv::*` entry points detect
+/// the `SimdLevel` themselves and fall back to the same generic
+/// `kernels::*_kernel` used below when no vector path applies.
 macro_rules! dispatch_conv {
     ($dtype:expr, $conv_name:ident, $input_ptr:expr, $weight_ptr:expr, $bias_ptr:expr, $output_ptr:expr, $params:expr) => {
         paste::paste! {
             match $dtype {
-                #[cfg(target_arch = "x86_64")]
+                #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 DType::F32 => unsafe {
                     simd_conv::[<$conv_name _f32>](
                         $input_ptr as *const f32,
@@ -69,7 +73,7 @@ macro_rules! dispatch_conv {
                         $params,
                     );
                 },
-                #[cfg(target_arch = "x86_64")]
+                #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 DType::F64 => unsafe {
                     simd_conv::[<$conv_name _f64>](
                         $input_ptr as *const f64,
@@ -315,7 +319,6 @@ fn conv_transpose1d_cpu(
     dilation: usize,
     groups: usize,
 ) -> Result<Tensor<CpuRuntime>> {
-    let op = "conv_transpose1d";
     let dtype = input.dtype();
 
     // Shared with the CUDA/WebGPU backends so all three agree on shapes,
@@ -334,13 +337,17 @@ fn conv_transpose1d_cpu(
         bias.map(|b| b.dtype()),
     )?;
 
-    let (b, c_in, l_in) = (params.batch, params.c_in, params.length);
+    let (b, l_in) = (params.batch, params.length);
     let (c_out, kernel) = (params.c_out, params.kernel_size);
     let (pad_left, pad_right) = (params.pad_left, params.pad_right);
     let l_out = params.output_length;
 
-    let unpadded_len =
-        (l_in - 1) * params.stride + params.dilation * (kernel - 1) + params.output_padding + 1;
+    // `saturating_sub`: a zero-length input or zero-size kernel would otherwise
+    // underflow here before the empty-output early return below.
+    let unpadded_len = l_in.saturating_sub(1) * params.stride
+        + params.dilation * kernel.saturating_sub(1)
+        + params.output_padding
+        + 1;
     if pad_left + pad_right > unpadded_len {
         return Err(Error::InvalidArgument {
             arg: "padding",
@@ -369,101 +376,17 @@ fn conv_transpose1d_cpu(
     let bias_ptr = bias.as_ref().map(|b| b.ptr());
     let output_ptr = output.ptr();
 
-    dispatch_float_dtype!(dtype, T => {
-        unsafe {
-            conv_transpose1d_scalar::<T>(
-                input_ptr as *const T,
-                weight_ptr as *const T,
-                bias_ptr.map(|p| p as *const T),
-                output_ptr as *mut T,
-                b, c_in, c_out, l_in, l_out, kernel,
-                params.stride, params.dilation, pad_left, params.groups,
-            );
-        }
-    }, op);
+    dispatch_conv!(
+        dtype,
+        conv_transpose1d,
+        input_ptr,
+        weight_ptr,
+        bias_ptr,
+        output_ptr,
+        params
+    );
 
     Ok(output)
-}
-
-/// Scalar reference implementation of transposed 1D convolution.
-///
-/// Correctness-first: no SIMD, no blocking. A fused / SIMD variant can replace
-/// this if benchmarks ever show transposed convolution as a bottleneck.
-#[allow(clippy::too_many_arguments)]
-unsafe fn conv_transpose1d_scalar<T>(
-    input: *const T,
-    weight: *const T,
-    bias: Option<*const T>,
-    output: *mut T,
-    batch: usize,
-    c_in: usize,
-    c_out: usize,
-    l_in: usize,
-    l_out: usize,
-    kernel: usize,
-    stride: usize,
-    dilation: usize,
-    pad_left: usize,
-    groups: usize,
-) where
-    T: Copy + Default + std::ops::Add<Output = T> + std::ops::Mul<Output = T>,
-{
-    let c_in_per_group = c_in / groups;
-    let c_out_per_group = c_out / groups;
-
-    // Zero-initialize output.
-    unsafe {
-        for i in 0..(batch * c_out * l_out) {
-            *output.add(i) = T::default();
-        }
-    }
-
-    let pad_left_i = pad_left as isize;
-    for b in 0..batch {
-        for g in 0..groups {
-            for ci in 0..c_in_per_group {
-                let c_in_abs = g * c_in_per_group + ci;
-                let input_row_base = (b * c_in + c_in_abs) * l_in;
-                for l in 0..l_in {
-                    let x = unsafe { *input.add(input_row_base + l) };
-                    let base_out_pos = l as isize * stride as isize - pad_left_i;
-                    for co in 0..c_out_per_group {
-                        let c_out_abs = g * c_out_per_group + co;
-                        let weight_row_base = (c_in_abs * c_out_per_group + co) * kernel;
-                        let output_row_base = (b * c_out + c_out_abs) * l_out;
-                        for k in 0..kernel {
-                            let out_pos = base_out_pos + (k * dilation) as isize;
-                            if out_pos < 0 || out_pos >= l_out as isize {
-                                continue;
-                            }
-                            let w = unsafe { *weight.add(weight_row_base + k) };
-                            let out_idx = output_row_base + out_pos as usize;
-                            unsafe {
-                                let cur = *output.add(out_idx);
-                                *output.add(out_idx) = cur + w * x;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Bias: add per-channel across all batch/time positions.
-    if let Some(bias_ptr) = bias {
-        for b in 0..batch {
-            for co in 0..c_out {
-                let bias_val = unsafe { *bias_ptr.add(co) };
-                let base = (b * c_out + co) * l_out;
-                for l in 0..l_out {
-                    unsafe {
-                        let cur = *output.add(base + l);
-                        *output.add(base + l) = cur + bias_val;
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
