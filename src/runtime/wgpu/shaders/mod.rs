@@ -21,6 +21,7 @@ pub mod quasirandom;
 pub mod shape;
 pub mod sort;
 pub mod sort_cmp;
+pub(crate) mod sort_global;
 pub mod special;
 pub mod statistics;
 

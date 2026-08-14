@@ -112,6 +112,203 @@ fn test_argsort_parity() {
     }
 }
 
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_wgpu_global_argsort_is_stable_past_shared_memory_limit() {
+    const LEN: usize = 4097;
+    let data: Vec<f64> = (0..LEN).map(|index| (index % 17) as f64).collect();
+    let shape = vec![LEN];
+
+    with_wgpu_backend(|wgpu_client, wgpu_device| {
+        let tensor = tensor_from_f64(
+            &data,
+            &shape,
+            numr::dtype::DType::U32,
+            &wgpu_device,
+            &wgpu_client,
+        )
+        .expect("create duplicate-heavy WGPU input");
+        let indices: Vec<i32> = wgpu_client
+            .argsort(&tensor, 0, false)
+            .expect("global WGPU argsort")
+            .to_vec();
+
+        let mut expected: Vec<i32> = (0..LEN as i32).collect();
+        expected.sort_by_key(|&index| (index as usize % 17, index));
+        assert_eq!(indices, expected);
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_wgpu_global_sort_family_matches_cpu_on_arbitrary_axis() {
+    use numr::dtype::DType;
+
+    let shape = vec![2, 513, 3];
+    for dtype in [DType::U32, DType::I32, DType::F32] {
+        let data: Vec<f64> = (0..shape.iter().product())
+            .map(|index| {
+                let value = ((index * 37 + index / 11) % 101) as f64;
+                if dtype == DType::U32 {
+                    value
+                } else {
+                    value - 50.0
+                }
+            })
+            .collect();
+        let (cpu_client, cpu_device) = create_cpu_client();
+        let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
+            .expect("create CPU global-sort input");
+
+        for descending in [false, true] {
+            let cpu_values = cpu_client
+                .sort(&cpu_tensor, 1, descending)
+                .expect("CPU sort");
+            let cpu_argsort: Vec<i64> = cpu_client
+                .argsort(&cpu_tensor, 1, descending)
+                .expect("CPU argsort")
+                .to_vec();
+            let (cpu_values_with_indices, cpu_indices): (_, Vec<i64>) = {
+                let (values, indices) = cpu_client
+                    .sort_with_indices(&cpu_tensor, 1, descending)
+                    .expect("CPU sort_with_indices");
+                (values, indices.to_vec())
+            };
+
+            with_wgpu_backend(|wgpu_client, wgpu_device| {
+                let wgpu_tensor = tensor_from_f64(&data, &shape, dtype, &wgpu_device, &wgpu_client)
+                    .expect("create WGPU global-sort input");
+                let wgpu_values = wgpu_client
+                    .sort(&wgpu_tensor, 1, descending)
+                    .expect("WGPU global sort");
+                let wgpu_argsort: Vec<i32> = wgpu_client
+                    .argsort(&wgpu_tensor, 1, descending)
+                    .expect("WGPU global argsort")
+                    .to_vec();
+                let (wgpu_values_with_indices, wgpu_indices) = wgpu_client
+                    .sort_with_indices(&wgpu_tensor, 1, descending)
+                    .expect("WGPU global sort_with_indices");
+                let wgpu_indices: Vec<i32> = wgpu_indices.to_vec();
+
+                assert_tensor_allclose(
+                    &wgpu_values,
+                    &cpu_values,
+                    dtype,
+                    &format!("global sort WGPU vs CPU [{dtype:?}, descending={descending}]"),
+                );
+                assert_tensor_allclose(
+                    &wgpu_values_with_indices,
+                    &cpu_values_with_indices,
+                    dtype,
+                    &format!(
+                        "global sort_with_indices WGPU vs CPU [{dtype:?}, descending={descending}]"
+                    ),
+                );
+                assert_eq!(
+                    wgpu_argsort
+                        .iter()
+                        .map(|&value| i64::from(value))
+                        .collect::<Vec<_>>(),
+                    cpu_argsort,
+                    "global argsort indices [{dtype:?}, descending={descending}]"
+                );
+                assert_eq!(
+                    wgpu_indices
+                        .iter()
+                        .map(|&value| i64::from(value))
+                        .collect::<Vec<_>>(),
+                    cpu_indices,
+                    "global sort_with_indices indices [{dtype:?}, descending={descending}]"
+                );
+            });
+        }
+    }
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_wgpu_global_f32_orders_nans_and_stabilizes_signed_zero() {
+    use numr::tensor::Tensor;
+
+    let mut data: Vec<f32> = (0..513).map(|index| (index % 23) as f32 - 11.0).collect();
+    data[3] = f32::NAN;
+    data[200] = f32::from_bits(0xffc0_0001);
+    data[17] = -0.0;
+    data[41] = 0.0;
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let cpu_tensor = Tensor::from_slice(&data, &[data.len()], &cpu_device);
+    with_wgpu_backend(|wgpu_client, wgpu_device| {
+        let wgpu_tensor = Tensor::from_slice(&data, &[data.len()], &wgpu_device);
+        for descending in [false, true] {
+            let expected: Vec<i64> = cpu_client
+                .argsort(&cpu_tensor, 0, descending)
+                .expect("CPU global f32 argsort")
+                .to_vec();
+            let actual: Vec<i64> = wgpu_client
+                .argsort(&wgpu_tensor, 0, descending)
+                .expect("WGPU global f32 argsort")
+                .to_vec::<i32>()
+                .into_iter()
+                .map(i64::from)
+                .collect();
+            assert_eq!(
+                actual, expected,
+                "f32 global argsort WGPU vs CPU descending={descending}"
+            );
+        }
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_wgpu_global_sort_family_handles_empty_outer_dimension() {
+    use numr::dtype::DType;
+    use numr::tensor::Tensor;
+
+    with_wgpu_backend(|wgpu_client, wgpu_device| {
+        let input = Tensor::zeros(&[0, 1024], DType::U32, &wgpu_device);
+        let sorted = wgpu_client
+            .sort(&input, 1, false)
+            .expect("sort empty tensor");
+        let argsorted = wgpu_client
+            .argsort(&input, 1, false)
+            .expect("argsort empty tensor");
+        let (values, indices) = wgpu_client
+            .sort_with_indices(&input, 1, false)
+            .expect("sort_with_indices empty tensor");
+
+        assert_eq!(sorted.shape(), &[0, 1024]);
+        assert_eq!(argsorted.shape(), &[0, 1024]);
+        assert_eq!(values.shape(), &[0, 1024]);
+        assert_eq!(indices.shape(), &[0, 1024]);
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+#[ignore = "large physical-GPU validation"]
+fn test_wgpu_global_sort_one_million_elements() {
+    use numr::tensor::Tensor;
+
+    const LEN: usize = 1_000_003;
+    let data: Vec<u32> = (0..LEN as u32).rev().collect();
+    with_wgpu_backend(|wgpu_client, wgpu_device| {
+        let tensor = Tensor::from_slice(&data, &[LEN], &wgpu_device);
+        let sorted: Vec<u32> = wgpu_client
+            .sort(&tensor, 0, false)
+            .expect("one-million-element WGPU global sort")
+            .to_vec();
+        assert_eq!(sorted.len(), LEN);
+        assert!(
+            sorted
+                .iter()
+                .enumerate()
+                .all(|(index, &value)| value == index as u32)
+        );
+    });
+}
+
 #[test]
 fn test_topk_parity() {
     let data = vec![3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];

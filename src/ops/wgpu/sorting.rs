@@ -12,7 +12,7 @@ use crate::runtime::wgpu::ops::helpers::{
     CountParams, FlatToMultiParams, SearchsortedParams, SortParams, TopkParams, UniqueCountsParams,
     alloc_output, create_params_buffer, get_tensor_buffer, pack_u32_array,
 };
-use crate::runtime::wgpu::shaders::sort;
+use crate::runtime::wgpu::shaders::{sort, sort_global};
 use crate::runtime::{RuntimeClient, ensure_contiguous, normalize_dim};
 use crate::tensor::Tensor;
 use wgpu::{Buffer, BufferDescriptor, BufferUsages, MapMode, PollType};
@@ -41,18 +41,6 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let dim_idx = normalize_dim(dim, ndim)?;
         let sort_size = shape[dim_idx];
 
-        // Check sort size limit (WebGPU bitonic sort in shared memory)
-        if sort_size > MAX_SHARED_SORT_SIZE {
-            return Err(Error::backend_limitation(
-                "WebGPU",
-                "sort",
-                format!(
-                    "max {} elements per dimension, got {}",
-                    MAX_SHARED_SORT_SIZE, sort_size
-                ),
-            ));
-        }
-
         // Compute strides
         let outer_size: usize = shape[..dim_idx].iter().product();
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
@@ -64,8 +52,28 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         // Allocate output
         let out = alloc_output(self, shape, dtype);
+        if a.numel() == 0 {
+            return Ok(out);
+        }
+
         let a_buf = get_tensor_buffer(&a_contig)?;
         let out_buf = get_tensor_buffer(&out)?;
+
+        if sort_size > MAX_SHARED_SORT_SIZE {
+            sort_global::launch_global_sort(
+                self.pipeline_cache(),
+                self.wgpu_queue(),
+                &a_buf,
+                Some(&out_buf),
+                None,
+                outer_size,
+                sort_size,
+                inner_size,
+                descending,
+                dtype,
+            )?;
+            return Ok(out);
+        }
 
         // Create params buffer
         let params = SortParams {
@@ -75,14 +83,6 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
             descending: descending as u32,
         };
         let params_buf = create_params_buffer(self, &params);
-
-        // Create dummy indices buffer
-        let dummy_indices_buf = self.wgpu_device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some("dummy_sort_indices"),
-            size: 4,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
 
         sort::launch_sort_values_only(
             self.pipeline_cache(),
@@ -95,7 +95,6 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
             dtype,
         )?;
 
-        drop(dummy_indices_buf);
         Ok(out)
     }
 
@@ -125,17 +124,6 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let dim_idx = normalize_dim(dim, ndim)?;
         let sort_size = shape[dim_idx];
 
-        if sort_size > MAX_SHARED_SORT_SIZE {
-            return Err(Error::backend_limitation(
-                "WebGPU",
-                "sort_with_indices",
-                format!(
-                    "max {} elements per dimension, got {}",
-                    MAX_SHARED_SORT_SIZE, sort_size
-                ),
-            ));
-        }
-
         let outer_size: usize = shape[..dim_idx].iter().product();
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
         let outer_size = outer_size.max(1);
@@ -146,9 +134,29 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let values_out = alloc_output(self, shape, dtype);
         let indices_out = alloc_output(self, shape, DType::I32);
 
+        if a.numel() == 0 {
+            return Ok((values_out, indices_out));
+        }
+
         let a_buf = get_tensor_buffer(&a_contig)?;
         let values_buf = get_tensor_buffer(&values_out)?;
         let indices_buf = get_tensor_buffer(&indices_out)?;
+
+        if sort_size > MAX_SHARED_SORT_SIZE {
+            sort_global::launch_global_sort(
+                self.pipeline_cache(),
+                self.wgpu_queue(),
+                &a_buf,
+                Some(&values_buf),
+                Some(&indices_buf),
+                outer_size,
+                sort_size,
+                inner_size,
+                descending,
+                dtype,
+            )?;
+            return Ok((values_out, indices_out));
+        }
 
         let params = SortParams {
             outer_size: outer_size as u32,
@@ -198,17 +206,6 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let dim_idx = normalize_dim(dim, ndim)?;
         let sort_size = shape[dim_idx];
 
-        if sort_size > MAX_SHARED_SORT_SIZE {
-            return Err(Error::backend_limitation(
-                "WebGPU",
-                "argsort",
-                format!(
-                    "max {} elements per dimension, got {}",
-                    MAX_SHARED_SORT_SIZE, sort_size
-                ),
-            ));
-        }
-
         let outer_size: usize = shape[..dim_idx].iter().product();
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
         let outer_size = outer_size.max(1);
@@ -218,8 +215,28 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         let indices_out = alloc_output(self, shape, DType::I32);
 
+        if a.numel() == 0 {
+            return Ok(indices_out);
+        }
+
         let a_buf = get_tensor_buffer(&a_contig)?;
         let indices_buf = get_tensor_buffer(&indices_out)?;
+
+        if sort_size > MAX_SHARED_SORT_SIZE {
+            sort_global::launch_global_sort(
+                self.pipeline_cache(),
+                self.wgpu_queue(),
+                &a_buf,
+                None,
+                Some(&indices_buf),
+                outer_size,
+                sort_size,
+                inner_size,
+                descending,
+                dtype,
+            )?;
+            return Ok(indices_out);
+        }
 
         let params = SortParams {
             outer_size: outer_size as u32,

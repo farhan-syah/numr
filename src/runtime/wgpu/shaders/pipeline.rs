@@ -5,12 +5,13 @@
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, ComputePipeline,
-    ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue, ShaderModule,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBinding, BufferBindingType,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue,
+    ShaderModule, ShaderModuleDescriptor, ShaderSource, ShaderStages,
 };
 
 use crate::dtype::DType;
@@ -38,6 +39,8 @@ pub struct PipelineCache {
     dynamic_pipelines: Mutex<HashMap<(String, String), Arc<ComputePipeline>>>,
     /// Cached bind group layouts by layout key
     layouts: Mutex<HashMap<LayoutKey, Arc<BindGroupLayout>>>,
+    /// Layouts whose final uniform binding uses a dynamic offset.
+    dynamic_uniform_layouts: Mutex<HashMap<(u32, u32), Arc<BindGroupLayout>>>,
 }
 
 /// Key for bind group layout cache
@@ -65,6 +68,7 @@ impl PipelineCache {
             pipelines: Mutex::new(HashMap::new()),
             dynamic_pipelines: Mutex::new(HashMap::new()),
             layouts: Mutex::new(HashMap::new()),
+            dynamic_uniform_layouts: Mutex::new(HashMap::new()),
         }
     }
 
@@ -250,6 +254,87 @@ impl PipelineCache {
 
         self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("compute_bind_group"),
+            layout,
+            entries: &entries,
+        })
+    }
+
+    /// Get or create a storage-buffer layout followed by one dynamic uniform.
+    pub fn get_or_create_dynamic_uniform_layout(
+        &self,
+        num_storage_buffers: u32,
+        num_readonly_storage: u32,
+    ) -> Arc<BindGroupLayout> {
+        let key = (num_storage_buffers, num_readonly_storage);
+        let mut layouts = self.dynamic_uniform_layouts.lock();
+        if let Some(layout) = layouts.get(&key) {
+            return layout.clone();
+        }
+
+        let mut entries = Vec::with_capacity(num_storage_buffers as usize + 1);
+        for binding in 0..num_storage_buffers {
+            entries.push(BindGroupLayoutEntry {
+                binding,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage {
+                        read_only: binding < num_readonly_storage,
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            });
+        }
+        entries.push(BindGroupLayoutEntry {
+            binding: num_storage_buffers,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+
+        let layout = Arc::new(
+            self.device
+                .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                    label: Some("dynamic_uniform_compute_layout"),
+                    entries: &entries,
+                }),
+        );
+        layouts.insert(key, layout.clone());
+        layout
+    }
+
+    /// Create a bind group whose final binding is a dynamically offset uniform.
+    pub fn create_bind_group_with_dynamic_uniform(
+        &self,
+        layout: &BindGroupLayout,
+        storage_buffers: &[&Buffer],
+        uniform: &Buffer,
+        uniform_binding_size: u64,
+    ) -> BindGroup {
+        let mut entries: Vec<BindGroupEntry<'_>> = storage_buffers
+            .iter()
+            .enumerate()
+            .map(|(binding, buffer)| BindGroupEntry {
+                binding: binding as u32,
+                resource: buffer.as_entire_binding(),
+            })
+            .collect();
+        entries.push(BindGroupEntry {
+            binding: storage_buffers.len() as u32,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: uniform,
+                offset: 0,
+                size: NonZeroU64::new(uniform_binding_size),
+            }),
+        });
+
+        self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("dynamic_uniform_compute_bind_group"),
             layout,
             entries: &entries,
         })

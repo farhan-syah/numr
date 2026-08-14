@@ -26,7 +26,6 @@ const SORT_SHADER_F32: &str = concat!(
 );
 const SORT_SHADER_I32: &str = include_str!("sort_i32.wgsl");
 const SORT_SHADER_U32: &str = include_str!("sort_u32.wgsl");
-
 // ============================================================================
 // Static shaders — topk/searchsorted (F32 only)
 // ============================================================================
