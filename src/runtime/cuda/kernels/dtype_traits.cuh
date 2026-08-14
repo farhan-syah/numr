@@ -48,6 +48,47 @@
 #endif
 
 // ============================================================================
+// Sign-Correct Power (fast-math safe)
+// ============================================================================
+// numr compiles all CUDA kernels with --use_fast_math (see build.rs). Under
+// fast-math, powf()/pow() lower to exp2(y * log2(x)), which is NaN for ANY
+// negative base x - even when y is an integer, where IEEE/CPU semantics
+// define a real result (e.g. (-3)^2 == 9, (-3)^3 == -27). Rust's f64::powf
+// (used by the CPU backend) is IEEE-correct, so CUDA must match it:
+//   base >= 0                       -> powf/pow(base, exp)   (fast path)
+//   base <  0, exp integral         -> powf/pow(|base|, exp), negated iff exp is odd
+//   base <  0, exp not integral     -> NaN (correct IEEE behavior, unchanged)
+// Route every pow kernel (scalar and elementwise, all dtypes) through these
+// helpers instead of calling powf/pow directly on a possibly-negative base.
+
+__device__ __forceinline__ float numr_pow_safe(float base, float exp) {
+    if (base >= 0.0f) {
+        return powf(base, exp);
+    }
+    float rounded = roundf(exp);
+    if (rounded != exp) {
+        // Non-integer exponent of a negative base is undefined -> NaN.
+        return NUMR_NAN_F;
+    }
+    float mag = powf(-base, exp);
+    bool is_odd = fmodf(rounded, 2.0f) != 0.0f;
+    return is_odd ? -mag : mag;
+}
+
+__device__ __forceinline__ double numr_pow_safe(double base, double exp) {
+    if (base >= 0.0) {
+        return pow(base, exp);
+    }
+    double rounded = round(exp);
+    if (rounded != exp) {
+        return NUMR_NAN;
+    }
+    double mag = pow(-base, exp);
+    bool is_odd = fmod(rounded, 2.0) != 0.0;
+    return is_odd ? -mag : mag;
+}
+
+// ============================================================================
 // Complex Number Type Definitions
 // ============================================================================
 // Complex64 maps to float2 (8 bytes: 2x f32)

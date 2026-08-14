@@ -10,8 +10,6 @@
 
 use numr::dtype::DType;
 use numr::ops::{MatmulOps, SemiringMatmulOps, SemiringOp};
-use numr::runtime::Runtime;
-use numr::tensor::Tensor;
 
 use crate::backend_parity::dtype_helpers::tensor_from_f64;
 #[cfg(feature = "cuda")]

@@ -24,7 +24,10 @@ template<typename T>
 __device__ __forceinline__ T broadcast_div(T a, T b) { return a / b; }
 
 template<typename T>
-__device__ __forceinline__ T broadcast_pow(T a, T b) { return powf((float)a, (float)b); }
+__device__ __forceinline__ T broadcast_pow(T a, T b) { return numr_pow_safe((float)a, (float)b); }
+
+template<>
+__device__ __forceinline__ double broadcast_pow(double a, double b) { return numr_pow_safe(a, b); }
 
 template<typename T>
 __device__ __forceinline__ T broadcast_max(T a, T b) { return a > b ? a : b; }
@@ -35,24 +38,24 @@ __device__ __forceinline__ T broadcast_min(T a, T b) { return a < b ? a : b; }
 // Specializations for half precision
 template<>
 __device__ __forceinline__ __half broadcast_pow(__half a, __half b) {
-    return __float2half(powf(__half2float(a), __half2float(b)));
+    return __float2half(numr_pow_safe(__half2float(a), __half2float(b)));
 }
 
 // Specializations for bfloat16
 template<>
 __device__ __forceinline__ __nv_bfloat16 broadcast_pow(__nv_bfloat16 a, __nv_bfloat16 b) {
-    return __float2bfloat16(powf(__bfloat162float(a), __bfloat162float(b)));
+    return __float2bfloat16(numr_pow_safe(__bfloat162float(a), __bfloat162float(b)));
 }
 
 // Specializations for integers
 template<>
 __device__ __forceinline__ int32_t broadcast_pow(int32_t a, int32_t b) {
-    return (int32_t)powf((float)a, (float)b);
+    return (int32_t)numr_pow_safe((float)a, (float)b);
 }
 
 template<>
 __device__ __forceinline__ int64_t broadcast_pow(int64_t a, int64_t b) {
-    return (int64_t)powf((float)a, (float)b);
+    return (int64_t)numr_pow_safe((float)a, (float)b);
 }
 
 // Specializations for FP8E4M3 (compute in F32)
@@ -88,7 +91,7 @@ template<>
 __device__ __forceinline__ numr_fp8_e4m3 broadcast_pow(numr_fp8_e4m3 a, numr_fp8_e4m3 b) {
     float fa = fp8_e4m3_to_f32(a.data);
     float fb = fp8_e4m3_to_f32(b.data);
-    return numr_fp8_e4m3(f32_to_fp8_e4m3(powf(fa, fb)));
+    return numr_fp8_e4m3(f32_to_fp8_e4m3(numr_pow_safe(fa, fb)));
 }
 
 template<>
@@ -138,7 +141,7 @@ template<>
 __device__ __forceinline__ numr_fp8_e5m2 broadcast_pow(numr_fp8_e5m2 a, numr_fp8_e5m2 b) {
     float fa = fp8_e5m2_to_f32(a.data);
     float fb = fp8_e5m2_to_f32(b.data);
-    return numr_fp8_e5m2(f32_to_fp8_e5m2(powf(fa, fb)));
+    return numr_fp8_e5m2(f32_to_fp8_e5m2(numr_pow_safe(fa, fb)));
 }
 
 template<>
@@ -342,7 +345,7 @@ __global__ void div_f32(const float* a, const float* b, float* out, unsigned int
 __global__ void pow_f32(const float* a, const float* b, float* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = powf(a[idx], b[idx]);
+        out[idx] = numr_pow_safe(a[idx], b[idx]);
     }
 }
 
@@ -406,7 +409,7 @@ __global__ void pow_f16(const __half* a, const __half* b, __half* out, unsigned 
         // Use FP32 for pow computation (more accurate)
         float af = __half2float(a[idx]);
         float bf = __half2float(b[idx]);
-        out[idx] = __float2half(powf(af, bf));
+        out[idx] = __float2half(numr_pow_safe(af, bf));
     }
 }
 
@@ -486,7 +489,7 @@ __global__ void pow_bf16(const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bf
         // Use FP32 for pow computation (more accurate)
         float af = __bfloat162float(a[idx]);
         float bf = __bfloat162float(b[idx]);
-        out[idx] = __float2bfloat16(powf(af, bf));
+        out[idx] = __float2bfloat16(numr_pow_safe(af, bf));
     }
 }
 
@@ -554,7 +557,7 @@ __global__ void div_f64(const double* a, const double* b, double* out, unsigned 
 __global__ void pow_f64(const double* a, const double* b, double* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = pow(a[idx], b[idx]);
+        out[idx] = numr_pow_safe(a[idx], b[idx]);
     }
 }
 
@@ -1183,7 +1186,7 @@ __global__ void pow_fp8_e4m3(const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, num
     if (idx < n) {
         float fa = fp8_e4m3_to_f32(a[idx].data);
         float fb = fp8_e4m3_to_f32(b[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(powf(fa, fb)));
+        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(numr_pow_safe(fa, fb)));
     }
 }
 
@@ -1259,7 +1262,7 @@ __global__ void pow_fp8_e5m2(const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, num
     if (idx < n) {
         float fa = fp8_e5m2_to_f32(a[idx].data);
         float fb = fp8_e5m2_to_f32(b[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(powf(fa, fb)));
+        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(numr_pow_safe(fa, fb)));
     }
 }
 

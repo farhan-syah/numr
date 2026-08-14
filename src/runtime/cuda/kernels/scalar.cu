@@ -46,7 +46,7 @@ __global__ void div_scalar_f32(const float* a, float scalar, float* out, unsigne
 __global__ void pow_scalar_f32(const float* a, float scalar, float* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = powf(a[idx], scalar);
+        out[idx] = numr_pow_safe(a[idx], scalar);
     }
 }
 
@@ -92,7 +92,7 @@ __global__ void div_scalar_f64(const double* a, double scalar, double* out, unsi
 __global__ void pow_scalar_f64(const double* a, double scalar, double* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = pow(a[idx], scalar);
+        out[idx] = numr_pow_safe(a[idx], scalar);
     }
 }
 
@@ -145,7 +145,7 @@ __global__ void pow_scalar_f16(const __half* a, float scalar, __half* out, unsig
     if (idx < n) {
         // Use FP32 for pow computation (more accurate)
         float af = __half2float(a[idx]);
-        out[idx] = __float2half(powf(af, scalar));
+        out[idx] = __float2half(numr_pow_safe(af, scalar));
     }
 }
 
@@ -215,7 +215,7 @@ __global__ void pow_scalar_bf16(const __nv_bfloat16* a, float scalar, __nv_bfloa
     if (idx < n) {
         // Use FP32 for pow computation (more accurate)
         float af = __bfloat162float(a[idx]);
-        out[idx] = __float2bfloat16(powf(af, scalar));
+        out[idx] = __float2bfloat16(numr_pow_safe(af, scalar));
     }
 }
 
@@ -351,7 +351,7 @@ __global__ void pow_scalar_fp8_e4m3(const numr_fp8_e4m3* a, float scalar, numr_f
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         float af = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(powf(af, scalar)));
+        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(numr_pow_safe(af, scalar)));
     }
 }
 
@@ -404,7 +404,7 @@ __global__ void pow_scalar_fp8_e5m2(const numr_fp8_e5m2* a, float scalar, numr_f
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         float af = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(powf(af, scalar)));
+        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(numr_pow_safe(af, scalar)));
     }
 }
 
