@@ -20,14 +20,27 @@ pub(crate) fn native_reduce_op(
     let _dtype = a.dtype();
     let shape = a.shape();
 
-    if dims.is_empty() {
-        // Full reduction
-        return native_full_reduce(client, op, a);
+    // Empty dims means reduce every dimension, matching CPU and CUDA. Normalizing
+    // here rather than taking a separate path keeps `keepdim` honored throughout.
+    let dims: Vec<usize> = if dims.is_empty() {
+        (0..shape.len()).collect()
+    } else {
+        dims.to_vec()
+    };
+
+    // The output shape is the same regardless of which path computes the values.
+    let out_shape = reduce_output_shape(shape, &dims, keepdim);
+
+    // Reducing every dimension has a dedicated two-pass kernel that is cheaper
+    // than chaining one reduction per dimension.
+    if dims.len() == shape.len() && dims.len() > 1 {
+        let result = native_full_reduce(client, op, a)?;
+        return result.reshape(&out_shape);
     }
 
     // For multi-dim reduction, reduce one dimension at a time
     if dims.len() > 1 {
-        let mut sorted_dims = dims.to_vec();
+        let mut sorted_dims = dims.clone();
         sorted_dims.sort_by(|a, b| b.cmp(a)); // Sort in descending order
 
         let mut result = a.clone();
@@ -36,10 +49,7 @@ pub(crate) fn native_reduce_op(
         }
 
         // Every reduced dim is still present as size 1, so drop them in one step.
-        // Reducing every dim must collapse to a scalar, not to `[1]`, or the
-        // result stops matching CPU and broadcasts wrongly in autograd.
         if !keepdim {
-            let out_shape = reduce_output_shape(shape, dims, false);
             result = result.reshape(&out_shape)?;
         }
 
@@ -47,8 +57,7 @@ pub(crate) fn native_reduce_op(
     }
 
     // Single dimension reduction
-    let dim = dims[0];
-    native_single_dim_reduce(client, op, a, dim, keepdim)
+    native_single_dim_reduce(client, op, a, dims[0], keepdim)
 }
 
 fn native_single_dim_reduce(
@@ -77,19 +86,8 @@ fn native_single_dim_reduce(
     let inner_size: usize = shape[dim + 1..].iter().product();
     let numel_out = outer_size * inner_size;
 
-    // Output shape
-    let out_shape: Vec<usize> = if keepdim {
-        let mut s = shape.to_vec();
-        s[dim] = 1;
-        s
-    } else {
-        let mut s: Vec<usize> = shape[..dim].to_vec();
-        s.extend_from_slice(&shape[dim + 1..]);
-        if s.is_empty() {
-            s.push(1);
-        }
-        s
-    };
+    // Reducing the only dimension of a 1-D tensor must give a scalar, not `[1]`.
+    let out_shape = reduce_output_shape(shape, &[dim], keepdim);
 
     let out = alloc_output(client, &out_shape, dtype);
 
@@ -414,19 +412,8 @@ pub(crate) fn native_argreduce_op(
     let inner_size: usize = shape[dim + 1..].iter().product();
     let numel_out = outer_size * inner_size;
 
-    // Output shape
-    let out_shape: Vec<usize> = if keepdim {
-        let mut s = shape.to_vec();
-        s[dim] = 1;
-        s
-    } else {
-        let mut s: Vec<usize> = shape[..dim].to_vec();
-        s.extend_from_slice(&shape[dim + 1..]);
-        if s.is_empty() {
-            s.push(1);
-        }
-        s
-    };
+    // Reducing the only dimension of a 1-D tensor must give a scalar, not `[1]`.
+    let out_shape = reduce_output_shape(shape, &[dim], keepdim);
 
     // Output indices as I32 (WebGPU doesn't support I64, shader uses u32)
     let out = alloc_output(client, &out_shape, DType::I32);
