@@ -1,10 +1,51 @@
+<div align="center">
+
 # numr
 
-**Foundational numerical computing for Rust**
+<h3>Numerical computing in Rust. Write once. Run on any backend.</h3>
 
-`numr` provides n-dimensional tensors, linear algebra, FFT, statistics, and automatic differentiation—with native GPU acceleration across CPU, CUDA, and WebGPU backends.
+<p>
+N-dimensional tensors, linear algebra, FFT, statistics, and autograd — with
+native CPU, CUDA, and WebGPU kernels, so the same code runs anywhere without a
+vendor library in sight.
+</p>
 
-`numr` is like Numpy in Rust but built with gradients, GPUs, and modern dtypes built-in from day one.
+<p>
+  <a href="https://docs.rs/numr"><strong>Docs</strong></a>
+  ·
+  <a href="https://crates.io/crates/numr"><strong>Crate</strong></a>
+  ·
+  <a href="#operations"><strong>Operations</strong></a>
+  ·
+  <a href="#quick-start"><strong>Example</strong></a>
+  ·
+  <a href="CONTRIBUTING.md"><strong>Contributing</strong></a>
+</p>
+
+<p>
+  <a href="https://discord.gg/jBhFk9kHPg">
+    <img src="https://img.shields.io/discord/1453357769720594543?label=Discord&logo=discord&logoColor=white&color=5865F2" alt="Join the Discord">
+  </a>
+</p>
+
+<p>
+  <a href="https://crates.io/crates/numr">
+    <img src="https://img.shields.io/crates/v/numr" alt="crates.io">
+  </a>
+  <a href="https://docs.rs/numr">
+    <img src="https://img.shields.io/docsrs/numr" alt="docs.rs">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/crates/l/numr" alt="License">
+  </a>
+  <a href="https://github.com/ml-rust/numr/stargazers">
+    <img src="https://img.shields.io/github/stars/ml-rust/numr?style=social" alt="GitHub stars">
+  </a>
+</p>
+
+</div>
+
+numr is NumPy for Rust, with gradients, GPUs, and modern dtypes built in from day one rather than bolted on. Tensors are generic over a `Runtime`, so switching from CPU to CUDA or WebGPU is a type parameter, not a rewrite.
 
 ## What numr Is
 
@@ -528,7 +569,7 @@ fn main() -> Result<()> {
 
 ```toml
 [dependencies]
-numr = "*"
+numr = "0.6"
 ```
 
 ### With GPU Support
@@ -536,17 +577,17 @@ numr = "*"
 ```toml
 [dependencies]
 # NVIDIA CUDA (requires CUDA 12.0+)
-numr = { version = "*", features = ["cuda"] }
+numr = { version = "0.6", features = ["cuda"] }
 
 # Cross-platform GPU (NVIDIA, AMD, Intel, Apple)
-numr = { version = "*", features = ["wgpu"] }
+numr = { version = "0.6", features = ["wgpu"] }
 ```
 
 ### With Optional Features
 
 ```toml
 [dependencies]
-numr = { version = "*", features = [
+numr = { version = "0.6", features = [
     "cuda",      # NVIDIA GPU support
     "wgpu",      # Cross-platform GPU (WebGPU)
     "f16",       # Half-precision (F16, BF16)
@@ -556,16 +597,19 @@ numr = { version = "*", features = [
 
 ## Feature Flags
 
-| Feature  | Description                                         | Default |
-| -------- | --------------------------------------------------- | ------- |
-| `cpu`    | CPU backend (AVX-512/AVX2 on x86-64, NEON on ARM64) | ✓       |
-| `cuda`   | NVIDIA CUDA backend                                 | ✗       |
-| `wgpu`   | Cross-platform GPU (WebGPU)                         | ✗       |
-| `rayon`  | Multi-threaded CPU via Rayon                        | ✓       |
-| `f16`    | Half-precision floats (F16, BF16)                   | ✗       |
-| `fp8`    | FP8 precision (E4M3, E5M2)                          | ✗       |
-| `sparse` | Sparse tensor support (CSR, CSC, COO)               | ✗       |
-| `nccl`   | Multi-GPU communication via NCCL                    | ✗       |
+The CPU backend is always available and needs no feature flag.
+
+| Feature           | Description                                     | Default |
+| ----------------- | ----------------------------------------------- | ------- |
+| `rayon`           | Multi-threaded CPU via Rayon                    | ✓       |
+| `cuda`            | NVIDIA CUDA backend (requires CUDA 12.x)        | ✗       |
+| `wgpu`            | Cross-platform GPU (WebGPU)                     | ✗       |
+| `f16`             | Half-precision floats (F16, BF16)               | ✗       |
+| `fp8`             | FP8 precision (E4M3, E5M2)                      | ✗       |
+| `sparse`          | Sparse tensor support (CSR, CSC, COO)           | ✗       |
+| `nccl`            | Multi-GPU communication via NCCL (implies CUDA) | ✗       |
+| `distributed`     | Distributed runtime via nexar                   | ✗       |
+| `distributed-gpu` | Distributed with NCCL-accelerated collectives   | ✗       |
 
 ## Building from Source
 
@@ -631,6 +675,14 @@ numr provides default kernels for all operations. You can also:
 
 For detailed guidance on writing custom kernels, adding new operations, and backend-specific optimization techniques, see **[docs/extending-numr.md](docs/extending-numr.md)**.
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the architecture conventions, backend parity requirements, and local quality gates.
+
+The most useful contributions are usually a missing primitive, or a CUDA/WebGPU implementation for an operation that only runs on CPU today. For anything non-trivial, open an issue first so we can agree on placement and API.
+
+Questions and design discussion happen on [Discord](https://discord.gg/jBhFk9kHPg).
+
 ## License
 
-Apache-2.0
+Licensed under Apache-2.0. See [LICENSE](LICENSE).
