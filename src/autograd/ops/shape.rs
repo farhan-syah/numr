@@ -47,7 +47,10 @@ impl<R: Runtime> ReshapeBackward<R> {
 
 impl<R: Runtime> GradFn<R> for ReshapeBackward<R> {
     fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
-        // Reshape gradient back to input shape
+        // Reshape gradient back to input shape. grad_output may be a
+        // non-contiguous view (e.g. after a transpose/permute), and
+        // `reshape` requires contiguity.
+        let grad_output = super::ensure_contiguous(grad_output)?;
         let grad = grad_output.reshape(&self.input_shape)?;
         Ok(vec![Some(grad)])
     }
@@ -56,7 +59,8 @@ impl<R: Runtime> GradFn<R> for ReshapeBackward<R> {
         // Reshape gradient back to input shape
         // Reshape is a view operation with identity Jacobian, so we just
         // reshape and preserve the gradient function from grad_output
-        let reshaped = grad_output.tensor().reshape(&self.input_shape)?;
+        let grad_output_tensor = super::ensure_contiguous(grad_output.tensor())?;
+        let reshaped = grad_output_tensor.reshape(&self.input_shape)?;
 
         // Create ReshapeBackward to track the chain
         let grad_fn = ReshapeBackward::<R>::new(
@@ -737,6 +741,48 @@ mod tests {
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[2, 3]);
+    }
+
+    #[test]
+    fn test_reshape_backward_non_contiguous_grad_output() {
+        let device = CpuDevice::new();
+
+        // grad_output is [3, 2] but transposed to a non-contiguous [2, 3]
+        // view before being fed into backward(); reshape must still work.
+        let grad_source =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device);
+        let grad_out = grad_source.t().unwrap();
+        assert!(!grad_out.is_contiguous());
+
+        let backward = ReshapeBackward::<CpuRuntime>::new(TensorId::new(), vec![2, 3], None);
+        let grads = backward.backward(&grad_out).unwrap();
+
+        let grad = grads[0].as_ref().unwrap();
+        assert_eq!(grad.shape(), &[2, 3]);
+        let values: Vec<f32> = grad.contiguous().unwrap().to_vec();
+        // grad_source row-major [3,2] = [[1,2],[3,4],[5,6]]; transposed [2,3]
+        // = [[1,3,5],[2,4,6]]; reshaped back to [2,3] reads the transposed
+        // data in row-major order.
+        assert_eq!(values, vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0]);
+    }
+
+    #[test]
+    fn test_reshape_backward_var_non_contiguous_grad_output() {
+        let device = CpuDevice::new();
+
+        let grad_source =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device);
+        let grad_out_tensor = grad_source.t().unwrap();
+        assert!(!grad_out_tensor.is_contiguous());
+        let grad_out_var = Var::new(grad_out_tensor, true);
+
+        let backward = ReshapeBackward::<CpuRuntime>::new(TensorId::new(), vec![2, 3], None);
+        let grads = backward.backward_var(&grad_out_var).unwrap();
+
+        let grad = grads[0].as_ref().unwrap();
+        assert_eq!(grad.shape(), &[2, 3]);
+        let values: Vec<f32> = grad.tensor().contiguous().unwrap().to_vec();
+        assert_eq!(values, vec![1.0, 3.0, 5.0, 2.0, 4.0, 6.0]);
     }
 
     #[test]

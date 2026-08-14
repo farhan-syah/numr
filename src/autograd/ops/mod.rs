@@ -13,10 +13,13 @@
 //! - `scalar`: Tensor-scalar operations (add_scalar, mul_scalar, etc.)
 //! - `linalg`: Linear algebra operations (trace, inverse, det, solve, cholesky)
 //! - `shape`: Shape operations (reshape, transpose, permute, broadcast)
+//! - `broadcast`: Gradient reduction over broadcast dimensions
 
 mod activation;
 mod arithmetic;
+mod broadcast;
 mod cast;
+mod common;
 mod cumulative;
 mod gemm_epilogue;
 mod indexing;
@@ -27,6 +30,8 @@ mod reduce;
 mod scalar;
 mod shape;
 mod unary;
+
+pub(crate) use common::ensure_contiguous;
 
 pub use activation::*;
 pub use arithmetic::*;

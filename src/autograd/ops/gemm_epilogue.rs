@@ -1,5 +1,6 @@
 //! Backward implementation for fused GEMM + bias + activation
 
+use super::broadcast::{reduce_grad_for_broadcast, reduce_var_for_broadcast};
 use crate::autograd::GradFn;
 use crate::autograd::var::Var;
 use crate::autograd::var_ops::{var_matmul, var_sum};
@@ -60,11 +61,16 @@ where
 
         // d_a = grad_pre @ B^T
         let b_t = b.transpose(-2, -1)?;
-        let d_a = client.matmul(&grad_pre, &b_t)?;
+        let d_a_full = client.matmul(&grad_pre, &b_t)?;
 
         // d_b = A^T @ grad_pre
         let a_t = a.transpose(-2, -1)?;
-        let d_b = client.matmul(&a_t, &grad_pre)?;
+        let d_b_full = client.matmul(&a_t, &grad_pre)?;
+
+        // Batch dims may have been broadcast during forward: sum each operand's
+        // gradient back over the dims where that operand had extent 1.
+        let d_a = reduce_grad_for_broadcast::<R>(&d_a_full, a.shape())?;
+        let d_b = reduce_grad_for_broadcast::<R>(&d_b_full, b.shape())?;
 
         // d_bias = sum(grad_pre, batch_and_row_dims)
         let ndim = grad_output.ndim();
@@ -108,12 +114,17 @@ where
         // d_a = grad_pre @ B^T
         let b_t = b.transpose(-2, -1)?;
         let b_t_var = Var::new(b_t, false);
-        let d_a = var_matmul(&grad_pre, &b_t_var, &client)?;
+        let d_a_full = var_matmul(&grad_pre, &b_t_var, &client)?;
 
         // d_b = A^T @ grad_pre
         let a_t = a.transpose(-2, -1)?;
         let a_t_var = Var::new(a_t, false);
-        let d_b = var_matmul(&a_t_var, &grad_pre, &client)?;
+        let d_b_full = var_matmul(&a_t_var, &grad_pre, &client)?;
+
+        // Batch dims may have been broadcast during forward: sum each operand's
+        // gradient back over the dims where that operand had extent 1.
+        let d_a = reduce_var_for_broadcast(&d_a_full, a.shape(), &client)?;
+        let d_b = reduce_var_for_broadcast(&d_b_full, b.shape(), &client)?;
 
         // d_bias = sum(grad_pre, batch_dims)
         let ndim = grad_output.tensor().ndim();
@@ -233,5 +244,114 @@ where
             let deriv = client.add(&term1, &term2)?;
             client.mul(grad, &deriv)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dtype::DType;
+    use crate::runtime::cpu::{CpuDevice, CpuRuntime};
+
+    /// A: [2,2,1,2] @ B: [2,1,2,1] -> [2,2,1,1], B broadcast over the MIDDLE
+    /// batch dim. d_b must be summed back to [2,1,2,1].
+    ///
+    /// With identity activation and grad_out = ones:
+    ///   d_a[i,j] = B[i]^T          -> [10,20] / [30,40]
+    ///   d_b[i]   = A[i,0]^T + A[i,1]^T -> [4,6] / [12,14]
+    ///   d_bias   = sum(grad_out)   -> [4]
+    fn broadcast_case() -> (
+        CpuDevice,
+        Tensor<CpuRuntime>,
+        Tensor<CpuRuntime>,
+        Tensor<CpuRuntime>,
+    ) {
+        let device = CpuDevice::new();
+        let a = Tensor::<CpuRuntime>::from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[2, 2, 1, 2],
+            &device,
+        );
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 1, 2, 1], &device);
+        let bias = Tensor::<CpuRuntime>::zeros(&[1], DType::F32, &device);
+        (device, a, b, bias)
+    }
+
+    #[test]
+    fn test_gemm_epilogue_backward_broadcast_middle_batch_dim() {
+        let (device, a, b, bias) = broadcast_case();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device);
+
+        let backward = MatmulBiasActivationBackward::<CpuRuntime>::new(
+            a.id(),
+            b.id(),
+            bias.id(),
+            a.clone(),
+            b.clone(),
+            bias.clone(),
+            GemmActivation::None,
+            None,
+            None,
+            None,
+        );
+        let grads = backward.backward(&grad_out).unwrap();
+
+        let d_a = grads[0].as_ref().unwrap();
+        assert_eq!(d_a.shape(), &[2, 2, 1, 2]);
+        let d_a_data: Vec<f32> = d_a.contiguous().unwrap().to_vec();
+        assert_eq!(
+            d_a_data,
+            vec![10.0, 20.0, 10.0, 20.0, 30.0, 40.0, 30.0, 40.0]
+        );
+
+        let d_b = grads[1].as_ref().unwrap();
+        assert_eq!(d_b.shape(), &[2, 1, 2, 1]);
+        let d_b_data: Vec<f32> = d_b.contiguous().unwrap().to_vec();
+        assert_eq!(d_b_data, vec![4.0, 6.0, 12.0, 14.0]);
+
+        let d_bias = grads[2].as_ref().unwrap();
+        let d_bias_data: Vec<f32> = d_bias.contiguous().unwrap().to_vec();
+        assert_eq!(d_bias_data, vec![4.0]);
+    }
+
+    #[test]
+    fn test_gemm_epilogue_backward_var_broadcast_middle_batch_dim() {
+        let (device, a, b, bias) = broadcast_case();
+        let grad_out = Var::new(
+            Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device),
+            true,
+        );
+
+        let backward = MatmulBiasActivationBackward::<CpuRuntime>::new(
+            a.id(),
+            b.id(),
+            bias.id(),
+            a.clone(),
+            b.clone(),
+            bias.clone(),
+            GemmActivation::None,
+            None,
+            None,
+            None,
+        );
+        let grads = backward.backward_var(&grad_out).unwrap();
+
+        let d_a = grads[0].as_ref().unwrap();
+        assert_eq!(d_a.shape(), &[2, 2, 1, 2]);
+        let d_a_data: Vec<f32> = d_a.tensor().contiguous().unwrap().to_vec();
+        assert_eq!(
+            d_a_data,
+            vec![10.0, 20.0, 10.0, 20.0, 30.0, 40.0, 30.0, 40.0]
+        );
+
+        let d_b = grads[1].as_ref().unwrap();
+        assert_eq!(d_b.shape(), &[2, 1, 2, 1]);
+        let d_b_data: Vec<f32> = d_b.tensor().contiguous().unwrap().to_vec();
+        assert_eq!(d_b_data, vec![4.0, 6.0, 12.0, 14.0]);
+
+        let d_bias = grads[2].as_ref().unwrap();
+        let d_bias_data: Vec<f32> = d_bias.tensor().contiguous().unwrap().to_vec();
+        assert_eq!(d_bias_data, vec![4.0]);
     }
 }

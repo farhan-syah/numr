@@ -2,6 +2,7 @@
 //!
 //! Implements gradient computation for matmul: C = A @ B
 
+use super::broadcast::{reduce_grad_for_broadcast, reduce_var_for_broadcast};
 use crate::autograd::var_ops::var_matmul;
 use crate::autograd::{GradFn, Var};
 use crate::error::Result;
@@ -60,11 +61,16 @@ where
 
         // Transpose B: swap last two dimensions
         let b_t = saved_b.t()?;
-        let grad_a = client.matmul(grad_output, &b_t)?;
+        let grad_a_full = client.matmul(grad_output, &b_t)?;
 
         // Transpose A: swap last two dimensions
         let a_t = saved_a.t()?;
-        let grad_b = client.matmul(&a_t, grad_output)?;
+        let grad_b_full = client.matmul(&a_t, grad_output)?;
+
+        // Batch dims may have been broadcast during forward: sum each operand's
+        // gradient back over the dims where that operand had extent 1.
+        let grad_a = reduce_grad_for_broadcast::<R>(&grad_a_full, saved_a.shape())?;
+        let grad_b = reduce_grad_for_broadcast::<R>(&grad_b_full, saved_b.shape())?;
 
         Ok(vec![Some(grad_a), Some(grad_b)])
     }
@@ -102,13 +108,18 @@ where
         let b_t_var = var_transpose(&b_var)?;
 
         // dL/dA = dL/dC @ B^T
-        let grad_a = var_matmul(grad_output, &b_t_var, &client)?;
+        let grad_a_full = var_matmul(grad_output, &b_t_var, &client)?;
 
         // Transpose A using var_transpose to maintain gradient chain
         let a_t_var = var_transpose(&a_var)?;
 
         // dL/dB = A^T @ dL/dC
-        let grad_b = var_matmul(&a_t_var, grad_output, &client)?;
+        let grad_b_full = var_matmul(&a_t_var, grad_output, &client)?;
+
+        // Batch dims may have been broadcast during forward: sum each operand's
+        // gradient back over the dims where that operand had extent 1.
+        let grad_a = reduce_var_for_broadcast(&grad_a_full, saved_a.shape(), &client)?;
+        let grad_b = reduce_var_for_broadcast(&grad_b_full, saved_b.shape(), &client)?;
 
         Ok(vec![Some(grad_a), Some(grad_b)])
     }
@@ -194,5 +205,145 @@ mod tests {
         assert_eq!(grad_b.shape(), &[3, 1]);
         let grad_b_data: Vec<f32> = grad_b.to_vec();
         assert_eq!(grad_b_data, vec![1.0, 2.0, 3.0]);
+    }
+
+    /// A: [2,3,4,5] @ B: [2,1,5,6] -> [2,3,4,6].
+    /// B is broadcast over the MIDDLE batch dim, so dL/dB must be summed back
+    /// to [2,1,5,6] rather than left at the output's [2,3,5,6].
+    #[test]
+    fn test_matmul_backward_broadcast_middle_batch_dim_shapes() {
+        let device = CpuDevice::new();
+
+        let a = Tensor::<CpuRuntime>::ones(&[2, 3, 4, 5], DType::F32, &device);
+        let b = Tensor::<CpuRuntime>::ones(&[2, 1, 5, 6], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 3, 4, 6], DType::F32, &device);
+
+        let backward =
+            MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
+        let grads = backward.backward(&grad_out).unwrap();
+
+        // dL/dA = dL/dC @ B^T: each entry sums over N=6 ones.
+        let grad_a = grads[0].as_ref().unwrap();
+        assert_eq!(grad_a.shape(), &[2, 3, 4, 5]);
+        let grad_a_data: Vec<f32> = grad_a.contiguous().unwrap().to_vec();
+        assert!(grad_a_data.iter().all(|&v| v == 6.0));
+
+        // dL/dB = A^T @ dL/dC, reduced over the broadcast dim 1 (extent 3).
+        // Each entry sums over M=4 ones, then over the 3 broadcast slices: 4*3 = 12.
+        let grad_b = grads[1].as_ref().unwrap();
+        assert_eq!(grad_b.shape(), &[2, 1, 5, 6]);
+        let grad_b_data: Vec<f32> = grad_b.contiguous().unwrap().to_vec();
+        assert!(grad_b_data.iter().all(|&v| v == 12.0));
+    }
+
+    /// Small hand-computed middle-batch-dim broadcast case.
+    ///
+    /// A: [2,2,1,2] with rows
+    ///   A[0,0]=[1,2]  A[0,1]=[3,4]  A[1,0]=[5,6]  A[1,1]=[7,8]
+    /// B: [2,1,2,1] with columns B[0]=[10,20]^T, B[1]=[30,40]^T
+    /// grad_out: ones [2,2,1,1]
+    ///
+    /// dL/dA[i,j] = grad_out * B[i]^T = B[i]^T (no reduction; A is not broadcast)
+    /// dL/dB[i]   = sum_j A[i,j]^T * grad_out = A[i,0]^T + A[i,1]^T
+    ///            = [1+3, 2+4] = [4,6] and [5+7, 6+8] = [12,14]
+    #[test]
+    fn test_matmul_backward_broadcast_middle_batch_dim_values() {
+        let device = CpuDevice::new();
+
+        let a = Tensor::<CpuRuntime>::from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[2, 2, 1, 2],
+            &device,
+        );
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 1, 2, 1], &device);
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device);
+
+        let backward =
+            MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
+        let grads = backward.backward(&grad_out).unwrap();
+
+        let grad_a = grads[0].as_ref().unwrap();
+        assert_eq!(grad_a.shape(), &[2, 2, 1, 2]);
+        let grad_a_data: Vec<f32> = grad_a.contiguous().unwrap().to_vec();
+        assert_eq!(
+            grad_a_data,
+            vec![10.0, 20.0, 10.0, 20.0, 30.0, 40.0, 30.0, 40.0]
+        );
+
+        let grad_b = grads[1].as_ref().unwrap();
+        assert_eq!(grad_b.shape(), &[2, 1, 2, 1]);
+        let grad_b_data: Vec<f32> = grad_b.contiguous().unwrap().to_vec();
+        assert_eq!(grad_b_data, vec![4.0, 6.0, 12.0, 14.0]);
+    }
+
+    /// Same broadcast case through the Var path, which must mirror `backward`.
+    #[test]
+    fn test_matmul_backward_var_broadcast_middle_batch_dim() {
+        let device = CpuDevice::new();
+
+        let a = Tensor::<CpuRuntime>::from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[2, 2, 1, 2],
+            &device,
+        );
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 1, 2, 1], &device);
+        let grad_out = Var::new(
+            Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device),
+            true,
+        );
+
+        let backward =
+            MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
+        let grads = backward.backward_var(&grad_out).unwrap();
+
+        let grad_a = grads[0].as_ref().unwrap();
+        assert_eq!(grad_a.shape(), &[2, 2, 1, 2]);
+        let grad_a_data: Vec<f32> = grad_a.tensor().contiguous().unwrap().to_vec();
+        assert_eq!(
+            grad_a_data,
+            vec![10.0, 20.0, 10.0, 20.0, 30.0, 40.0, 30.0, 40.0]
+        );
+
+        let grad_b = grads[1].as_ref().unwrap();
+        assert_eq!(grad_b.shape(), &[2, 1, 2, 1]);
+        let grad_b_data: Vec<f32> = grad_b.tensor().contiguous().unwrap().to_vec();
+        assert_eq!(grad_b_data, vec![4.0, 6.0, 12.0, 14.0]);
+    }
+
+    /// Leading-batch-dim broadcast: A: [2,1,3] @ B: [1,3,2] -> [2,1,2].
+    #[test]
+    fn test_matmul_backward_broadcast_leading_batch_dim() {
+        let device = CpuDevice::new();
+
+        let a = Tensor::<CpuRuntime>::from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 1, 3],
+            &device,
+        );
+        let b = Tensor::<CpuRuntime>::from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[1, 3, 2],
+            &device,
+        );
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1, 2], DType::F32, &device);
+
+        let backward =
+            MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
+        let grads = backward.backward(&grad_out).unwrap();
+
+        // dL/dA = ones[1,2] @ B^T[2,3]; row sums of B: [3, 7, 11], same for both batches.
+        let grad_a = grads[0].as_ref().unwrap();
+        assert_eq!(grad_a.shape(), &[2, 1, 3]);
+        let grad_a_data: Vec<f32> = grad_a.contiguous().unwrap().to_vec();
+        assert_eq!(grad_a_data, vec![3.0, 7.0, 11.0, 3.0, 7.0, 11.0]);
+
+        // dL/dB = A^T @ ones, summed over the broadcast batch dim:
+        // (A[0] + A[1]) broadcast across N=2 -> [[5,5],[7,7],[9,9]]
+        let grad_b = grads[1].as_ref().unwrap();
+        assert_eq!(grad_b.shape(), &[1, 3, 2]);
+        let grad_b_data: Vec<f32> = grad_b.contiguous().unwrap().to_vec();
+        assert_eq!(grad_b_data, vec![5.0, 5.0, 7.0, 7.0, 9.0, 9.0]);
     }
 }

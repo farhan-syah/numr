@@ -65,10 +65,15 @@ where
         let spatial: usize = shape[2..].iter().product::<usize>().max(1);
         let group_size = cpg * spatial;
 
-        // Flatten to [B, G, C/G * spatial] for per-group normalization
+        // Flatten to [B, G, C/G * spatial] for per-group normalization.
+        // `input`/`grad_output` may be non-contiguous views (saved_input is
+        // a clone of whatever the caller passed; grad_output may come from
+        // a transpose/permute upstream), and `reshape` requires contiguity.
         let flat_shape = [batch, self.num_groups, group_size];
-        let input_flat = input.reshape(&flat_shape)?;
-        let grad_flat = grad_output.reshape(&flat_shape)?;
+        let input_contig = super::super::ensure_contiguous(input)?;
+        let grad_output_contig = super::super::ensure_contiguous(grad_output)?;
+        let input_flat = input_contig.reshape(&flat_shape)?;
+        let grad_flat = grad_output_contig.reshape(&flat_shape)?;
 
         // Per-group mean and variance: reduce over dim 2
         let mu = client.mean(&input_flat, &[2], true)?;
@@ -81,7 +86,10 @@ where
         let x_norm_flat = client.mul(&x_centered, &rstd)?;
 
         // Reshape weight [C] → [1, G, cpg, 1] → broadcast → [1, G, cpg, spatial] → [1, G, group_size]
-        let weight_4d = weight.reshape(&[1, self.num_groups, cpg, 1])?;
+        // `weight` (saved_weight) is a clone of whatever the caller passed
+        // in, so it may be a sliced/transposed view.
+        let weight_contig = super::super::ensure_contiguous(weight)?;
+        let weight_4d = weight_contig.reshape(&[1, self.num_groups, cpg, 1])?;
         let weight_bcast = weight_4d
             .broadcast_to(&[1, self.num_groups, cpg, spatial])?
             .contiguous()?;
@@ -100,7 +108,7 @@ where
 
         // x_norm reshaped back to [B, C, spatial]
         let x_norm_bcs = x_norm_flat.reshape(&[batch, channels, spatial])?;
-        let grad_bcs = grad_output.reshape(&[batch, channels, spatial])?;
+        let grad_bcs = grad_output_contig.reshape(&[batch, channels, spatial])?;
 
         // d_weight = sum(grad * x_norm, dims=[0, 2]) → [C]
         let gxn = client.mul(&grad_bcs, &x_norm_bcs)?;
@@ -138,5 +146,134 @@ where
 
     fn name(&self) -> &'static str {
         "GroupNormBackward"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dtype::DType;
+    use crate::runtime::cpu::{CpuDevice, CpuRuntime};
+
+    /// Build a `[rows, cols]` tensor that is logically equal to `data`
+    /// (row-major) but backed by a non-contiguous transposed view, by
+    /// storing the transpose of `data` and calling `.t()` on it.
+    fn non_contiguous_like(
+        data: &[f32],
+        rows: usize,
+        cols: usize,
+        device: &CpuDevice,
+    ) -> Tensor<CpuRuntime> {
+        let mut transposed = vec![0.0f32; data.len()];
+        for r in 0..rows {
+            for c in 0..cols {
+                transposed[c * rows + r] = data[r * cols + c];
+            }
+        }
+        let src = Tensor::<CpuRuntime>::from_slice(&transposed, &[cols, rows], device);
+        let view = src.t().unwrap();
+        assert!(!view.is_contiguous());
+        assert_eq!(view.shape(), &[rows, cols]);
+        view
+    }
+
+    #[test]
+    fn test_group_norm_backward_non_contiguous_grad_output() {
+        let device = CpuDevice::new();
+
+        // batch=2, channels=3, num_groups=1, no spatial dims.
+        let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let grad_data = [0.1f32, 0.2, -0.3, 0.4, -0.5, 0.6];
+
+        let input = Tensor::<CpuRuntime>::from_slice(&input_data, &[2, 3], &device);
+        let weight = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
+
+        let backward = GroupNormBackward::<CpuRuntime>::new(
+            TensorId::new(),
+            TensorId::new(),
+            TensorId::new(),
+            input,
+            weight,
+            1,
+            1e-5,
+            None,
+            None,
+            None,
+        );
+
+        let grad_contig = Tensor::<CpuRuntime>::from_slice(&grad_data, &[2, 3], &device);
+        let grads_contig = backward.backward(&grad_contig).unwrap();
+
+        let grad_noncontig = non_contiguous_like(&grad_data, 2, 3, &device);
+        let grads_noncontig = backward.backward(&grad_noncontig).unwrap();
+
+        for (a, b) in grads_contig.iter().zip(grads_noncontig.iter()) {
+            let a = a.as_ref().unwrap().contiguous().unwrap();
+            let b = b.as_ref().unwrap().contiguous().unwrap();
+            assert_eq!(a.shape(), b.shape());
+            let a_vals: Vec<f32> = a.to_vec();
+            let b_vals: Vec<f32> = b.to_vec();
+            assert_eq!(a_vals, b_vals);
+        }
+
+        // Sanity: results are not trivially zero/empty.
+        let d_input: Vec<f32> = grads_contig[0]
+            .as_ref()
+            .unwrap()
+            .contiguous()
+            .unwrap()
+            .to_vec();
+        assert_eq!(d_input.len(), 6);
+        assert!(d_input.iter().any(|&v| v != 0.0));
+    }
+
+    #[test]
+    fn test_group_norm_backward_non_contiguous_saved_input() {
+        let device = CpuDevice::new();
+
+        let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let grad_data = [0.1f32, 0.2, -0.3, 0.4, -0.5, 0.6];
+
+        let weight_contig = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
+        let grad_output = Tensor::<CpuRuntime>::from_slice(&grad_data, &[2, 3], &device);
+
+        let input_contig = Tensor::<CpuRuntime>::from_slice(&input_data, &[2, 3], &device);
+        let backward_contig = GroupNormBackward::<CpuRuntime>::new(
+            TensorId::new(),
+            TensorId::new(),
+            TensorId::new(),
+            input_contig,
+            weight_contig.clone(),
+            1,
+            1e-5,
+            None,
+            None,
+            None,
+        );
+        let grads_contig = backward_contig.backward(&grad_output).unwrap();
+
+        let input_noncontig = non_contiguous_like(&input_data, 2, 3, &device);
+        let backward_noncontig = GroupNormBackward::<CpuRuntime>::new(
+            TensorId::new(),
+            TensorId::new(),
+            TensorId::new(),
+            input_noncontig,
+            weight_contig,
+            1,
+            1e-5,
+            None,
+            None,
+            None,
+        );
+        let grads_noncontig = backward_noncontig.backward(&grad_output).unwrap();
+
+        for (a, b) in grads_contig.iter().zip(grads_noncontig.iter()) {
+            let a = a.as_ref().unwrap().contiguous().unwrap();
+            let b = b.as_ref().unwrap().contiguous().unwrap();
+            assert_eq!(a.shape(), b.shape());
+            let a_vals: Vec<f32> = a.to_vec();
+            let b_vals: Vec<f32> = b.to_vec();
+            assert_eq!(a_vals, b_vals);
+        }
     }
 }
