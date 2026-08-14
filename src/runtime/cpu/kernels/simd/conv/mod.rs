@@ -1,15 +1,23 @@
 //! SIMD-accelerated convolution kernels
 //!
-//! Provides vectorized implementations of conv1d, conv2d, and depthwise_conv2d.
-//! Vectorizes over input channels using FMA instructions for significant speedup.
+//! Provides vectorized implementations of conv1d, conv2d, depthwise_conv2d and
+//! conv_transpose1d.
 //!
 //! # SIMD Strategy
 //!
-//! The inner loop over input channels is vectorized:
+//! `conv2d` vectorizes the inner loop over INPUT CHANNELS:
 //! - AVX2: Process 8 f32 channels or 4 f64 channels per iteration
 //! - AVX-512: Process 16 f32 channels or 8 f64 channels per iteration
 //!
-//! For convolutions with few input channels (< 8), falls back to scalar.
+//! and falls back to scalar for convolutions with few input channels (< 8).
+//!
+//! `conv1d`, `conv_transpose1d` and `depthwise_conv2d` vectorize over OUTPUT
+//! POSITIONS instead. Channels are `length` elements apart in a `(B, C, L)`
+//! layout, so channel vectorization cannot use a vector load at all, and it
+//! degenerates entirely for depthwise shapes (`c_in_per_group == 1`). Output
+//! positions are contiguous, which makes the weight a scalar broadcast and the
+//! input a contiguous load. Those kernels therefore gate on the OUTPUT SIZE, not
+//! the channel count.
 
 #[cfg(target_arch = "x86_64")]
 mod avx2;
@@ -19,109 +27,26 @@ mod avx512;
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
 
+mod conv1d;
 #[cfg(feature = "f16")]
 mod half;
 mod scalar;
 mod transpose1d;
 
 use super::{SimdLevel, detect_simd};
-use crate::ops::conv_common::{Conv1dParams, Conv2dParams};
+use crate::ops::conv_common::Conv2dParams;
 
+pub use conv1d::{conv1d_f32, conv1d_f64};
 #[cfg(feature = "f16")]
 pub use half::*;
 pub use scalar::*;
 pub use transpose1d::{conv_transpose1d_f32, conv_transpose1d_f64};
 
-/// Minimum input channels to justify SIMD overhead for f32
+/// Minimum work per output row to justify SIMD overhead for f32
 const SIMD_THRESHOLD_F32: usize = 8;
 
-/// Minimum input channels to justify SIMD overhead for f64
+/// Minimum work per output row to justify SIMD overhead for f64
 const SIMD_THRESHOLD_F64: usize = 4;
-
-// ============================================================================
-// Conv1d SIMD dispatch
-// ============================================================================
-
-/// SIMD conv1d for f32
-///
-/// # Safety
-/// - All pointers must be valid and properly aligned
-/// - Arrays must have sufficient size for the operation
-#[inline]
-pub unsafe fn conv1d_f32(
-    input: *const f32,
-    weight: *const f32,
-    bias: Option<*const f32>,
-    output: *mut f32,
-    params: Conv1dParams,
-) {
-    let level = detect_simd();
-    let c_in_per_group = params.c_in / params.groups;
-
-    // Use SIMD only if we have enough channels
-    if c_in_per_group < SIMD_THRESHOLD_F32 || level == SimdLevel::Scalar {
-        conv1d_scalar_f32(input, weight, bias, output, params);
-        return;
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    match level {
-        SimdLevel::Avx512 => avx512::conv1d_f32(input, weight, bias, output, params),
-        SimdLevel::Avx2Fma => avx2::conv1d_f32(input, weight, bias, output, params),
-        _ => conv1d_scalar_f32(input, weight, bias, output, params),
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    match level {
-        SimdLevel::Neon | SimdLevel::NeonFp16 => {
-            aarch64::neon::conv1d_f32(input, weight, bias, output, params)
-        }
-        _ => conv1d_scalar_f32(input, weight, bias, output, params),
-    }
-
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    conv1d_scalar_f32(input, weight, bias, output, params);
-}
-
-/// SIMD conv1d for f64
-///
-/// # Safety
-/// - All pointers must be valid and properly aligned
-/// - Arrays must have sufficient size for the operation
-#[inline]
-pub unsafe fn conv1d_f64(
-    input: *const f64,
-    weight: *const f64,
-    bias: Option<*const f64>,
-    output: *mut f64,
-    params: Conv1dParams,
-) {
-    let level = detect_simd();
-    let c_in_per_group = params.c_in / params.groups;
-
-    if c_in_per_group < SIMD_THRESHOLD_F64 || level == SimdLevel::Scalar {
-        conv1d_scalar_f64(input, weight, bias, output, params);
-        return;
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    match level {
-        SimdLevel::Avx512 => avx512::conv1d_f64(input, weight, bias, output, params),
-        SimdLevel::Avx2Fma => avx2::conv1d_f64(input, weight, bias, output, params),
-        _ => conv1d_scalar_f64(input, weight, bias, output, params),
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    match level {
-        SimdLevel::Neon | SimdLevel::NeonFp16 => {
-            aarch64::neon::conv1d_f64(input, weight, bias, output, params)
-        }
-        _ => conv1d_scalar_f64(input, weight, bias, output, params),
-    }
-
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    conv1d_scalar_f64(input, weight, bias, output, params);
-}
 
 // ============================================================================
 // Conv2d SIMD dispatch

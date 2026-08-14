@@ -1,13 +1,17 @@
-//! AVX-512 convolution kernels
+//! AVX-512 2D convolution kernels
 //!
-//! Vectorizes over input channels using FMA instructions.
+//! `conv2d` vectorizes over input channels using FMA instructions.
 //! - f32: 16 channels per iteration
 //! - f64: 8 channels per iteration
+//!
+//! `depthwise_conv2d` has one channel per group, so it vectorizes over output
+//! width instead. (`conv1d` lives in the `conv1d` submodule, which vectorizes
+//! over output positions for every shape.)
 
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-use crate::ops::conv_common::{Conv1dParams, Conv2dParams};
+use crate::ops::conv_common::Conv2dParams;
 
 const F32_LANES: usize = 16;
 const F64_LANES: usize = 8;
@@ -51,208 +55,6 @@ unsafe fn hsum_f64(v: __m512d) -> f64 {
     let shuf = _mm_unpackhi_pd(sum128, sum128);
     let sum64 = _mm_add_sd(sum128, shuf);
     _mm_cvtsd_f64(sum64)
-}
-
-// ============================================================================
-// Conv1d AVX-512 kernels
-// ============================================================================
-
-/// AVX-512 conv1d for f32
-#[target_feature(enable = "avx512f")]
-pub unsafe fn conv1d_f32(
-    input: *const f32,
-    weight: *const f32,
-    bias: Option<*const f32>,
-    output: *mut f32,
-    params: Conv1dParams,
-) {
-    let Conv1dParams {
-        batch,
-        c_in,
-        length,
-        c_out,
-        kernel_size,
-        stride,
-        dilation,
-        groups,
-        pad_left,
-        pad_right: _,
-        output_length,
-    } = params;
-
-    let c_in_per_group = c_in / groups;
-    let c_out_per_group = c_out / groups;
-    let ic_chunks = c_in_per_group / F32_LANES;
-    let ic_remainder = c_in_per_group % F32_LANES;
-
-    for b in 0..batch {
-        for g in 0..groups {
-            let c_out_start = g * c_out_per_group;
-            let c_in_start = g * c_in_per_group;
-
-            for oc in 0..c_out_per_group {
-                let c_out_idx = c_out_start + oc;
-
-                for ox in 0..output_length {
-                    let mut sum_vec = _mm512_setzero_ps();
-                    let mut sum_scalar = 0.0f32;
-
-                    for kx in 0..kernel_size {
-                        let ix_signed =
-                            (ox * stride) as isize + (kx * dilation) as isize - pad_left as isize;
-
-                        if ix_signed >= 0 && (ix_signed as usize) < length {
-                            let ix = ix_signed as usize;
-
-                            // Vectorized loop over input channels (16 at a time)
-                            for ic_chunk in 0..ic_chunks {
-                                let ic_base = ic_chunk * F32_LANES;
-                                let c_in_idx = c_in_start + ic_base;
-                                let input_base = b * c_in * length + c_in_idx * length + ix;
-                                let weight_base = c_out_idx * c_in_per_group * kernel_size
-                                    + ic_base * kernel_size
-                                    + kx;
-
-                                // Gather 16 input values (strided by length)
-                                let mut in_vals = [0.0f32; F32_LANES];
-                                for i in 0..F32_LANES {
-                                    in_vals[i] = *input.add(input_base + i * length);
-                                }
-                                let input_vec = _mm512_loadu_ps(in_vals.as_ptr());
-
-                                // Gather 16 weight values (strided by kernel_size)
-                                let mut w_vals = [0.0f32; F32_LANES];
-                                for i in 0..F32_LANES {
-                                    w_vals[i] = *weight.add(weight_base + i * kernel_size);
-                                }
-                                let weight_vec = _mm512_loadu_ps(w_vals.as_ptr());
-
-                                sum_vec = _mm512_fmadd_ps(input_vec, weight_vec, sum_vec);
-                            }
-
-                            // Scalar remainder
-                            for ic_rem in 0..ic_remainder {
-                                let ic = ic_chunks * F32_LANES + ic_rem;
-                                let c_in_idx = c_in_start + ic;
-                                let input_idx = b * c_in * length + c_in_idx * length + ix;
-                                let weight_idx = c_out_idx * c_in_per_group * kernel_size
-                                    + ic * kernel_size
-                                    + kx;
-
-                                sum_scalar += *input.add(input_idx) * *weight.add(weight_idx);
-                            }
-                        }
-                    }
-
-                    let mut sum = hsum_f32(sum_vec) + sum_scalar;
-
-                    if let Some(bias_ptr) = bias {
-                        sum += *bias_ptr.add(c_out_idx);
-                    }
-
-                    let output_idx = b * c_out * output_length + c_out_idx * output_length + ox;
-                    *output.add(output_idx) = sum;
-                }
-            }
-        }
-    }
-}
-
-/// AVX-512 conv1d for f64
-#[target_feature(enable = "avx512f")]
-pub unsafe fn conv1d_f64(
-    input: *const f64,
-    weight: *const f64,
-    bias: Option<*const f64>,
-    output: *mut f64,
-    params: Conv1dParams,
-) {
-    let Conv1dParams {
-        batch,
-        c_in,
-        length,
-        c_out,
-        kernel_size,
-        stride,
-        dilation,
-        groups,
-        pad_left,
-        pad_right: _,
-        output_length,
-    } = params;
-
-    let c_in_per_group = c_in / groups;
-    let c_out_per_group = c_out / groups;
-    let ic_chunks = c_in_per_group / F64_LANES;
-    let ic_remainder = c_in_per_group % F64_LANES;
-
-    for b in 0..batch {
-        for g in 0..groups {
-            let c_out_start = g * c_out_per_group;
-            let c_in_start = g * c_in_per_group;
-
-            for oc in 0..c_out_per_group {
-                let c_out_idx = c_out_start + oc;
-
-                for ox in 0..output_length {
-                    let mut sum_vec = _mm512_setzero_pd();
-                    let mut sum_scalar = 0.0f64;
-
-                    for kx in 0..kernel_size {
-                        let ix_signed =
-                            (ox * stride) as isize + (kx * dilation) as isize - pad_left as isize;
-
-                        if ix_signed >= 0 && (ix_signed as usize) < length {
-                            let ix = ix_signed as usize;
-
-                            for ic_chunk in 0..ic_chunks {
-                                let ic_base = ic_chunk * F64_LANES;
-                                let c_in_idx = c_in_start + ic_base;
-                                let input_base = b * c_in * length + c_in_idx * length + ix;
-                                let weight_base = c_out_idx * c_in_per_group * kernel_size
-                                    + ic_base * kernel_size
-                                    + kx;
-
-                                let mut in_vals = [0.0f64; F64_LANES];
-                                for i in 0..F64_LANES {
-                                    in_vals[i] = *input.add(input_base + i * length);
-                                }
-                                let input_vec = _mm512_loadu_pd(in_vals.as_ptr());
-
-                                let mut w_vals = [0.0f64; F64_LANES];
-                                for i in 0..F64_LANES {
-                                    w_vals[i] = *weight.add(weight_base + i * kernel_size);
-                                }
-                                let weight_vec = _mm512_loadu_pd(w_vals.as_ptr());
-
-                                sum_vec = _mm512_fmadd_pd(input_vec, weight_vec, sum_vec);
-                            }
-
-                            for ic_rem in 0..ic_remainder {
-                                let ic = ic_chunks * F64_LANES + ic_rem;
-                                let c_in_idx = c_in_start + ic;
-                                let input_idx = b * c_in * length + c_in_idx * length + ix;
-                                let weight_idx = c_out_idx * c_in_per_group * kernel_size
-                                    + ic * kernel_size
-                                    + kx;
-
-                                sum_scalar += *input.add(input_idx) * *weight.add(weight_idx);
-                            }
-                        }
-                    }
-
-                    let mut sum = hsum_f64(sum_vec) + sum_scalar;
-
-                    if let Some(bias_ptr) = bias {
-                        sum += *bias_ptr.add(c_out_idx);
-                    }
-
-                    let output_idx = b * c_out * output_length + c_out_idx * output_length + ox;
-                    *output.add(output_idx) = sum;
-                }
-            }
-        }
-    }
 }
 
 // ============================================================================

@@ -1,213 +1,22 @@
-//! NEON convolution kernels for ARM64
+//! NEON 2D convolution kernels for ARM64
 //!
-//! Provides vectorized implementations of conv1d, conv2d, and depthwise_conv2d
-//! using 128-bit NEON registers.
+//! Provides vectorized implementations of conv2d and depthwise_conv2d using
+//! 128-bit NEON registers.
 //!
 //! # SIMD Strategy
 //!
-//! Vectorizes over input channels using FMA instructions:
+//! `conv2d` vectorizes over input channels using FMA instructions:
 //! - f32: Process 4 input channels per iteration
 //! - f64: Process 2 input channels per iteration
 //!
-//! For depthwise convolution (1 channel per group), vectorizes over output width.
+//! For depthwise convolution (1 channel per group), vectorizes over output
+//! width. (`conv1d` lives in the `conv1d` submodule, which vectorizes over
+//! output positions for every shape.)
 
 #[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::*;
 
-use crate::ops::conv_common::{Conv1dParams, Conv2dParams};
-
-// ============================================================================
-// Conv1d
-// ============================================================================
-
-/// NEON conv1d for f32
-///
-/// Vectorizes over input channels dimension.
-///
-/// # Safety
-/// - All pointers must be valid and properly aligned
-/// - Arrays must have sufficient size for the operation
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-pub unsafe fn conv1d_f32(
-    input: *const f32,
-    weight: *const f32,
-    bias: Option<*const f32>,
-    output: *mut f32,
-    params: Conv1dParams,
-) {
-    let lanes = 4;
-    let c_in_per_group = params.c_in / params.groups;
-    let c_out_per_group = params.c_out / params.groups;
-    let chunks = c_in_per_group / lanes;
-
-    for b in 0..params.batch {
-        for g in 0..params.groups {
-            let c_in_start = g * c_in_per_group;
-            let c_out_start = g * c_out_per_group;
-
-            for oc in 0..c_out_per_group {
-                let out_c = c_out_start + oc;
-
-                // Initialize with bias if present
-                let bias_val = if let Some(b) = bias {
-                    *b.add(out_c)
-                } else {
-                    0.0
-                };
-
-                for ol in 0..params.output_length {
-                    let mut acc = vdupq_n_f32(bias_val);
-                    let mut scalar_acc = 0.0f32;
-
-                    for k in 0..params.kernel_size {
-                        let il_signed = (ol * params.stride) as isize
-                            + (k * params.dilation) as isize
-                            - params.pad_left as isize;
-                        if il_signed < 0 || (il_signed as usize) >= params.length {
-                            continue;
-                        }
-                        let il = il_signed as usize;
-
-                        // Vectorized over input channels
-                        for chunk in 0..chunks {
-                            let ic_base = chunk * lanes;
-
-                            // Load 4 input values
-                            let in_idx = b * params.c_in * params.length
-                                + (c_in_start + ic_base) * params.length
-                                + il;
-
-                            // Input is [batch, channels, length], need to gather
-                            let in_arr = [
-                                *input.add(in_idx),
-                                *input.add(in_idx + params.length),
-                                *input.add(in_idx + 2 * params.length),
-                                *input.add(in_idx + 3 * params.length),
-                            ];
-                            let v_in = vld1q_f32(in_arr.as_ptr());
-
-                            // Load 4 weight values
-                            let w_idx = out_c * c_in_per_group * params.kernel_size
-                                + ic_base * params.kernel_size
-                                + k;
-                            let w_arr = [
-                                *weight.add(w_idx),
-                                *weight.add(w_idx + params.kernel_size),
-                                *weight.add(w_idx + 2 * params.kernel_size),
-                                *weight.add(w_idx + 3 * params.kernel_size),
-                            ];
-                            let v_w = vld1q_f32(w_arr.as_ptr());
-
-                            // FMA
-                            acc = vfmaq_f32(acc, v_in, v_w);
-                        }
-
-                        // Scalar tail for remaining channels
-                        for ic in (chunks * lanes)..c_in_per_group {
-                            let in_idx = b * params.c_in * params.length
-                                + (c_in_start + ic) * params.length
-                                + il;
-                            let w_idx = out_c * c_in_per_group * params.kernel_size
-                                + ic * params.kernel_size
-                                + k;
-                            scalar_acc += *input.add(in_idx) * *weight.add(w_idx);
-                        }
-                    }
-
-                    // Horizontal sum and store
-                    let sum = vaddvq_f32(acc) + scalar_acc;
-                    let out_idx =
-                        b * params.c_out * params.output_length + out_c * params.output_length + ol;
-                    *output.add(out_idx) = sum;
-                }
-            }
-        }
-    }
-}
-
-/// NEON conv1d for f64
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-pub unsafe fn conv1d_f64(
-    input: *const f64,
-    weight: *const f64,
-    bias: Option<*const f64>,
-    output: *mut f64,
-    params: Conv1dParams,
-) {
-    let lanes = 2;
-    let c_in_per_group = params.c_in / params.groups;
-    let c_out_per_group = params.c_out / params.groups;
-    let chunks = c_in_per_group / lanes;
-
-    for b in 0..params.batch {
-        for g in 0..params.groups {
-            let c_in_start = g * c_in_per_group;
-            let c_out_start = g * c_out_per_group;
-
-            for oc in 0..c_out_per_group {
-                let out_c = c_out_start + oc;
-
-                let bias_val = if let Some(b) = bias {
-                    *b.add(out_c)
-                } else {
-                    0.0
-                };
-
-                for ol in 0..params.output_length {
-                    let mut acc = vdupq_n_f64(bias_val);
-                    let mut scalar_acc = 0.0f64;
-
-                    for k in 0..params.kernel_size {
-                        let il_signed = (ol * params.stride) as isize
-                            + (k * params.dilation) as isize
-                            - params.pad_left as isize;
-                        if il_signed < 0 || (il_signed as usize) >= params.length {
-                            continue;
-                        }
-                        let il = il_signed as usize;
-
-                        for chunk in 0..chunks {
-                            let ic_base = chunk * lanes;
-
-                            let in_idx = b * params.c_in * params.length
-                                + (c_in_start + ic_base) * params.length
-                                + il;
-
-                            let in_arr = [*input.add(in_idx), *input.add(in_idx + params.length)];
-                            let v_in = vld1q_f64(in_arr.as_ptr());
-
-                            let w_idx = out_c * c_in_per_group * params.kernel_size
-                                + ic_base * params.kernel_size
-                                + k;
-                            let w_arr =
-                                [*weight.add(w_idx), *weight.add(w_idx + params.kernel_size)];
-                            let v_w = vld1q_f64(w_arr.as_ptr());
-
-                            acc = vfmaq_f64(acc, v_in, v_w);
-                        }
-
-                        for ic in (chunks * lanes)..c_in_per_group {
-                            let in_idx = b * params.c_in * params.length
-                                + (c_in_start + ic) * params.length
-                                + il;
-                            let w_idx = out_c * c_in_per_group * params.kernel_size
-                                + ic * params.kernel_size
-                                + k;
-                            scalar_acc += *input.add(in_idx) * *weight.add(w_idx);
-                        }
-                    }
-
-                    let sum = vaddvq_f64(acc) + scalar_acc;
-                    let out_idx =
-                        b * params.c_out * params.output_length + out_c * params.output_length + ol;
-                    *output.add(out_idx) = sum;
-                }
-            }
-        }
-    }
-}
+use crate::ops::conv_common::Conv2dParams;
 
 // ============================================================================
 // Conv2d
