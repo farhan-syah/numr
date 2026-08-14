@@ -12,7 +12,7 @@ use crate::runtime::wgpu::ops::helpers::{
     CountParams, FlatToMultiParams, SearchsortedParams, SortParams, TopkParams, UniqueCountsParams,
     alloc_output, create_params_buffer, get_tensor_buffer, pack_u32_array,
 };
-use crate::runtime::wgpu::shaders::sort;
+use crate::runtime::wgpu::shaders::{sort, sort_global};
 use crate::runtime::{RuntimeClient, ensure_contiguous, normalize_dim};
 use crate::tensor::Tensor;
 use wgpu::{Buffer, BufferDescriptor, BufferUsages, MapMode, PollType};
@@ -52,11 +52,15 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         // Allocate output
         let out = alloc_output(self, shape, dtype);
+        if a.numel() == 0 {
+            return Ok(out);
+        }
+
         let a_buf = get_tensor_buffer(&a_contig)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         if sort_size > MAX_SHARED_SORT_SIZE {
-            sort::launch_global_sort(
+            sort_global::launch_global_sort(
                 self.pipeline_cache(),
                 self.wgpu_queue(),
                 &a_buf,
@@ -130,12 +134,16 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let values_out = alloc_output(self, shape, dtype);
         let indices_out = alloc_output(self, shape, DType::I32);
 
+        if a.numel() == 0 {
+            return Ok((values_out, indices_out));
+        }
+
         let a_buf = get_tensor_buffer(&a_contig)?;
         let values_buf = get_tensor_buffer(&values_out)?;
         let indices_buf = get_tensor_buffer(&indices_out)?;
 
         if sort_size > MAX_SHARED_SORT_SIZE {
-            sort::launch_global_sort(
+            sort_global::launch_global_sort(
                 self.pipeline_cache(),
                 self.wgpu_queue(),
                 &a_buf,
@@ -207,11 +215,15 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         let indices_out = alloc_output(self, shape, DType::I32);
 
+        if a.numel() == 0 {
+            return Ok(indices_out);
+        }
+
         let a_buf = get_tensor_buffer(&a_contig)?;
         let indices_buf = get_tensor_buffer(&indices_out)?;
 
         if sort_size > MAX_SHARED_SORT_SIZE {
-            sort::launch_global_sort(
+            sort_global::launch_global_sort(
                 self.pipeline_cache(),
                 self.wgpu_queue(),
                 &a_buf,

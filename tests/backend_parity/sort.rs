@@ -262,6 +262,31 @@ fn test_wgpu_global_f32_orders_nans_and_stabilizes_signed_zero() {
 
 #[cfg(feature = "wgpu")]
 #[test]
+fn test_wgpu_global_sort_family_handles_empty_outer_dimension() {
+    use numr::dtype::DType;
+    use numr::tensor::Tensor;
+
+    with_wgpu_backend(|wgpu_client, wgpu_device| {
+        let input = Tensor::zeros(&[0, 1024], DType::U32, &wgpu_device);
+        let sorted = wgpu_client
+            .sort(&input, 1, false)
+            .expect("sort empty tensor");
+        let argsorted = wgpu_client
+            .argsort(&input, 1, false)
+            .expect("argsort empty tensor");
+        let (values, indices) = wgpu_client
+            .sort_with_indices(&input, 1, false)
+            .expect("sort_with_indices empty tensor");
+
+        assert_eq!(sorted.shape(), &[0, 1024]);
+        assert_eq!(argsorted.shape(), &[0, 1024]);
+        assert_eq!(values.shape(), &[0, 1024]);
+        assert_eq!(indices.shape(), &[0, 1024]);
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
 #[ignore = "large physical-GPU validation"]
 fn test_wgpu_global_sort_one_million_elements() {
     use numr::tensor::Tensor;
