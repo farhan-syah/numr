@@ -421,3 +421,81 @@ fn test_sort_nan_non_power_of_two_parity() {
         }
     );
 }
+
+/// Inputs above the shared-memory tile size take a different WebGPU kernel, so
+/// the ordering contract has to be checked there too.
+#[test]
+fn test_sort_nan_beyond_shared_memory_tile_parity() {
+    // 1000 > the 512-element tile, and not a power of two, so padding is in play.
+    let mut data: Vec<f64> = (0..1000).map(|i| ((i * 37) % 501) as f64 - 250.0).collect();
+    for idx in [0usize, 1, 499, 500, 511, 512, 513, 998, 999] {
+        data[idx] = f64::NAN;
+    }
+    let nan_count = data.iter().filter(|v| v.is_nan()).count();
+
+    parity_case!(
+        "sort ascending with NaN beyond tile",
+        data.clone(),
+        vec![1000],
+        |client, tensor| {
+            let sorted = client.sort(tensor, 0, false).expect("sort failed");
+            let values = readback_f64(&sorted, tensor.dtype());
+            assert_eq!(
+                values.iter().filter(|v| v.is_nan()).count(),
+                nan_count,
+                "NaNs must not be lost or duplicated"
+            );
+            assert!(
+                values[values.len() - nan_count..]
+                    .iter()
+                    .all(|v| v.is_nan()),
+                "NaNs must occupy the tail"
+            );
+            let head = &values[..values.len() - nan_count];
+            assert!(
+                head.windows(2).all(|w| w[0] <= w[1]),
+                "non-NaN prefix sorted"
+            );
+            (values, Vec::<i64>::new())
+        }
+    );
+}
+
+/// Stability above the tile size: duplicates must keep input order in both
+/// directions, which the global path resolves with its own index tiebreak.
+#[test]
+fn test_argsort_duplicate_stability_beyond_tile_parity() {
+    let data: Vec<f64> = (0..900).map(|i| (i % 3) as f64).collect();
+
+    for descending in [false, true] {
+        parity_case!(
+            "argsort duplicate stability beyond tile",
+            data.clone(),
+            vec![900],
+            |client, tensor| {
+                let indices = client
+                    .argsort(tensor, 0, descending)
+                    .expect("argsort failed");
+                let indices = readback_indices(&indices);
+                // Equal keys form runs; within each run indices must ascend.
+                let keys: Vec<f64> = indices.iter().map(|&i| data[i as usize]).collect();
+                for w in keys.windows(2) {
+                    if descending {
+                        assert!(w[0] >= w[1], "keys ordered descending");
+                    } else {
+                        assert!(w[0] <= w[1], "keys ordered ascending");
+                    }
+                }
+                for pair in indices.windows(2) {
+                    if data[pair[0] as usize] == data[pair[1] as usize] {
+                        assert!(
+                            pair[0] < pair[1],
+                            "ties keep input order (descending={descending})"
+                        );
+                    }
+                }
+                (Vec::<f64>::new(), indices)
+            }
+        );
+    }
+}
