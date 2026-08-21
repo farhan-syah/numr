@@ -15,7 +15,7 @@
 //! Short sequences (`length` below the threshold) fall back to scalar, where
 //! the vector prologue would cost more than it saves.
 
-use super::super::{SIMD_THRESHOLD_F32, SIMD_THRESHOLD_F64};
+use super::super::threshold::{SIMD_THRESHOLD_F32, SIMD_THRESHOLD_F64};
 use super::scalar::{conv_transpose1d_scalar_f32, conv_transpose1d_scalar_f64};
 use crate::ops::conv_transpose_common::ConvTranspose1dParams;
 use crate::runtime::cpu::kernels::simd::{SimdLevel, detect_simd};

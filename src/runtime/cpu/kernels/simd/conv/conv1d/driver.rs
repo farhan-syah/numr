@@ -139,7 +139,8 @@ macro_rules! conv1d_body {
                                 let ix = (ox * stride) as isize + (kx * dilation) as isize
                                     - pad_left as isize;
                                 if ix >= 0 && (ix as usize) < length {
-                                    sum += *input.add(x_row + ix as usize) * *weight.add(w_row + kx);
+                                    sum +=
+                                        *input.add(x_row + ix as usize) * *weight.add(w_row + kx);
                                 }
                             }
                         }

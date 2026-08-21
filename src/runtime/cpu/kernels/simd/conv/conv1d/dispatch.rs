@@ -16,7 +16,7 @@
 //! the vector prologue would cost more than it saves.
 
 use super::super::scalar::{conv1d_scalar_f32, conv1d_scalar_f64};
-use super::super::{SIMD_THRESHOLD_F32, SIMD_THRESHOLD_F64};
+use super::super::threshold::{SIMD_THRESHOLD_F32, SIMD_THRESHOLD_F64};
 use crate::ops::conv_common::Conv1dParams;
 use crate::runtime::cpu::kernels::simd::{SimdLevel, detect_simd};
 
