@@ -16,6 +16,28 @@ use crate::error::{Error, Result};
 /// Module name for convolution operations
 pub const CONV_MODULE: &str = "conv";
 
+/// Candidate conv1d block widths (threads per block along the output axis),
+/// narrowest first. `output_length` is as small as ~26 at some hot shapes, so a
+/// fixed 256-wide block would leave most lanes idle; the launcher picks the
+/// narrowest width that still covers the row. The minimum is a full warp, which
+/// the kernel relies on to keep each warp on a single output-channel slot.
+const CONV1D_BLOCK_CANDIDATES: [u32; 4] = [32, 64, 128, 256];
+
+/// Fallback conv1d block width when `output_length` exceeds every candidate.
+const CONV1D_BLOCK_MAX: u32 = 256;
+
+/// Target threads per conv1d block. A narrow row is padded out along the
+/// output-channel axis (`blockDim.y`) instead of being launched as a 32-thread
+/// block, because an SM holds at most 16 blocks and 32-thread blocks would cap
+/// it at 16 of its 48 warp slots.
+const CONV1D_BLOCK_THREADS: u32 = 128;
+
+/// Output channels each thread of `conv1d_oc4_*` accumulates.
+const CONV1D_OC_BLOCK: usize = 4;
+
+/// CUDA caps the y and z grid dimensions at 65535 blocks.
+const CUDA_MAX_GRID_YZ: usize = 65535;
+
 // ============================================================================
 // Conv1d
 // ============================================================================
@@ -62,12 +84,58 @@ pub unsafe fn launch_conv1d(
 
     unsafe {
         let module = get_or_load_module(context, device_index, CONV_MODULE)?;
-        let func_name = kernel_name("conv1d", dtype);
+
+        // Register-block over output channels when a group holds at least
+        // CONV1D_OC_BLOCK of them. Depthwise (c_out_per_group == 1) and other
+        // narrow-group shapes fall back to the scalar kernel, which is the
+        // untiled kernel's work exactly.
+        let c_out_per_group = c_out.checked_div(groups).unwrap_or(0);
+        let oc_blocked =
+            !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2) && c_out_per_group >= CONV1D_OC_BLOCK;
+
+        let base = if oc_blocked { "conv1d_oc4" } else { "conv1d" };
+        let func_name = kernel_name(base, dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
-        let block = (BLOCK_SIZE, 1, 1);
-        let cfg = launch_config(grid, block, 0);
+        // The FP8 conv1d kernel keeps its own legacy flat launch over a linear
+        // index; only the macro-generated float kernels take the (ox, slot,
+        // batch) grid that removes the per-thread integer division.
+        let three_d_grid = !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2);
+
+        let cfg = if three_d_grid {
+            let block_x = CONV1D_BLOCK_CANDIDATES
+                .into_iter()
+                .find(|&w| output_length <= w as usize)
+                .unwrap_or(CONV1D_BLOCK_MAX);
+            let block_y = (CONV1D_BLOCK_THREADS / block_x).max(1);
+
+            // One slot per output channel, or per chunk of CONV1D_OC_BLOCK
+            // channels when the register-blocked kernel runs. Chunking is per
+            // group so the channels a thread blocks over share a c_in range.
+            let slots = if oc_blocked {
+                groups * c_out_per_group.div_ceil(CONV1D_OC_BLOCK)
+            } else {
+                c_out
+            };
+            let grid_y = slots.div_ceil(block_y as usize);
+
+            if grid_y > CUDA_MAX_GRID_YZ || batch > CUDA_MAX_GRID_YZ {
+                return Err(Error::Internal(format!(
+                    "CUDA conv1d: grid y={} z={} exceed the grid limit of {}",
+                    grid_y, batch, CUDA_MAX_GRID_YZ
+                )));
+            }
+
+            let grid = (
+                (output_length as u32).div_ceil(block_x),
+                grid_y as u32,
+                batch as u32,
+            );
+            launch_config(grid, (block_x, block_y, 1), 0)
+        } else {
+            let grid = elementwise_launch_config(total);
+            launch_config(grid, (BLOCK_SIZE, 1, 1), 0)
+        };
 
         let batch_u32 = batch as u32;
         let c_in_u32 = c_in as u32;
