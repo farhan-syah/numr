@@ -127,7 +127,32 @@ fn compile_cuda_kernels() {
 
     // Determine compute capability from NUMR_CUDA_ARCH env var, default sm_80 (Ampere)
     // sm_80 enables tensor cores for F16/BF16, async copy, and other Ampere features
-    let cuda_arch = env::var("NUMR_CUDA_ARCH").unwrap_or_else(|_| "sm_80".to_string());
+    //
+    // Accept the bare capability too (`86`), not just `sm_86`/`compute_86`: `86`
+    // is the form `nvidia-smi --query-gpu=compute_cap` reports (as `8.6`), so it
+    // is the obvious thing to pass, and forwarding it raw makes nvcc die with a
+    // bare "Unsupported gpu architecture '86'" that points at the kernel rather
+    // than at the env var.
+    let cuda_arch = env::var("NUMR_CUDA_ARCH")
+        .map(|v| {
+            let v = v.trim().to_string();
+            let bare = v.strip_prefix("sm_").or_else(|| v.strip_prefix("compute_"));
+            match bare {
+                // Already prefixed — pass through, digits validated below.
+                Some(digits) => (digits.to_string(), v),
+                // Bare: accept `86` and `8.6` alike.
+                None => (v.replace('.', ""), format!("sm_{}", v.replace('.', ""))),
+            }
+        })
+        .map(|(digits, arch)| {
+            assert!(
+                !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()),
+                "NUMR_CUDA_ARCH must be a compute capability such as `86`, `8.6`, \
+                 `sm_86`, or `compute_86` — got {arch:?}"
+            );
+            arch
+        })
+        .unwrap_or_else(|_| "sm_80".to_string());
     println!(
         "cargo:warning=numr: compiling {} CUDA kernels for {cuda_arch} (set NUMR_CUDA_ARCH to override)",
         kernel_files.len()
