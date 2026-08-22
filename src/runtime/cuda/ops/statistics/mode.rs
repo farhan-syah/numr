@@ -87,6 +87,12 @@ pub fn mode_impl(
     let mode_values = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
     let mode_counts = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device);
 
+    // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
+    // would still make the kernel write one element past the empty allocations.
+    if mode_values.numel() == 0 {
+        return Ok((mode_values, mode_counts));
+    }
+
     // Launch native CUDA kernel - no CPU fallback
     unsafe {
         launch_mode_dim(

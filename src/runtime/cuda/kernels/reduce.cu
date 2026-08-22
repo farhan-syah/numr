@@ -142,6 +142,29 @@ __device__ void reduce_prod_impl(const T* input, T* output, unsigned int n) {
     }
 }
 
+// ============================================================================
+// Dimension-wise reductions: grid-stride over BOTH output axes
+//
+// The tensor is viewed as [outer_size, reduce_size, inner_size] and reduced
+// along the middle axis. One thread block owns one (outer, inner) output
+// element at a time.
+//
+// CUDA caps grid dimensions at [2147483647, 65535, 65535], so mapping outer to
+// blockIdx.x and inner to blockIdx.y one-to-one makes any launch with
+// inner_size > 65535 fail with CUDA_ERROR_INVALID_VALUE (hit by e.g. summing
+// [1, 32, 4096, 64] over dim 1, where inner_size = 262144). Both axes therefore
+// grid-stride: the launcher clamps each grid axis to its architectural maximum
+// and these loops cover the remainder.
+//
+// The stride loops change only WHICH block computes an output element, never
+// how that element is accumulated: each output is still reduced by a single
+// block, sequentially over `i += blockDim.x` then through the same shared-memory
+// tree. Results are bit-identical to the pre-fix kernels.
+//
+// The trip counts depend only on blockIdx/gridDim/sizes, so they are uniform
+// across every thread of a block and the __syncthreads() calls stay legal.
+// ============================================================================
+
 // Dimension-wise sum reduction
 template<typename T, typename Acc>
 __device__ void reduce_sum_dim_impl(
@@ -149,32 +172,32 @@ __device__ void reduce_sum_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, Acc>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ Acc shared[256];
     unsigned int tid = threadIdx.x;
 
-    Acc sum = Traits::zero();
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        sum = Traits::add(sum, Traits::load(input, idx));
-    }
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            Acc sum = Traits::zero();
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                sum = Traits::add(sum, Traits::load(input, idx));
+            }
 
-    shared[tid] = sum;
-    __syncthreads();
+            shared[tid] = sum;
+            __syncthreads();
 
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            shared[tid] = Traits::add(shared[tid], shared[tid + s]);
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    shared[tid] = Traits::add(shared[tid], shared[tid + s]);
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
+            }
+            __syncthreads();
         }
-        __syncthreads();
-    }
-
-    if (tid == 0) {
-        Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
     }
 }
 
@@ -185,32 +208,32 @@ __device__ void reduce_max_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, Acc>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ Acc shared[256];
     unsigned int tid = threadIdx.x;
 
-    Acc max_val = Traits::neg_inf();
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        max_val = Traits::max(max_val, Traits::load(input, idx));
-    }
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            Acc max_val = Traits::neg_inf();
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                max_val = Traits::max(max_val, Traits::load(input, idx));
+            }
 
-    shared[tid] = max_val;
-    __syncthreads();
+            shared[tid] = max_val;
+            __syncthreads();
 
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            shared[tid] = Traits::max(shared[tid], shared[tid + s]);
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    shared[tid] = Traits::max(shared[tid], shared[tid + s]);
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
+            }
+            __syncthreads();
         }
-        __syncthreads();
-    }
-
-    if (tid == 0) {
-        Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
     }
 }
 
@@ -221,32 +244,32 @@ __device__ void reduce_min_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, Acc>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ Acc shared[256];
     unsigned int tid = threadIdx.x;
 
-    Acc min_val = Traits::pos_inf();
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        min_val = Traits::min(min_val, Traits::load(input, idx));
-    }
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            Acc min_val = Traits::pos_inf();
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                min_val = Traits::min(min_val, Traits::load(input, idx));
+            }
 
-    shared[tid] = min_val;
-    __syncthreads();
+            shared[tid] = min_val;
+            __syncthreads();
 
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            shared[tid] = Traits::min(shared[tid], shared[tid + s]);
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    shared[tid] = Traits::min(shared[tid], shared[tid + s]);
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
+            }
+            __syncthreads();
         }
-        __syncthreads();
-    }
-
-    if (tid == 0) {
-        Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
     }
 }
 
@@ -257,43 +280,43 @@ __device__ void argmax_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, CompareType>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ CompareType shared_val[256];
     __shared__ long long shared_idx[256];
     unsigned int tid = threadIdx.x;
 
-    CompareType max_val = Traits::neg_inf();
-    long long max_idx = 0;
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            CompareType max_val = Traits::neg_inf();
+            long long max_idx = 0;
 
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        CompareType val = Traits::load(input, idx);
-        if (val > max_val) {
-            max_val = val;
-            max_idx = i;
-        }
-    }
-
-    shared_val[tid] = max_val;
-    shared_idx[tid] = max_idx;
-    __syncthreads();
-
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            if (shared_val[tid + s] > shared_val[tid]) {
-                shared_val[tid] = shared_val[tid + s];
-                shared_idx[tid] = shared_idx[tid + s];
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                CompareType val = Traits::load(input, idx);
+                if (val > max_val) {
+                    max_val = val;
+                    max_idx = i;
+                }
             }
-        }
-        __syncthreads();
-    }
 
-    if (tid == 0) {
-        output[outer_idx * inner_size + inner_idx] = shared_idx[0];
+            shared_val[tid] = max_val;
+            shared_idx[tid] = max_idx;
+            __syncthreads();
+
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    if (shared_val[tid + s] > shared_val[tid]) {
+                        shared_val[tid] = shared_val[tid + s];
+                        shared_idx[tid] = shared_idx[tid + s];
+                    }
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                output[outer_idx * inner_size + inner_idx] = shared_idx[0];
+            }
+            __syncthreads();
+        }
     }
 }
 
@@ -304,43 +327,43 @@ __device__ void argmin_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, CompareType>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ CompareType shared_val[256];
     __shared__ long long shared_idx[256];
     unsigned int tid = threadIdx.x;
 
-    CompareType min_val = Traits::pos_inf();
-    long long min_idx = 0;
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            CompareType min_val = Traits::pos_inf();
+            long long min_idx = 0;
 
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        CompareType val = Traits::load(input, idx);
-        if (val < min_val) {
-            min_val = val;
-            min_idx = i;
-        }
-    }
-
-    shared_val[tid] = min_val;
-    shared_idx[tid] = min_idx;
-    __syncthreads();
-
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            if (shared_val[tid + s] < shared_val[tid]) {
-                shared_val[tid] = shared_val[tid + s];
-                shared_idx[tid] = shared_idx[tid + s];
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                CompareType val = Traits::load(input, idx);
+                if (val < min_val) {
+                    min_val = val;
+                    min_idx = i;
+                }
             }
-        }
-        __syncthreads();
-    }
 
-    if (tid == 0) {
-        output[outer_idx * inner_size + inner_idx] = shared_idx[0];
+            shared_val[tid] = min_val;
+            shared_idx[tid] = min_idx;
+            __syncthreads();
+
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    if (shared_val[tid + s] < shared_val[tid]) {
+                        shared_val[tid] = shared_val[tid + s];
+                        shared_idx[tid] = shared_idx[tid + s];
+                    }
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                output[outer_idx * inner_size + inner_idx] = shared_idx[0];
+            }
+            __syncthreads();
+        }
     }
 }
 
@@ -351,33 +374,33 @@ __device__ void reduce_prod_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, Acc>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ Acc shared[256];
     unsigned int tid = threadIdx.x;
 
-    Acc prod = Traits::one();
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        prod = Traits::mul(prod, Traits::load(input, idx));
-    }
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            Acc prod = Traits::one();
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                prod = Traits::mul(prod, Traits::load(input, idx));
+            }
 
-    shared[tid] = prod;
-    __syncthreads();
+            shared[tid] = prod;
+            __syncthreads();
 
-    // Tree reduction with multiplication
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            shared[tid] = Traits::mul(shared[tid], shared[tid + s]);
+            // Tree reduction with multiplication
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    shared[tid] = Traits::mul(shared[tid], shared[tid + s]);
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
+            }
+            __syncthreads();
         }
-        __syncthreads();
-    }
-
-    if (tid == 0) {
-        Traits::store(output, outer_idx * inner_size + inner_idx, shared[0]);
     }
 }
 
@@ -389,39 +412,39 @@ __device__ void reduce_any_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, CompareType>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ int shared[256];  // Use int for boolean reduction
     unsigned int tid = threadIdx.x;
 
-    int any_true = 0;  // false
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        CompareType val = Traits::load(input, idx);
-        // Non-zero means true
-        if (val != Traits::zero()) {
-            any_true = 1;
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            int any_true = 0;  // false
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                CompareType val = Traits::load(input, idx);
+                // Non-zero means true
+                if (val != Traits::zero()) {
+                    any_true = 1;
+                }
+            }
+
+            shared[tid] = any_true;
+            __syncthreads();
+
+            // Tree reduction with OR
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    shared[tid] = shared[tid] | shared[tid + s];
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                // Store 1 if any true, 0 otherwise (in output dtype)
+                Traits::store(output, outer_idx * inner_size + inner_idx,
+                              shared[0] ? Traits::one() : Traits::zero());
+            }
+            __syncthreads();
         }
-    }
-
-    shared[tid] = any_true;
-    __syncthreads();
-
-    // Tree reduction with OR
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            shared[tid] = shared[tid] | shared[tid + s];
-        }
-        __syncthreads();
-    }
-
-    if (tid == 0) {
-        // Store 1 if any true, 0 otherwise (in output dtype)
-        Traits::store(output, outer_idx * inner_size + inner_idx,
-                      shared[0] ? Traits::one() : Traits::zero());
     }
 }
 
@@ -432,39 +455,39 @@ __device__ void reduce_all_dim_impl(
     unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
 ) {
     using Traits = AccumTraits<T, CompareType>;
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
-
     __shared__ int shared[256];  // Use int for boolean reduction
     unsigned int tid = threadIdx.x;
 
-    int all_true = 1;  // true
-    for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
-        unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
-        CompareType val = Traits::load(input, idx);
-        // Zero means false
-        if (val == Traits::zero()) {
-            all_true = 0;
+    for (unsigned int outer_idx = blockIdx.x; outer_idx < outer_size; outer_idx += gridDim.x) {
+        for (unsigned int inner_idx = blockIdx.y; inner_idx < inner_size; inner_idx += gridDim.y) {
+            int all_true = 1;  // true
+            for (unsigned int i = tid; i < reduce_size; i += blockDim.x) {
+                unsigned int idx = outer_idx * reduce_size * inner_size + i * inner_size + inner_idx;
+                CompareType val = Traits::load(input, idx);
+                // Zero means false
+                if (val == Traits::zero()) {
+                    all_true = 0;
+                }
+            }
+
+            shared[tid] = all_true;
+            __syncthreads();
+
+            // Tree reduction with AND
+            for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+                if (tid < s) {
+                    shared[tid] = shared[tid] & shared[tid + s];
+                }
+                __syncthreads();
+            }
+
+            if (tid == 0) {
+                // Store 1 if all true, 0 otherwise (in output dtype)
+                Traits::store(output, outer_idx * inner_size + inner_idx,
+                              shared[0] ? Traits::one() : Traits::zero());
+            }
+            __syncthreads();
         }
-    }
-
-    shared[tid] = all_true;
-    __syncthreads();
-
-    // Tree reduction with AND
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) {
-            shared[tid] = shared[tid] & shared[tid + s];
-        }
-        __syncthreads();
-    }
-
-    if (tid == 0) {
-        // Store 1 if all true, 0 otherwise (in output dtype)
-        Traits::store(output, outer_idx * inner_size + inner_idx,
-                      shared[0] ? Traits::one() : Traits::zero());
     }
 }
 

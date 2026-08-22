@@ -153,14 +153,29 @@ pub fn reduce_launch_config(numel: usize) -> (u32, u32) {
     (grid_size, block_size)
 }
 
+/// Maximum CUDA grid extent along `x`, for every compute capability numr targets.
+const MAX_GRID_DIM_X: u32 = 2_147_483_647;
+
+/// Maximum CUDA grid extent along `y` and `z`, for every compute capability numr targets.
+const MAX_GRID_DIM_YZ: u32 = 65_535;
+
 /// Calculate launch configuration for dimension-wise reduction.
 ///
-/// Uses a 2D grid where each (outer, inner) pair is processed by one thread block.
+/// Uses a 2D grid over the `[outer, inner]` output plane: `outer` on `x`,
+/// `inner` on `y`. Each axis is clamped to its architectural maximum, and the
+/// dim-reduction kernels grid-stride over both axes to cover the remainder — so
+/// an `inner` past 65535 (e.g. summing `[1, 32, 4096, 64]` over dim 1, where
+/// `inner` is 262144) launches and computes every output instead of being
+/// rejected with `CUDA_ERROR_INVALID_VALUE`.
+///
+/// Each axis is also floored at 1: a grid extent of 0 is itself a launch error,
+/// and callers pass sizes already clamped to at least 1.
 #[inline]
 pub fn reduce_dim_launch_config(outer: usize, inner: usize) -> ((u32, u32, u32), u32) {
-    let grid = (outer as u32, inner as u32, 1);
+    let grid_x = (outer.min(MAX_GRID_DIM_X as usize) as u32).max(1);
+    let grid_y = (inner.min(MAX_GRID_DIM_YZ as usize) as u32).max(1);
     let block = BLOCK_SIZE;
-    (grid, block)
+    ((grid_x, grid_y, 1), block)
 }
 
 /// Calculate launch configuration for softmax over the last dimension.

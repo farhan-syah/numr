@@ -41,6 +41,7 @@ pub mod normalization;
 pub mod polynomial;
 pub mod random;
 pub mod reduce;
+pub mod reduce_dim_grid;
 pub mod reduce_shape;
 pub mod scalar;
 pub mod semiring_matmul;

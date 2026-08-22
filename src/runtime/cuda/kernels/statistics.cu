@@ -28,60 +28,60 @@ __device__ void mode_dim_impl(
     unsigned int reduce_size,
     unsigned int inner_size
 ) {
-    // Each block handles one output element
-    unsigned int out_idx = blockIdx.x;
-    unsigned int total_outputs = outer_size * inner_size;
-
-    if (out_idx >= total_outputs) return;
-
-    // Only thread 0 does the sequential scan (mode is inherently sequential)
+    // Only thread 0 does the sequential scan (mode is inherently sequential).
+    // There is no __syncthreads() below, so returning early here is safe.
     if (threadIdx.x != 0) return;
 
-    unsigned int outer = out_idx / inner_size;
-    unsigned int inner = out_idx % inner_size;
-
-    // Base offset for this slice
-    unsigned int base = outer * reduce_size * inner_size + inner;
-
-    // Handle empty slice
+    // Handle empty slice: nothing to scan, and no defined mode to write.
     if (reduce_size == 0) {
-        // Output will be garbage but this shouldn't happen
         return;
     }
 
-    // Initialize with first element
-    T best_val = sorted[base];
-    long long best_count = 1;
+    // One block owns one (outer, inner) output element at a time. Both axes
+    // grid-stride: the launcher clamps each grid axis to the architectural
+    // maximum ([2147483647, 65535, 65535]) and these loops cover the remainder,
+    // so inner_size > 65535 neither fails the launch nor leaves outputs unwritten.
+    for (unsigned int outer = blockIdx.x; outer < outer_size; outer += gridDim.x) {
+        for (unsigned int inner = blockIdx.y; inner < inner_size; inner += gridDim.y) {
+            // Base offset for this slice
+            unsigned int base = outer * reduce_size * inner_size + inner;
 
-    T curr_val = best_val;
-    long long curr_count = 1;
+            // Initialize with first element
+            T best_val = sorted[base];
+            long long best_count = 1;
 
-    // Scan through sorted slice
-    for (unsigned int r = 1; r < reduce_size; r++) {
-        unsigned int idx = base + r * inner_size;
-        T val = sorted[idx];
+            T curr_val = best_val;
+            long long curr_count = 1;
 
-        if (val == curr_val) {
-            curr_count++;
-        } else {
-            // End of current run
+            // Scan through sorted slice
+            for (unsigned int r = 1; r < reduce_size; r++) {
+                unsigned int idx = base + r * inner_size;
+                T val = sorted[idx];
+
+                if (val == curr_val) {
+                    curr_count++;
+                } else {
+                    // End of current run
+                    if (curr_count > best_count) {
+                        best_val = curr_val;
+                        best_count = curr_count;
+                    }
+                    curr_val = val;
+                    curr_count = 1;
+                }
+            }
+
+            // Check final run
             if (curr_count > best_count) {
                 best_val = curr_val;
                 best_count = curr_count;
             }
-            curr_val = val;
-            curr_count = 1;
+
+            unsigned int out_idx = outer * inner_size + inner;
+            mode_values[out_idx] = best_val;
+            mode_counts[out_idx] = best_count;
         }
     }
-
-    // Check final run
-    if (curr_count > best_count) {
-        best_val = curr_val;
-        best_count = curr_count;
-    }
-
-    mode_values[out_idx] = best_val;
-    mode_counts[out_idx] = best_count;
 }
 
 // Full mode device function (reduce entire tensor to single mode value)

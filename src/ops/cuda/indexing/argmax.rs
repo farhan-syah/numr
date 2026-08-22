@@ -33,6 +33,12 @@ pub fn argmax(
     let a_contig = ensure_contiguous(a)?;
     let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device);
 
+    // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
+    // would still make the kernel write one element past the empty allocation.
+    if out.numel() == 0 {
+        return Ok(out);
+    }
+
     unsafe {
         launch_argmax_dim(
             &client.context,
@@ -74,6 +80,12 @@ pub fn argmin(
 
     let a_contig = ensure_contiguous(a)?;
     let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device);
+
+    // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
+    // would still make the kernel write one element past the empty allocation.
+    if out.numel() == 0 {
+        return Ok(out);
+    }
 
     unsafe {
         launch_argmin_dim(

@@ -636,6 +636,13 @@ pub(crate) fn native_reduce_op(
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
 
+        // A zero-size output (some non-reduced dimension is 0) has nothing to
+        // compute, and `outer_size`/`inner_size` were floored at 1 above, so
+        // launching would write past the empty allocation.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
         unsafe {
             launch_reduce_dim_op(
                 &client.context,
