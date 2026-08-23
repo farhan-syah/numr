@@ -35,7 +35,21 @@ pub trait RandomOps<R: Runtime> {
     /// Generate uniform random values in [0, 1) with a deterministic seed
     ///
     /// Same as `rand()` but uses the provided seed for reproducible output.
-    /// Calling with the same seed and shape always produces the same tensor.
+    /// Calling with the same seed and shape on the SAME BACKEND always
+    /// produces the same tensor.
+    ///
+    /// # Reproducibility is per-backend, not across backends
+    ///
+    /// Each backend runs its own PRNG — the CPU uses xoshiro256, CUDA its own
+    /// device kernel — so one seed yields DIFFERENT values on CPU and on CUDA.
+    /// A seeded run is reproducible against itself and against other runs on
+    /// the same backend, and is NOT expected to match a run of the same seed on
+    /// another device. This matches PyTorch, where `manual_seed` likewise does
+    /// not tie the CPU and CUDA streams together.
+    ///
+    /// A training baseline pinned to a loss value is therefore a per-device
+    /// constant. Comparing a CPU number against a CUDA one measures the two
+    /// PRNG streams, not the change under test.
     ///
     /// # Arguments
     ///
@@ -76,7 +90,10 @@ pub trait RandomOps<R: Runtime> {
     /// Generate standard normal random values (mean=0, std=1) with a deterministic seed
     ///
     /// Same as `randn()` but uses the provided seed for reproducible output.
-    /// Calling with the same seed and shape always produces the same tensor.
+    /// Calling with the same seed and shape on the SAME BACKEND always
+    /// produces the same tensor. Reproducibility is per-backend — see
+    /// [`RandomOps::rand_seeded`] for why a CPU and a CUDA run of one seed
+    /// differ, and what that means for a pinned baseline.
     ///
     /// # Arguments
     ///
