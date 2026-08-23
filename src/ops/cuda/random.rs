@@ -134,6 +134,52 @@ impl RandomOps<CudaRuntime> for CudaClient {
         Ok(out)
     }
 
+    fn randn_seeded(
+        &self,
+        shape: &[usize],
+        dtype: DType,
+        seed: u64,
+    ) -> Result<Tensor<CudaRuntime>> {
+        // FP8: generate F32 randn_seeded and cast down
+        #[cfg(feature = "fp8")]
+        if matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2) {
+            let f32_result = self.randn_seeded(shape, DType::F32, seed)?;
+            return self.cast(&f32_result, dtype);
+        }
+
+        // Supported: F32, F64, F16, BF16
+        if !matches!(dtype, DType::F32 | DType::F64 | DType::F16 | DType::BF16) {
+            return Err(Error::UnsupportedDType {
+                dtype,
+                op: "randn_seeded",
+            });
+        }
+
+        let numel: usize = shape.iter().product();
+        if numel == 0 {
+            // Empty tensor - just allocate
+            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+        }
+
+        // Allocate output tensor
+        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+
+        // Launch native CUDA randn kernel (uses Box-Muller transform) with the caller's seed
+        unsafe {
+            launch_randn(
+                &self.context,
+                &self.stream,
+                self.device.index,
+                dtype,
+                seed,
+                out.ptr(),
+                numel,
+            )?;
+        }
+
+        Ok(out)
+    }
+
     fn randint(
         &self,
         low: i64,

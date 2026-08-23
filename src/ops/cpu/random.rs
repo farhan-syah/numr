@@ -90,6 +90,34 @@ impl RandomOps<CpuRuntime> for CpuClient {
         Ok(out)
     }
 
+    fn randn_seeded(&self, shape: &[usize], dtype: DType, seed: u64) -> Result<Tensor<CpuRuntime>> {
+        if !dtype.is_float() {
+            return Err(Error::UnsupportedDType {
+                dtype,
+                op: "randn_seeded",
+            });
+        }
+
+        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let numel = out.numel();
+
+        if numel == 0 {
+            return Ok(out);
+        }
+
+        let out_ptr = out.ptr();
+
+        dispatch_dtype!(dtype, T => {
+            unsafe {
+                kernels::xoshiro256_randn_kernel::<T>(
+                    out_ptr as *mut T, numel, seed,
+                );
+            }
+        }, "randn_seeded");
+
+        Ok(out)
+    }
+
     fn randint(
         &self,
         low: i64,
