@@ -102,6 +102,22 @@ pub(super) unsafe fn reduce_non_last_dim_outer<T: Element>(
     reduce_size: usize,
     inner_size: usize,
 ) {
+    // A float narrower than F32 must not accumulate in its own dtype: the
+    // running sum saturates and stalls on a constant. Widen to f32 and narrow
+    // only the final result. F32, F64, and integers keep the loop below
+    // unchanged, so their results are bit-for-bit what they were.
+    if T::DTYPE.is_narrow_float() {
+        super::precision::reduce_non_last_dim_acc_outer::<T, f32>(
+            op,
+            a,
+            out,
+            outer,
+            reduce_size,
+            inner_size,
+        );
+        return;
+    }
+
     for inner in 0..inner_size {
         let mut acc = match op {
             ReduceOp::Sum | ReduceOp::Mean => T::zero(),

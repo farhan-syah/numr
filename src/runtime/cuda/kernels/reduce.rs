@@ -18,10 +18,24 @@ use crate::error::{Error, Result};
 // Re-export AccumulationPrecision from ops for convenience
 pub(crate) use crate::ops::AccumulationPrecision;
 
+/// Reduction ops whose F16/BF16 kernels ship an `_fp32acc` variant.
+///
+/// `reduce.cu` instantiates `_fp32acc` for the four accumulating dim
+/// reductions only. `reduce_any_dim` and `reduce_all_dim` hold no accumulator
+/// and exist in the native suffix alone, so asking for `_fp32acc` there would
+/// name a kernel that does not exist.
+fn has_fp32acc_variant(base_op: &str) -> bool {
+    matches!(
+        base_op,
+        "reduce_sum_dim" | "reduce_max_dim" | "reduce_min_dim" | "reduce_prod_dim"
+    )
+}
+
 /// Generate kernel name with accumulation precision suffix.
 ///
 /// Kernel naming conventions:
-/// - F16/BF16: `{op}_{dtype}` (native), `{op}_{dtype}_fp32acc` (FP32), `{op}_{dtype}_fp64acc` (FP64)
+/// - F16/BF16: `{op}_{dtype}_fp32acc` (FP32, and the default), `{op}_{dtype}_fp64acc` (FP64),
+///   `{op}_{dtype}` (native, reachable only for ops with no `_fp32acc` variant)
 /// - FP8: `{op}_{dtype}` (FP32 default), `{op}_{dtype}_bf16acc` (BF16), `{op}_{dtype}_fp64acc` (FP64)
 /// - F32: `{op}_{dtype}` (native) or `{op}_{dtype}_fp64acc` (FP64)
 /// - F64/integers: `{op}_{dtype}` (always native, ignore acc_precision)
@@ -30,12 +44,24 @@ fn reduce_kernel_name(base_op: &str, dtype: DType, acc_precision: AccumulationPr
 
     // Determine accumulation suffix based on dtype and requested precision
     let acc_suffix = match dtype {
-        // F16/BF16: native by default, _fp32acc for FP32, _fp64acc for FP64
+        // F16/BF16: FP32 accumulation by default, _fp64acc for FP64.
+        //
+        // `Native` means "let the library choose", and the library never
+        // chooses F16/BF16: a running sum held in 16 bits stops growing once
+        // its spacing exceeds twice the increment, so the reduction stalls on
+        // a constant regardless of the data. This matches the default stated
+        // in `reduce.cu`.
         DType::F16 | DType::BF16 => match acc_precision {
-            AccumulationPrecision::FP32 => Some("_fp32acc"),
             AccumulationPrecision::FP64 => Some("_fp64acc"),
-            // Native and BF16 both map to native accumulation for F16/BF16
-            AccumulationPrecision::Native | AccumulationPrecision::BF16 => None,
+            AccumulationPrecision::FP32
+            | AccumulationPrecision::Native
+            | AccumulationPrecision::BF16 => {
+                if has_fp32acc_variant(base_op) {
+                    Some("_fp32acc")
+                } else {
+                    None
+                }
+            }
         },
         // FP8: FP32 by default (no suffix), _bf16acc for BF16, _fp64acc for FP64
         DType::FP8E4M3 | DType::FP8E5M2 => match acc_precision {

@@ -318,6 +318,23 @@ unsafe fn logsumexp_kernel_scalar<T: Element>(
         }
 
         // Step 2: Compute sum(exp(x - max))
+        //
+        // A float narrower than F32 must not hold this accumulator. Every term
+        // is at most 1.0, so the running sum saturates quickly and stalls, and
+        // `log(sum)` then comes back short — which makes every log_softmax
+        // built on it wrong. Widen those to f64 (what `logsumexp_strided_kernel`
+        // already does) and narrow only the final result. Every other dtype
+        // keeps its own accumulator and its existing result.
+        if T::DTYPE.is_narrow_float() {
+            let mut sum = 0.0f64;
+            for i in 0..reduce_size {
+                let val = (*a.add(base + i)).to_f64();
+                sum += (val - max_val.to_f64()).exp();
+            }
+            *out.add(o) = T::from_f64(max_val.to_f64() + sum.ln());
+            continue;
+        }
+
         let mut sum = T::zero();
         for i in 0..reduce_size {
             let val = *a.add(base + i);

@@ -95,6 +95,18 @@ impl DType {
         )
     }
 
+    /// Returns true if this is a floating point type narrower than F32.
+    ///
+    /// F16, BF16, FP8E4M3, and FP8E5M2 are storage formats, not accumulator
+    /// formats. A running sum held in one of them stops growing as soon as the
+    /// accumulator's spacing exceeds twice the increment, so the sum silently
+    /// converges on a constant instead of the true total. Reductions widen
+    /// these dtypes to F32 or wider and narrow only the final result.
+    #[inline]
+    pub const fn is_narrow_float(self) -> bool {
+        matches!(self, Self::F16 | Self::BF16 | Self::FP8E4M3 | Self::FP8E5M2)
+    }
+
     /// Returns true if this is a complex number type
     #[inline]
     pub const fn is_complex(self) -> bool {

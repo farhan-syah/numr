@@ -3,6 +3,8 @@
 //! This module contains helper types and functions for reduction operations.
 //! The actual operations are defined in the `TensorOps` trait.
 
+use crate::dtype::DType;
+
 /// Reduction operation kind
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ReduceOp {
@@ -58,6 +60,29 @@ pub enum AccumulationPrecision {
     /// Maximum precision for math/science applications.
     /// Uses 8 bytes per element.
     FP64,
+}
+
+impl AccumulationPrecision {
+    /// Resolve `Native` into the precision a reduction actually accumulates in
+    /// for `dtype`.
+    ///
+    /// `Native` means "let the library choose". For a float narrower than F32
+    /// the library always chooses FP32, because accumulating in F16, BF16, or
+    /// FP8 saturates: once the accumulator's spacing exceeds twice the
+    /// increment every further addition rounds away and the sum stalls on a
+    /// constant. Summing 512 BF16 values of `11.76` stalls at exactly `4096`,
+    /// so the mean comes back as exactly `8.0` whatever the inputs were.
+    ///
+    /// F32, F64, integers, and every explicitly requested precision are
+    /// returned unchanged, so this never alters an F32 or F64 reduction.
+    #[inline]
+    pub fn resolve(self, dtype: DType) -> Self {
+        if matches!(self, Self::Native) && dtype.is_narrow_float() {
+            Self::FP32
+        } else {
+            self
+        }
+    }
 }
 
 /// Compute output shape for reduction

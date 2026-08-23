@@ -366,3 +366,106 @@ fn test_cpu_reduce_parallelism_config_matches_default() {
     let any_cfg: Vec<f32> = configured_client.any(&b, &[1], false).unwrap().to_vec();
     assert_parity_f32(&any_base, &any_cfg, "cpu_reduce_parallelism_any");
 }
+
+// ============================================================================
+// Narrow-float accumulation
+//
+// A sum held in a float narrower than F32 stops growing once the
+// accumulator's spacing exceeds twice the increment. Every backend must
+// widen the accumulator, so these pin an absolute value rather than parity:
+// two backends that saturate identically would still pass a parity check.
+// ============================================================================
+
+#[cfg(feature = "f16")]
+fn mean_all_as_f32<R: Runtime<DType = DType>>(
+    client: &(impl ReduceOps<R> + numr::ops::TypeConversionOps<R>),
+    t: &Tensor<R>,
+) -> f32 {
+    let mean = client.mean(t, &[0, 1], false).expect("mean failed");
+    client
+        .cast(&mean, DType::F32)
+        .expect("cast to F32 failed")
+        .item()
+        .expect("item failed")
+}
+
+/// A BF16 mean must not saturate, on any backend.
+///
+/// 262144 values of `1.0`. A BF16 accumulator reaches `256` and stops:
+/// BF16's spacing at `256` is `2`, and `256 + 1` is a tie that rounds to the
+/// even mantissa, back to `256`.
+///
+/// The reduction length is chosen to expose every backend at once. CPU sums
+/// one bucket sequentially, so it stalls at `256` and reports a mean of
+/// `0.0009765625`. CUDA splits the reduction across 256 threads and then
+/// merges them in a tree, so each thread stalls at `256` and the tree gives
+/// `65536`, for a mean of `0.25` — wrong by 4x, and wrong in a way a shorter
+/// reduction would hide, since the tree stays exact while each thread's own
+/// sum is still short of saturating.
+///
+/// Widened to F32 both backends give `262144` exactly, a mean of exactly
+/// `1.0`, and `262144` is exactly representable in BF16.
+#[cfg(feature = "f16")]
+#[test]
+fn test_bf16_mean_does_not_saturate() {
+    let data = vec![1.0f64; 262144];
+    let shape = [262144usize, 1];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let cpu_tensor = tensor_from_f64(&data, &shape, DType::BF16, &cpu_device, &cpu_client)
+        .expect("CPU BF16 tensor creation failed");
+    let cpu_mean = mean_all_as_f32(&cpu_client, &cpu_tensor);
+    assert_eq!(cpu_mean, 1.0, "CPU BF16 mean saturated: {cpu_mean}");
+
+    #[cfg(feature = "cuda")]
+    if is_dtype_supported("cuda", DType::BF16) {
+        with_cuda_backend(|cuda_client, cuda_device| {
+            let tensor = tensor_from_f64(&data, &shape, DType::BF16, &cuda_device, &cuda_client)
+                .expect("CUDA BF16 tensor creation failed");
+            let got = mean_all_as_f32(&cuda_client, &tensor);
+            assert_eq!(got, 1.0, "CUDA BF16 mean saturated: {got}");
+        });
+    }
+}
+
+/// The same guarantee for F16 on CUDA.
+///
+/// F16 carries 10 mantissa bits, so it saturates later than BF16 and a CUDA
+/// thread has to sum more values before its own accumulator stalls. 1048576
+/// values of `2^-6`, split 4096 per thread, stall each thread at `32`; the
+/// tree then merges them to `8192` instead of `16384`.
+///
+/// This asserts the sum, not the mean: CUDA computes a mean as `sum` followed
+/// by `div_scalar`, and `1048576` is not representable in F16, so the divisor
+/// itself would come back as infinity.
+///
+/// CPU is not asserted here because this tensor is 2 MiB, above the fused
+/// multi-dim threshold, so CPU already reaches the widened SIMD kernel. CPU
+/// F16 saturation is pinned by `test_f16_fused_multi_dim_mean_does_not_saturate`
+/// in `runtime::cpu::helpers::reduce`.
+#[cfg(all(feature = "f16", feature = "cuda"))]
+#[test]
+fn test_f16_sum_does_not_saturate_cuda() {
+    use numr::ops::TypeConversionOps;
+
+    let data = vec![0.015625f64; 1048576];
+    let shape = [1048576usize, 1];
+
+    if !is_dtype_supported("cuda", DType::F16) {
+        return;
+    }
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let tensor = tensor_from_f64(&data, &shape, DType::F16, &cuda_device, &cuda_client)
+            .expect("CUDA F16 tensor creation failed");
+        let sum = cuda_client
+            .sum(&tensor, &[0, 1], false)
+            .expect("CUDA F16 sum failed");
+        let got: f32 = cuda_client
+            .cast(&sum, DType::F32)
+            .expect("cast to F32 failed")
+            .item()
+            .expect("item failed");
+        assert_eq!(got, 16384.0, "CUDA F16 sum saturated: {got}");
+    });
+}

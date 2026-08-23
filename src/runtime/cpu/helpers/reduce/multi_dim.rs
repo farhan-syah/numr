@@ -24,6 +24,11 @@ pub(super) fn reduce_multi_dim_fused(
     op_name: &'static str,
 ) -> Result<Tensor<CpuRuntime>> {
     let shape = a.shape();
+    // `Native` on a float narrower than F32 means F32: a fused multi-dim sum
+    // keeps one accumulator per output bucket, and in BF16 that accumulator
+    // saturates and stalls on a constant. F32, F64, and integers resolve to
+    // `Native` and take exactly the same path as before.
+    let precision = precision.resolve(a.dtype());
     let out_shape = reduce_output_shape(shape, dims, keepdim);
     let out = Tensor::<CpuRuntime>::empty(&out_shape, a.dtype(), &client.device);
 

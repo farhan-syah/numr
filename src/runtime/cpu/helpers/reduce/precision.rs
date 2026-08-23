@@ -211,7 +211,7 @@ unsafe fn reduce_non_last_dim_acc<T: Element, A: Accumulator>(
 
 #[allow(unsafe_op_in_unsafe_fn)]
 #[inline]
-unsafe fn reduce_non_last_dim_acc_outer<T: Element, A: Accumulator>(
+pub(super) unsafe fn reduce_non_last_dim_acc_outer<T: Element, A: Accumulator>(
     op: ReduceOp,
     a: *const T,
     out: *mut T,

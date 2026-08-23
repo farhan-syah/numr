@@ -24,9 +24,17 @@ where
 {
     let input_dtype = a.tensor().dtype();
 
-    // No-op if already the target dtype
+    // No-op if already the target dtype. The grad_fn MUST be carried over:
+    // dropping it detaches everything upstream of `a` from the graph, so a
+    // same-dtype cast in the middle of a model would silently zero the
+    // gradients of every parameter behind it.
     if input_dtype == dtype {
-        return Ok(Var::with_id(a.tensor().clone(), a.id(), a.requires_grad()));
+        return Ok(match (a.requires_grad(), a.grad_fn().cloned()) {
+            (true, Some(grad_fn)) => {
+                Var::with_id_and_grad_fn(a.tensor().clone(), a.id(), Some(grad_fn))
+            }
+            (requires_grad, _) => Var::with_id(a.tensor().clone(), a.id(), requires_grad),
+        });
     }
 
     let output = client.cast(a.tensor(), dtype)?;

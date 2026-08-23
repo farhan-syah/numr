@@ -90,7 +90,18 @@ pub unsafe fn reduce_kernel<T: Element>(
         }
     }
 
-    // Scalar fallback
+    // Scalar fallback. A float narrower than F32 must never accumulate in its
+    // own dtype: the running sum saturates and returns a constant. Widen to
+    // f32 and narrow only the final result. This is what reaches FP8 on every
+    // architecture, and F16/BF16 on architectures without the SIMD paths above.
+    //
+    // All/Any hold no accumulator, and routing them here would bounce back
+    // into this function through `reduce_kernel_acc`.
+    if T::DTYPE.is_narrow_float() && !matches!(op, ReduceOp::All | ReduceOp::Any) {
+        reduce_kernel_acc::<T, f32>(op, a, out, reduce_size, outer_size);
+        return;
+    }
+
     reduce_kernel_scalar(op, a, out, reduce_size, outer_size);
 }
 
