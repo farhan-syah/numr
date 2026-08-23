@@ -67,6 +67,44 @@ mod tests {
         assert_eq!(data, vec![1.0, 2.0, 3.0]);
     }
 
+    /// A same-dtype cast in the MIDDLE of a graph must stay connected.
+    ///
+    /// `test_var_cast_noop_same_dtype` above casts a LEAF, which has no
+    /// `grad_fn` to lose, so it passes whether or not the no-op branch carries
+    /// one. This test casts a value that has one. Dropping it detaches
+    /// everything upstream: `backward` then finds no path to `x`, every
+    /// parameter behind the cast silently stops training, and the loss still
+    /// falls because the rest of the model compensates.
+    #[test]
+    fn test_var_cast_noop_keeps_the_graph_connected() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+
+        let t = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let x = Var::new(t, true);
+
+        // `doubled` carries a grad_fn; `x` alone would not.
+        let doubled = crate::autograd::var_mul_scalar(&x, 2.0, &client).unwrap();
+        assert!(
+            doubled.grad_fn().is_some(),
+            "test premise: the input to the no-op cast must carry a grad_fn"
+        );
+
+        let same = var_cast(&doubled, DType::F32, &client).unwrap();
+        assert!(
+            same.grad_fn().is_some(),
+            "a same-dtype cast dropped its grad_fn and severed the graph"
+        );
+
+        let sum = crate::autograd::var_sum(&same, &[], false, &client).unwrap();
+        let grads = backward(&sum, &client).unwrap();
+
+        let grad = grads
+            .get(x.id())
+            .expect("x must still receive a gradient through the no-op cast");
+        assert_eq!(grad.to_vec::<f32>(), vec![2.0, 2.0, 2.0]);
+    }
+
     #[test]
     fn test_var_cast_f32_to_f64_gradient() {
         let device = CpuDevice::new();
