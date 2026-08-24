@@ -58,21 +58,21 @@ fn expm_typed<T: Element + LinalgElement>(
 
     // Handle trivial cases
     if n == 0 {
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[] as &[T],
             &[0, 0],
             device,
-        ));
+        )?);
     }
 
     if n == 1 {
         let data: Vec<T> = a.to_vec();
         let exp_val = data[0].to_f64().exp();
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[T::from_f64(exp_val)],
             &[1, 1],
             device,
-        ));
+        )?);
     }
 
     // Compute Schur decomposition: A = Z @ T @ Z^T
@@ -92,7 +92,11 @@ fn expm_typed<T: Element + LinalgElement>(
 
     // Convert back to original type
     let result: Vec<T> = result_f64.iter().map(|&x| T::from_f64(x)).collect();
-    Ok(Tensor::<CpuRuntime>::from_slice(&result, &[n, n], device))
+    Ok(Tensor::<CpuRuntime>::try_from_slice(
+        &result,
+        &[n, n],
+        device,
+    )?)
 }
 
 // ============================================================================
@@ -127,11 +131,11 @@ fn sqrtm_typed<T: Element + LinalgElement>(
 
     // Handle trivial cases
     if n == 0 {
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[] as &[T],
             &[0, 0],
             device,
-        ));
+        )?);
     }
 
     if n == 1 {
@@ -143,11 +147,11 @@ fn sqrtm_typed<T: Element + LinalgElement>(
                 reason: "sqrtm requires matrix with no negative real eigenvalues".to_string(),
             });
         }
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[T::from_f64(val.sqrt())],
             &[1, 1],
             device,
-        ));
+        )?);
     }
 
     // Check for negative real eigenvalues using Schur decomposition
@@ -184,7 +188,11 @@ fn sqrtm_typed<T: Element + LinalgElement>(
 
     // Convert back to original type
     let result: Vec<T> = result_f64.iter().map(|&x| T::from_f64(x)).collect();
-    Ok(Tensor::<CpuRuntime>::from_slice(&result, &[n, n], device))
+    Ok(Tensor::<CpuRuntime>::try_from_slice(
+        &result,
+        &[n, n],
+        device,
+    )?)
 }
 
 /// Denman-Beavers iteration for matrix square root
@@ -266,11 +274,11 @@ fn logm_typed<T: Element + LinalgElement>(
 
     // Handle trivial cases
     if n == 0 {
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[] as &[T],
             &[0, 0],
             device,
-        ));
+        )?);
     }
 
     if n == 1 {
@@ -282,11 +290,11 @@ fn logm_typed<T: Element + LinalgElement>(
                 reason: "logm requires matrix with no non-positive real eigenvalues".to_string(),
             });
         }
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[T::from_f64(val.ln())],
             &[1, 1],
             device,
-        ));
+        )?);
     }
 
     let eps = T::epsilon_val();
@@ -311,7 +319,11 @@ fn logm_typed<T: Element + LinalgElement>(
 
     // Convert back to original type
     let result: Vec<T> = result_f64.iter().map(|&x| T::from_f64(x)).collect();
-    Ok(Tensor::<CpuRuntime>::from_slice(&result, &[n, n], device))
+    Ok(Tensor::<CpuRuntime>::try_from_slice(
+        &result,
+        &[n, n],
+        device,
+    )?)
 }
 
 /// Validate eigenvalues for matrix logarithm
@@ -378,11 +390,11 @@ fn signm_typed<T: Element + LinalgElement>(
 
     // Handle trivial cases
     if n == 0 {
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[] as &[T],
             &[0, 0],
             device,
-        ));
+        )?);
     }
 
     if n == 1 {
@@ -395,11 +407,11 @@ fn signm_typed<T: Element + LinalgElement>(
             });
         }
         let sign_val = if val > 0.0 { 1.0 } else { -1.0 };
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[T::from_f64(sign_val)],
             &[1, 1],
             device,
-        ));
+        )?);
     }
 
     let eps = T::epsilon_val();
@@ -412,7 +424,11 @@ fn signm_typed<T: Element + LinalgElement>(
 
     // Convert back to original type
     let result: Vec<T> = result_f64.iter().map(|&x| T::from_f64(x)).collect();
-    Ok(Tensor::<CpuRuntime>::from_slice(&result, &[n, n], device))
+    Ok(Tensor::<CpuRuntime>::try_from_slice(
+        &result,
+        &[n, n],
+        device,
+    )?)
 }
 
 /// Newton iteration for matrix sign function
@@ -480,11 +496,11 @@ fn fractional_matrix_power_typed<T: Element + LinalgElement>(
 
     // Handle trivial cases
     if n == 0 {
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[] as &[T],
             &[0, 0],
             device,
-        ));
+        )?);
     }
 
     // p = 0: Return identity
@@ -493,7 +509,11 @@ fn fractional_matrix_power_typed<T: Element + LinalgElement>(
         for i in 0..n {
             identity[i * n + i] = T::one();
         }
-        return Ok(Tensor::<CpuRuntime>::from_slice(&identity, &[n, n], device));
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
+            &identity,
+            &[n, n],
+            device,
+        )?);
     }
 
     // p = 1: Return A
@@ -512,11 +532,11 @@ fn fractional_matrix_power_typed<T: Element + LinalgElement>(
             });
         }
         let result = val.powf(p);
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[T::from_f64(result)],
             &[1, 1],
             device,
-        ));
+        )?);
     }
 
     // p = -1: Return inverse
@@ -530,7 +550,11 @@ fn fractional_matrix_power_typed<T: Element + LinalgElement>(
             },
         )?;
         let result: Vec<T> = inv.iter().map(|&x| T::from_f64(x)).collect();
-        return Ok(Tensor::<CpuRuntime>::from_slice(&result, &[n, n], device));
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
+            &result,
+            &[n, n],
+            device,
+        )?);
     }
 
     // p = 0.5: Use sqrtm (more accurate)
@@ -552,7 +576,7 @@ fn fractional_matrix_power_typed<T: Element + LinalgElement>(
         .iter()
         .map(|x| T::from_f64(x.to_f64() * p))
         .collect();
-    let p_log_a_tensor = Tensor::<CpuRuntime>::from_slice(&p_log_a, &[n, n], device);
+    let p_log_a_tensor = Tensor::<CpuRuntime>::try_from_slice(&p_log_a, &[n, n], device)?;
 
     expm_typed::<T>(client, &p_log_a_tensor, n)
 }
@@ -571,7 +595,11 @@ fn integer_matrix_power<T: Element + LinalgElement>(
         for i in 0..n {
             identity[i * n + i] = T::one();
         }
-        return Ok(Tensor::<CpuRuntime>::from_slice(&identity, &[n, n], device));
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
+            &identity,
+            &[n, n],
+            device,
+        )?);
     }
 
     let data: Vec<T> = a.to_vec();
@@ -607,7 +635,11 @@ fn integer_matrix_power<T: Element + LinalgElement>(
 
     // Convert back to original type
     let result_t: Vec<T> = result.iter().map(|&x| T::from_f64(x)).collect();
-    Ok(Tensor::<CpuRuntime>::from_slice(&result_t, &[n, n], device))
+    Ok(Tensor::<CpuRuntime>::try_from_slice(
+        &result_t,
+        &[n, n],
+        device,
+    )?)
 }
 
 // ============================================================================
@@ -645,11 +677,11 @@ where
 
     // Handle trivial cases
     if n == 0 {
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[] as &[T],
             &[0, 0],
             device,
-        ));
+        )?);
     }
 
     if n == 1 {
@@ -662,11 +694,11 @@ where
                 reason: "function returned NaN or Inf for eigenvalue".to_string(),
             });
         }
-        return Ok(Tensor::<CpuRuntime>::from_slice(
+        return Ok(Tensor::<CpuRuntime>::try_from_slice(
             &[T::from_f64(result)],
             &[1, 1],
             device,
-        ));
+        )?);
     }
 
     // Compute Schur decomposition: A = Z @ T @ Z^T
@@ -686,5 +718,9 @@ where
 
     // Convert back to original type
     let result: Vec<T> = result_f64.iter().map(|&x| T::from_f64(x)).collect();
-    Ok(Tensor::<CpuRuntime>::from_slice(&result, &[n, n], device))
+    Ok(Tensor::<CpuRuntime>::try_from_slice(
+        &result,
+        &[n, n],
+        device,
+    )?)
 }

@@ -159,9 +159,9 @@ fn esc_spgemm_typed<T: Element>(
     let final_nnz = c_col_indices.len();
 
     // Create result CSR tensors
-    let result_row_ptrs = Tensor::from_slice(&c_row_ptrs_final, &[m + 1], device);
-    let result_col_indices = Tensor::from_slice(&c_col_indices, &[final_nnz], device);
-    let result_values = Tensor::from_slice(&c_values, &[final_nnz], device);
+    let result_row_ptrs = Tensor::try_from_slice(&c_row_ptrs_final, &[m + 1], device)?;
+    let result_col_indices = Tensor::try_from_slice(&c_col_indices, &[final_nnz], device)?;
+    let result_values = Tensor::try_from_slice(&c_values, &[final_nnz], device)?;
 
     Ok(CsrData {
         row_ptrs: result_row_ptrs,

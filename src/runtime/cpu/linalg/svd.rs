@@ -59,9 +59,9 @@ fn svd_decompose_typed<T: Element + LinalgElement>(
 
     // Handle empty matrix
     if m == 0 || n == 0 {
-        let u = Tensor::<CpuRuntime>::from_slice::<T>(&[], &[m, k], device);
-        let s = Tensor::<CpuRuntime>::from_slice::<T>(&[], &[k], device);
-        let vt = Tensor::<CpuRuntime>::from_slice::<T>(&[], &[k, n], device);
+        let u = Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[m, k], device)?;
+        let s = Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[k], device)?;
+        let vt = Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[k, n], device)?;
         return Ok(SvdDecomposition { u, s, vt });
     }
 
@@ -189,9 +189,9 @@ fn svd_decompose_typed<T: Element + LinalgElement>(
             }
         }
 
-        let u_tensor = Tensor::<CpuRuntime>::from_slice(&u_final, &[m, k], device);
-        let s_tensor = Tensor::<CpuRuntime>::from_slice(&s_sorted, &[k], device);
-        let vt_tensor = Tensor::<CpuRuntime>::from_slice(&vt_final, &[k, n], device);
+        let u_tensor = Tensor::<CpuRuntime>::try_from_slice(&u_final, &[m, k], device)?;
+        let s_tensor = Tensor::<CpuRuntime>::try_from_slice(&s_sorted, &[k], device)?;
+        let vt_tensor = Tensor::<CpuRuntime>::try_from_slice(&vt_final, &[k, n], device)?;
 
         Ok(SvdDecomposition {
             u: u_tensor,
@@ -199,9 +199,9 @@ fn svd_decompose_typed<T: Element + LinalgElement>(
             vt: vt_tensor,
         })
     } else {
-        let u_tensor = Tensor::<CpuRuntime>::from_slice(&u_sorted, &[m, k], device);
-        let s_tensor = Tensor::<CpuRuntime>::from_slice(&s_sorted, &[k], device);
-        let vt_tensor = Tensor::<CpuRuntime>::from_slice(&vt_sorted, &[k, n], device);
+        let u_tensor = Tensor::<CpuRuntime>::try_from_slice(&u_sorted, &[m, k], device)?;
+        let s_tensor = Tensor::<CpuRuntime>::try_from_slice(&s_sorted, &[k], device)?;
+        let vt_tensor = Tensor::<CpuRuntime>::try_from_slice(&vt_sorted, &[k, n], device)?;
 
         Ok(SvdDecomposition {
             u: u_tensor,

@@ -67,12 +67,12 @@ fn qz_decompose_typed<T: Element + LinalgElement>(
     // Handle trivial cases
     if n == 0 {
         return Ok(GeneralizedSchurDecomposition {
-            q: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
-            z: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
-            s: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
-            t: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
-            eigenvalues_real: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0], device),
-            eigenvalues_imag: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0], device),
+            q: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            z: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            s: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            t: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            eigenvalues_real: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0], device)?,
+            eigenvalues_imag: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0], device)?,
         });
     }
 
@@ -87,16 +87,16 @@ fn qz_decompose_typed<T: Element + LinalgElement>(
             f64::NEG_INFINITY
         };
         return Ok(GeneralizedSchurDecomposition {
-            q: Tensor::<CpuRuntime>::from_slice(&[T::one()], &[1, 1], device),
-            z: Tensor::<CpuRuntime>::from_slice(&[T::one()], &[1, 1], device),
-            s: Tensor::<CpuRuntime>::from_slice(&[s_val], &[1, 1], device),
-            t: Tensor::<CpuRuntime>::from_slice(&[t_val], &[1, 1], device),
-            eigenvalues_real: Tensor::<CpuRuntime>::from_slice(
+            q: Tensor::<CpuRuntime>::try_from_slice(&[T::one()], &[1, 1], device)?,
+            z: Tensor::<CpuRuntime>::try_from_slice(&[T::one()], &[1, 1], device)?,
+            s: Tensor::<CpuRuntime>::try_from_slice(&[s_val], &[1, 1], device)?,
+            t: Tensor::<CpuRuntime>::try_from_slice(&[t_val], &[1, 1], device)?,
+            eigenvalues_real: Tensor::<CpuRuntime>::try_from_slice(
                 &[T::from_f64(lambda)],
                 &[1],
                 device,
-            ),
-            eigenvalues_imag: Tensor::<CpuRuntime>::from_slice(&[T::zero()], &[1], device),
+            )?,
+            eigenvalues_imag: Tensor::<CpuRuntime>::try_from_slice(&[T::zero()], &[1], device)?,
         });
     }
 
@@ -141,12 +141,12 @@ fn qz_decompose_typed<T: Element + LinalgElement>(
         extract_generalized_eigenvalues::<T>(&s_data, &t_data, n);
 
     Ok(GeneralizedSchurDecomposition {
-        q: Tensor::<CpuRuntime>::from_slice(&q_data, &[n, n], device),
-        z: Tensor::<CpuRuntime>::from_slice(&z_data, &[n, n], device),
-        s: Tensor::<CpuRuntime>::from_slice(&s_data, &[n, n], device),
-        t: Tensor::<CpuRuntime>::from_slice(&t_data, &[n, n], device),
-        eigenvalues_real: Tensor::<CpuRuntime>::from_slice(&eigenvalues_real, &[n], device),
-        eigenvalues_imag: Tensor::<CpuRuntime>::from_slice(&eigenvalues_imag, &[n], device),
+        q: Tensor::<CpuRuntime>::try_from_slice(&q_data, &[n, n], device)?,
+        z: Tensor::<CpuRuntime>::try_from_slice(&z_data, &[n, n], device)?,
+        s: Tensor::<CpuRuntime>::try_from_slice(&s_data, &[n, n], device)?,
+        t: Tensor::<CpuRuntime>::try_from_slice(&t_data, &[n, n], device)?,
+        eigenvalues_real: Tensor::<CpuRuntime>::try_from_slice(&eigenvalues_real, &[n], device)?,
+        eigenvalues_imag: Tensor::<CpuRuntime>::try_from_slice(&eigenvalues_imag, &[n], device)?,
     })
 }
 

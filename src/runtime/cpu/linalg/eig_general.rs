@@ -47,20 +47,20 @@ fn eig_decompose_typed<T: Element + LinalgElement>(
     // Handle trivial cases
     if n == 0 {
         return Ok(GeneralEigenDecomposition {
-            eigenvalues_real: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0], device),
-            eigenvalues_imag: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0], device),
-            eigenvectors_real: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
-            eigenvectors_imag: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
+            eigenvalues_real: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0], device)?,
+            eigenvalues_imag: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0], device)?,
+            eigenvectors_real: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            eigenvectors_imag: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
         });
     }
 
     if n == 1 {
         let data: Vec<T> = a.to_vec();
         return Ok(GeneralEigenDecomposition {
-            eigenvalues_real: Tensor::<CpuRuntime>::from_slice(&data, &[1], device),
-            eigenvalues_imag: Tensor::<CpuRuntime>::from_slice(&[T::zero()], &[1], device),
-            eigenvectors_real: Tensor::<CpuRuntime>::from_slice(&[T::one()], &[1, 1], device),
-            eigenvectors_imag: Tensor::<CpuRuntime>::from_slice(&[T::zero()], &[1, 1], device),
+            eigenvalues_real: Tensor::<CpuRuntime>::try_from_slice(&data, &[1], device)?,
+            eigenvalues_imag: Tensor::<CpuRuntime>::try_from_slice(&[T::zero()], &[1], device)?,
+            eigenvectors_real: Tensor::<CpuRuntime>::try_from_slice(&[T::one()], &[1, 1], device)?,
+            eigenvectors_imag: Tensor::<CpuRuntime>::try_from_slice(&[T::zero()], &[1, 1], device)?,
         });
     }
 
@@ -179,10 +179,18 @@ fn eig_decompose_typed<T: Element + LinalgElement>(
     }
 
     Ok(GeneralEigenDecomposition {
-        eigenvalues_real: Tensor::<CpuRuntime>::from_slice(&eigenvalues_real, &[n], device),
-        eigenvalues_imag: Tensor::<CpuRuntime>::from_slice(&eigenvalues_imag, &[n], device),
-        eigenvectors_real: Tensor::<CpuRuntime>::from_slice(&eigenvectors_real, &[n, n], device),
-        eigenvectors_imag: Tensor::<CpuRuntime>::from_slice(&eigenvectors_imag, &[n, n], device),
+        eigenvalues_real: Tensor::<CpuRuntime>::try_from_slice(&eigenvalues_real, &[n], device)?,
+        eigenvalues_imag: Tensor::<CpuRuntime>::try_from_slice(&eigenvalues_imag, &[n], device)?,
+        eigenvectors_real: Tensor::<CpuRuntime>::try_from_slice(
+            &eigenvectors_real,
+            &[n, n],
+            device,
+        )?,
+        eigenvectors_imag: Tensor::<CpuRuntime>::try_from_slice(
+            &eigenvectors_imag,
+            &[n, n],
+            device,
+        )?,
     })
 }
 

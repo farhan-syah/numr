@@ -42,8 +42,8 @@ fn polar_decompose_typed<T: Element + LinalgElement>(
     // Handle trivial case
     if n == 0 {
         return Ok(PolarDecomposition {
-            u: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
-            p: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device),
+            u: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            p: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
         });
     }
 
@@ -89,7 +89,7 @@ fn polar_decompose_typed<T: Element + LinalgElement>(
     }
 
     Ok(PolarDecomposition {
-        u: Tensor::<CpuRuntime>::from_slice(&u_data, &[n, n], device),
-        p: Tensor::<CpuRuntime>::from_slice(&p_data, &[n, n], device),
+        u: Tensor::<CpuRuntime>::try_from_slice(&u_data, &[n, n], device)?,
+        p: Tensor::<CpuRuntime>::try_from_slice(&p_data, &[n, n], device)?,
     })
 }

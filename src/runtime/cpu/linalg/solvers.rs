@@ -117,9 +117,9 @@ fn solve_typed<T: Element + LinalgElement>(
 
     // Create output tensor
     if b_shape.len() == 1 {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x[..n], &[n], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x[..n], &[n], device)
     } else {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x, &[n, num_rhs], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x, &[n, num_rhs], device)
     }
 }
 
@@ -203,9 +203,9 @@ fn solve_triangular_lower_typed<T: Element + LinalgElement>(
     }
 
     if b_shape.len() == 1 {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x[..n], &[n], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x[..n], &[n], device)
     } else {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x, &[n, num_rhs], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x, &[n, num_rhs], device)
     }
 }
 
@@ -282,9 +282,9 @@ fn solve_triangular_upper_typed<T: Element + LinalgElement>(
     }
 
     if b_shape.len() == 1 {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x[..n], &[n], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x[..n], &[n], device)
     } else {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x, &[n, num_rhs], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x, &[n, num_rhs], device)
     }
 }
 
@@ -394,8 +394,8 @@ fn lstsq_typed<T: Element + LinalgElement>(
     }
 
     if b_shape.len() == 1 {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x[..n], &[n], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x[..n], &[n], device)
     } else {
-        Ok(Tensor::<CpuRuntime>::from_slice(&x, &[n, num_rhs], device))
+        Tensor::<CpuRuntime>::try_from_slice(&x, &[n, num_rhs], device)
     }
 }

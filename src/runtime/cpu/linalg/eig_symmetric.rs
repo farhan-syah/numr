@@ -57,8 +57,8 @@ fn eig_decompose_symmetric_typed<T: Element + LinalgElement>(
 
     // Handle empty matrix
     if n == 0 {
-        let eigenvalues = Tensor::<CpuRuntime>::from_slice::<T>(&[], &[0], device);
-        let eigenvectors = Tensor::<CpuRuntime>::from_slice::<T>(&[], &[0, 0], device);
+        let eigenvalues = Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[0], device)?;
+        let eigenvectors = Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[0, 0], device)?;
         return Ok(EigenDecomposition {
             eigenvalues,
             eigenvectors,
@@ -68,8 +68,8 @@ fn eig_decompose_symmetric_typed<T: Element + LinalgElement>(
     // Handle 1x1 matrix
     if n == 1 {
         let a_data: Vec<T> = a.to_vec();
-        let eigenvalues = Tensor::<CpuRuntime>::from_slice(&[a_data[0]], &[1], device);
-        let eigenvectors = Tensor::<CpuRuntime>::from_slice(&[T::one()], &[1, 1], device);
+        let eigenvalues = Tensor::<CpuRuntime>::try_from_slice(&[a_data[0]], &[1], device)?;
+        let eigenvectors = Tensor::<CpuRuntime>::try_from_slice(&[T::one()], &[1, 1], device)?;
         return Ok(EigenDecomposition {
             eigenvalues,
             eigenvectors,
@@ -153,8 +153,9 @@ fn eig_decompose_symmetric_typed<T: Element + LinalgElement>(
     let eigenvalues_sorted = jacobi::permute_vector(&eigenvalues, &indices);
     let v_sorted = permute_columns(&v, n, n, &indices, n);
 
-    let eigenvalues_tensor = Tensor::<CpuRuntime>::from_slice(&eigenvalues_sorted, &[n], device);
-    let eigenvectors_tensor = Tensor::<CpuRuntime>::from_slice(&v_sorted, &[n, n], device);
+    let eigenvalues_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&eigenvalues_sorted, &[n], device)?;
+    let eigenvectors_tensor = Tensor::<CpuRuntime>::try_from_slice(&v_sorted, &[n, n], device)?;
 
     Ok(EigenDecomposition {
         eigenvalues: eigenvalues_tensor,
