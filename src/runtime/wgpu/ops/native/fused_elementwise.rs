@@ -40,7 +40,7 @@ pub(crate) fn native_fused_mul_add(
     let b_contig = ensure_contiguous(b)?;
     let c_contig = ensure_contiguous(c)?;
     let numel = a.numel();
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
@@ -94,7 +94,7 @@ pub(crate) fn native_fused_add_mul(
     let b_contig = ensure_contiguous(b)?;
     let c_contig = ensure_contiguous(c)?;
     let numel = a.numel();
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
@@ -125,7 +125,7 @@ pub(crate) fn native_fused_mul_add_scalar(
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
     let numel = a.numel();
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

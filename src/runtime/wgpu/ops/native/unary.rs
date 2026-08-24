@@ -16,7 +16,7 @@ pub(crate) fn native_unary_op(
     let a_contig = ensure_contiguous(a)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

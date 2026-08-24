@@ -46,7 +46,7 @@ pub(crate) fn native_cumsum(
     let inner_size: usize = shape[dim + 1..].iter().product();
 
     // Output has same shape as input
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
@@ -132,7 +132,7 @@ pub(crate) fn native_cumprod(
     let inner_size: usize = shape[dim + 1..].iter().product();
 
     // Output has same shape as input
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
@@ -284,7 +284,7 @@ fn native_logsumexp_single_dim(
         s
     };
 
-    let out = alloc_output(client, &out_shape, dtype);
+    let out = alloc_output(client, &out_shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

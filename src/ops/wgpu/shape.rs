@@ -28,7 +28,7 @@ impl ShapeOps<WgpuRuntime> for WgpuClient {
         }
 
         // Allocate output
-        let out = alloc_output(self, &cat_params.out_shape, cat_params.dtype);
+        let out = alloc_output(self, &cat_params.out_shape, cat_params.dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Copy data from each tensor using WGSL kernel
@@ -141,7 +141,7 @@ impl ShapeOps<WgpuRuntime> for WgpuClient {
         let total_elements: usize = params.out_shape.iter().product();
 
         // Allocate output
-        let out = alloc_output(self, &params.out_shape, tensor.dtype());
+        let out = alloc_output(self, &params.out_shape, tensor.dtype())?;
         let out_buf = get_tensor_buffer(&out)?;
         let src_buf = get_tensor_buffer(&tensor_contig)?;
 
@@ -220,7 +220,7 @@ impl ShapeOps<WgpuRuntime> for WgpuClient {
         let total_elements: usize = params.out_shape.iter().product();
 
         // Allocate output
-        let out = alloc_output(self, &params.out_shape, dtype);
+        let out = alloc_output(self, &params.out_shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let src_buf = get_tensor_buffer(&tensor_contig)?;
 
@@ -330,7 +330,7 @@ impl ShapeOps<WgpuRuntime> for WgpuClient {
         let inner_size: usize = shape[params.dim_idx + 1..].iter().product();
 
         // Allocate output (same shape as input)
-        let out = alloc_output(self, shape, tensor.dtype());
+        let out = alloc_output(self, shape, tensor.dtype())?;
         let out_buf = get_tensor_buffer(&out)?;
         let src_buf = get_tensor_buffer(&tensor_contig)?;
 

@@ -52,7 +52,7 @@ pub(crate) fn native_semiring_matmul(
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
 
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let b_buf = get_tensor_buffer(&b_contig)?;
@@ -99,7 +99,7 @@ pub(crate) fn native_semiring_matmul(
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
 
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let b_buf = get_tensor_buffer(&b_contig)?;

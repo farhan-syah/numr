@@ -63,7 +63,7 @@ pub(crate) fn native_matmul(
         // GEMV-BT fast path: transposed B with small M
         if m <= 16 && is_simple_transpose_2d(b) {
             let a_contig = ensure_contiguous(a)?;
-            let out = alloc_output(client, &out_shape, dtype);
+            let out = alloc_output(client, &out_shape, dtype)?;
 
             let a_buf = get_tensor_buffer(&a_contig)?;
             let b_buf = get_tensor_buffer(b)?; // Use original [N,K] buffer directly
@@ -95,7 +95,7 @@ pub(crate) fn native_matmul(
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
 
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let b_buf = get_tensor_buffer(&b_contig)?;
@@ -157,7 +157,7 @@ pub(crate) fn native_matmul(
         // GEMV-BT fast path: transposed B with small M
         if m <= 16 && is_batched_transpose_last2(b) {
             let a_contig = ensure_contiguous(a)?;
-            let out = alloc_output(client, &out_shape, dtype);
+            let out = alloc_output(client, &out_shape, dtype)?;
 
             let a_buf = get_tensor_buffer(&a_contig)?;
             let b_buf = get_tensor_buffer(b)?;
@@ -190,7 +190,7 @@ pub(crate) fn native_matmul(
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
 
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let b_buf = get_tensor_buffer(&b_contig)?;
@@ -277,7 +277,7 @@ pub(crate) fn native_matmul(
 
     let a_buf = get_tensor_buffer(&a_batched)?;
     let b_buf = get_tensor_buffer(&b_batched)?;
-    let out_flat = alloc_output(client, &[batch_size, m, n], dtype);
+    let out_flat = alloc_output(client, &[batch_size, m, n], dtype)?;
     let out_buf = get_tensor_buffer(&out_flat)?;
 
     let params = MatmulParams {
@@ -344,7 +344,7 @@ pub(crate) fn native_matmul_bias(
         let b_contig = ensure_contiguous(b)?;
         let bias_contig = ensure_contiguous(bias)?;
 
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let b_buf = get_tensor_buffer(&b_contig)?;
@@ -394,7 +394,7 @@ pub(crate) fn native_matmul_bias(
         let b_contig = ensure_contiguous(b)?;
         let bias_contig = ensure_contiguous(bias)?;
 
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let b_buf = get_tensor_buffer(&b_contig)?;

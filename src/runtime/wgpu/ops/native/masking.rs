@@ -37,7 +37,7 @@ pub(crate) fn native_masked_fill(
     let a_contig = ensure_contiguous(a)?;
     let mask_contig = ensure_contiguous(&mask_broadcast)?;
 
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let mask_buf = get_tensor_buffer(&mask_contig)?;
@@ -100,7 +100,7 @@ pub(crate) fn native_embedding_lookup(
 
     let emb_contig = ensure_contiguous(embeddings)?;
     let idx_contig = ensure_contiguous(&indices_i32)?;
-    let out = alloc_output(client, &out_shape, dtype);
+    let out = alloc_output(client, &out_shape, dtype)?;
 
     let emb_buf = get_tensor_buffer(&emb_contig)?;
     let idx_buf = get_tensor_buffer(&idx_contig)?;
@@ -248,7 +248,7 @@ pub(crate) fn native_masked_select(
     )?;
 
     // Phase 3: Gather selected elements
-    let out = alloc_output(client, &[count], dtype);
+    let out = alloc_output(client, &[count], dtype)?;
     let out_buf = get_tensor_buffer(&out)?;
 
     let select_params = MaskedSelectParams {

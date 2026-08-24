@@ -20,7 +20,7 @@ pub(crate) fn native_parametric_activation(
     let a_contig = ensure_contiguous(a)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
@@ -84,7 +84,7 @@ pub(crate) fn native_fused_activation_mul_fwd(
     let b_contig = ensure_contiguous(b)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
@@ -161,8 +161,8 @@ pub(crate) fn native_fused_activation_mul_bwd(
     let b_contig = ensure_contiguous(b)?;
     let numel = a.numel();
 
-    let d_a = alloc_output(client, a.shape(), dtype);
-    let d_b = alloc_output(client, b.shape(), dtype);
+    let d_a = alloc_output(client, a.shape(), dtype)?;
+    let d_b = alloc_output(client, b.shape(), dtype)?;
 
     let grad_buf = get_tensor_buffer(&grad_contig)?;
     let a_buf = get_tensor_buffer(&a_contig)?;

@@ -34,7 +34,7 @@ impl QuasiRandomOps<WgpuRuntime> for WgpuClient {
 
         // Allocate output: shape [n_points, dimension]
         let shape = vec![n_points, dimension];
-        let out = alloc_output(self, &shape, dtype);
+        let out = alloc_output(self, &shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Compute direction vectors and upload to GPU
@@ -81,7 +81,7 @@ impl QuasiRandomOps<WgpuRuntime> for WgpuClient {
 
         // Allocate output: shape [n_points, dimension]
         let shape = vec![n_points, dimension];
-        let out = alloc_output(self, &shape, dtype);
+        let out = alloc_output(self, &shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Create params
@@ -123,7 +123,7 @@ impl QuasiRandomOps<WgpuRuntime> for WgpuClient {
 
         // Allocate output: shape [n_samples, dimension]
         let shape = vec![n_samples, dimension];
-        let out = alloc_output(self, &shape, dtype);
+        let out = alloc_output(self, &shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Generate random seed

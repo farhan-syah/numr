@@ -37,7 +37,7 @@ pub(crate) fn native_logical_and(
     let b_contig = ensure_contiguous(b)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), DType::U32);
+    let out = alloc_output(client, a.shape(), DType::U32)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
@@ -72,7 +72,7 @@ pub(crate) fn native_logical_or(
     let b_contig = ensure_contiguous(b)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), DType::U32);
+    let out = alloc_output(client, a.shape(), DType::U32)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
@@ -107,7 +107,7 @@ pub(crate) fn native_logical_xor(
     let b_contig = ensure_contiguous(b)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), DType::U32);
+    let out = alloc_output(client, a.shape(), DType::U32)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
@@ -140,7 +140,7 @@ pub(crate) fn native_logical_not(
     let a_contig = ensure_contiguous(a)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), DType::U32);
+    let out = alloc_output(client, a.shape(), DType::U32)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

@@ -46,8 +46,8 @@ pub(crate) fn alloc_output(
     client: &super::super::WgpuClient,
     shape: &[usize],
     dtype: DType,
-) -> Tensor<WgpuRuntime> {
-    Tensor::empty(shape, dtype, client.device())
+) -> Result<Tensor<WgpuRuntime>> {
+    Tensor::try_empty(shape, dtype, client.device())
 }
 
 // ============================================================================

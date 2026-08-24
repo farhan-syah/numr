@@ -50,8 +50,8 @@ impl Sparse24Ops<WgpuRuntime> for WgpuClient {
         let num_groups = k / 4;
         let total_groups = m * num_groups;
 
-        let compressed = alloc_output(self, &[m, half_k], dtype);
-        let metadata = alloc_output(self, &[m, mc], DType::U32);
+        let compressed = alloc_output(self, &[m, half_k], dtype)?;
+        let metadata = alloc_output(self, &[m, mc], DType::U32)?;
 
         // wgpu buffers are zero-initialized by default (spec requirement)
 
@@ -105,7 +105,7 @@ impl Sparse24Ops<WgpuRuntime> for WgpuClient {
 
         let vals = ensure_contiguous(sparse.compressed_values())?;
         let meta = ensure_contiguous(sparse.metadata())?;
-        let dense = alloc_output(self, &[m, k], dtype);
+        let dense = alloc_output(self, &[m, k], dtype)?;
 
         let vals_buf = get_tensor_buffer(&vals)?;
         let meta_buf = get_tensor_buffer(&meta)?;

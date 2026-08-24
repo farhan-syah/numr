@@ -80,7 +80,7 @@ pub(crate) fn native_index_select(
         }
     }
 
-    let out = alloc_output(client, &out_shape, dtype);
+    let out = alloc_output(client, &out_shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
@@ -186,7 +186,7 @@ pub(crate) fn native_index_put(
     }
 
     // Allocate output and copy input first
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let src_buf = get_tensor_buffer(&src_contig)?;
@@ -261,7 +261,7 @@ pub(crate) fn native_gather(
     let a_contig = ensure_contiguous(a)?;
     let indices_contig = ensure_contiguous(&indices_i32)?;
 
-    let out = alloc_output(client, &out_shape, dtype);
+    let out = alloc_output(client, &out_shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let indices_buf = get_tensor_buffer(&indices_contig)?;
@@ -351,7 +351,7 @@ pub(crate) fn native_scatter(
     let src_total = src.numel();
 
     // Output is same shape as input
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let indices_buf = get_tensor_buffer(&indices_contig)?;
@@ -477,7 +477,7 @@ pub(crate) fn native_slice_assign(
     let dst_contig = ensure_contiguous(dst)?;
     let src_contig = ensure_contiguous(src)?;
 
-    let out = alloc_output(client, dst.shape(), dtype);
+    let out = alloc_output(client, dst.shape(), dtype)?;
 
     let dst_buf = get_tensor_buffer(&dst_contig)?;
     let src_buf = get_tensor_buffer(&src_contig)?;

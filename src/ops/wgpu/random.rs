@@ -29,7 +29,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
         }
 
         // Allocate output
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Create params with random seed
@@ -79,7 +79,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Truncate u64 seed to u32 — WGSL has no native u64 support.
@@ -118,7 +118,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
         }
 
         // Allocate output
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Create params with random seed (see rand() for seed design notes)
@@ -195,7 +195,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
         }
 
         // Allocate output
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Create params with random seed (see rand() for seed design notes)
@@ -336,7 +336,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
         };
 
         // Allocate output
-        let out = alloc_output(self, &out_shape, out_dtype);
+        let out = alloc_output(self, &out_shape, out_dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let probs_buf = get_tensor_buffer(&probs_contig)?;
 
@@ -413,7 +413,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -468,7 +468,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -523,7 +523,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -566,7 +566,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -609,7 +609,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -664,7 +664,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -713,7 +713,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -756,7 +756,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -799,7 +799,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 
@@ -858,7 +858,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
         let seed = generate_wgpu_seed();
 

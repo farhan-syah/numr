@@ -30,7 +30,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
 
         let a_contig = ensure_contiguous(a)?;
         let numel = a.numel();
-        let out = alloc_output(self, a.shape(), dtype);
+        let out = alloc_output(self, a.shape(), dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let out_buf = get_tensor_buffer(&out)?;
@@ -70,7 +70,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
         let a_contig = ensure_contiguous(a)?;
         let numel = a.numel();
         let out_dtype = DType::F32; // Complex64 → F32
-        let out = alloc_output(self, a.shape(), out_dtype);
+        let out = alloc_output(self, a.shape(), out_dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let out_buf = get_tensor_buffer(&out)?;
@@ -111,7 +111,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
         let out_dtype = DType::F32; // Complex64 → F32
         let a_contig = ensure_contiguous(a)?;
         let numel = a.numel();
-        let out = alloc_output(self, a.shape(), out_dtype);
+        let out = alloc_output(self, a.shape(), out_dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let out_buf = get_tensor_buffer(&out)?;
@@ -145,7 +145,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
                     // Use angle_real shader for F32
                     let a_contig = ensure_contiguous(a)?;
                     let numel = a.numel();
-                    let out = alloc_output(self, a.shape(), dtype);
+                    let out = alloc_output(self, a.shape(), dtype)?;
 
                     let a_buf = get_tensor_buffer(&a_contig)?;
                     let out_buf = get_tensor_buffer(&out)?;
@@ -182,7 +182,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
         let out_dtype = DType::F32; // Complex64 → F32
         let a_contig = ensure_contiguous(a)?;
         let numel = a.numel();
-        let out = alloc_output(self, a.shape(), out_dtype);
+        let out = alloc_output(self, a.shape(), out_dtype)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let out_buf = get_tensor_buffer(&out)?;
@@ -219,7 +219,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
 
         let real_contig = ensure_contiguous(real)?;
         let imag_contig = ensure_contiguous(imag)?;
-        let out = alloc_output(self, shape, out_dtype);
+        let out = alloc_output(self, shape, out_dtype)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -261,7 +261,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
 
         let complex_contig = ensure_contiguous(complex)?;
         let real_contig = ensure_contiguous(real)?;
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -303,7 +303,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
 
         let complex_contig = ensure_contiguous(complex)?;
         let real_contig = ensure_contiguous(real)?;
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
 
         // Handle empty tensors
         if numel == 0 {

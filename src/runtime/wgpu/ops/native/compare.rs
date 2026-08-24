@@ -42,7 +42,7 @@ pub(crate) fn native_compare_op(
 
     // Output is F32 (comparison results: 1.0 = true, 0.0 = false)
     // This allows using results directly in arithmetic ops (e.g., mask * tensor)
-    let out = alloc_output(client, a.shape(), DType::F32);
+    let out = alloc_output(client, a.shape(), DType::F32)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;

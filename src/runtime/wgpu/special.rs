@@ -347,7 +347,7 @@ fn compute_unary_special(
 
     // Get input buffer and allocate output
     let input_buffer = get_tensor_buffer(x)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     // Launch native WGSL shader
@@ -387,7 +387,7 @@ fn compute_binary_special(
     // Get input buffers and allocate output
     let input_a_buffer = get_tensor_buffer(a)?;
     let input_b_buffer = get_tensor_buffer(b)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     // Launch native WGSL shader
@@ -430,7 +430,7 @@ fn compute_ternary_special(
     let input_a_buffer = get_tensor_buffer(a)?;
     let input_b_buffer = get_tensor_buffer(b)?;
     let input_x_buffer = get_tensor_buffer(x)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     // Launch native WGSL shader
@@ -469,7 +469,7 @@ fn compute_unary_special_with_int(
     let numel = x.numel();
 
     let input_buffer = get_tensor_buffer(x)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     launch_special_unary_with_int(
@@ -507,7 +507,7 @@ fn compute_unary_special_with_two_ints(
     let numel = x.numel();
 
     let input_buffer = get_tensor_buffer(x)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     launch_special_unary_with_two_ints(
@@ -548,7 +548,7 @@ fn compute_binary_special_with_two_ints(
 
     let input_a_buffer = get_tensor_buffer(a)?;
     let input_b_buffer = get_tensor_buffer(b)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     launch_special_binary_with_two_ints(
@@ -588,7 +588,7 @@ fn compute_unary_special_with_params_2f64(
     let numel = z.numel();
 
     let input_buffer = get_tensor_buffer(z)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     launch_special_unary_with_2f32(
@@ -628,7 +628,7 @@ fn compute_unary_special_with_params_3f64(
     let numel = z.numel();
 
     let input_buffer = get_tensor_buffer(z)?;
-    let output = alloc_output(client, &shape, dtype);
+    let output = alloc_output(client, &shape, dtype)?;
     let output_buffer = get_tensor_buffer(&output)?;
 
     launch_special_unary_with_3f32(

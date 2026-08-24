@@ -88,7 +88,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (key_lo, key_hi) = split_u64(key);
@@ -131,7 +131,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (key_lo, key_hi) = split_u64(key);
@@ -174,7 +174,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (key_lo, key_hi) = split_u64(key);
@@ -217,7 +217,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (key_lo, key_hi) = split_u64(key);
@@ -260,7 +260,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (seed_lo, seed_hi) = split_u64(seed);
@@ -303,7 +303,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (seed_lo, seed_hi) = split_u64(seed);
@@ -345,7 +345,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (seed_lo, seed_hi) = split_u64(seed);
@@ -382,7 +382,7 @@ impl AdvancedRandomOps<WgpuRuntime> for WgpuClient {
             return Ok(Tensor::empty(shape, dtype, self.device()));
         }
 
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         let (seed_lo, seed_hi) = split_u64(seed);

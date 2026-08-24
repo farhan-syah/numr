@@ -53,7 +53,7 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
         }
 
         // Allocate output
-        let out = alloc_output(self, &[numel], dtype);
+        let out = alloc_output(self, &[numel], dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Create params (f32 precision - WebGPU limitation)
@@ -104,7 +104,7 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
         }
 
         // Allocate output
-        let out = alloc_output(self, &[steps], dtype);
+        let out = alloc_output(self, &[steps], dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Create params
@@ -161,7 +161,7 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
         let numel = rows * cols;
 
         // Allocate output
-        let out = alloc_output(self, &[rows, cols], dtype);
+        let out = alloc_output(self, &[rows, cols], dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Create params

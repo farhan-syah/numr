@@ -51,7 +51,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let a_contig = ensure_contiguous(a)?;
 
         // Allocate output
-        let out = alloc_output(self, shape, dtype);
+        let out = alloc_output(self, shape, dtype)?;
         if a.numel() == 0 {
             return Ok(out);
         }
@@ -131,8 +131,8 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         let a_contig = ensure_contiguous(a)?;
 
-        let values_out = alloc_output(self, shape, dtype);
-        let indices_out = alloc_output(self, shape, DType::I32);
+        let values_out = alloc_output(self, shape, dtype)?;
+        let indices_out = alloc_output(self, shape, DType::I32)?;
 
         if a.numel() == 0 {
             return Ok((values_out, indices_out));
@@ -213,7 +213,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         let a_contig = ensure_contiguous(a)?;
 
-        let indices_out = alloc_output(self, shape, DType::I32);
+        let indices_out = alloc_output(self, shape, DType::I32)?;
 
         if a.numel() == 0 {
             return Ok(indices_out);
@@ -316,8 +316,8 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let mut out_shape = shape.to_vec();
         out_shape[dim_idx] = k;
 
-        let values_out = alloc_output(self, &out_shape, dtype);
-        let indices_out = alloc_output(self, &out_shape, DType::I32);
+        let values_out = alloc_output(self, &out_shape, dtype)?;
+        let indices_out = alloc_output(self, &out_shape, DType::I32)?;
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let values_buf = get_tensor_buffer(&values_out)?;
@@ -406,7 +406,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         }
 
         // Step 3: Extract unique elements
-        let out = alloc_output(self, &[count as usize], dtype);
+        let out = alloc_output(self, &[count as usize], dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
         // Reset counter
@@ -459,7 +459,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         // Step 2: Mark boundaries (where value changes)
         // flags[i] = 1 if sorted[i] != sorted[i-1] (or i == 0), else 0
-        let boundary_flags = alloc_output(self, &[numel], DType::U32);
+        let boundary_flags = alloc_output(self, &[numel], DType::U32)?;
 
         let sorted_buf = get_tensor_buffer(&sorted_tensor)?;
         let flags_buf = get_tensor_buffer(&boundary_flags)?;
@@ -505,9 +505,9 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         }
 
         // Step 5: Allocate output tensors
-        let unique_values = alloc_output(self, &[num_unique as usize], dtype);
-        let inverse_indices = alloc_output(self, &[numel], DType::I32);
-        let counts = alloc_output(self, &[num_unique as usize], DType::I32);
+        let unique_values = alloc_output(self, &[num_unique as usize], dtype)?;
+        let inverse_indices = alloc_output(self, &[numel], DType::I32)?;
+        let counts = alloc_output(self, &[num_unique as usize], DType::I32)?;
 
         let unique_buf = get_tensor_buffer(&unique_values)?;
         let inverse_buf = get_tensor_buffer(&inverse_indices)?;
@@ -594,7 +594,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         }
 
         // Phase 2: Gather flat indices
-        let flat_indices = alloc_output(self, &[nnz], DType::I32);
+        let flat_indices = alloc_output(self, &[nnz], DType::I32)?;
         let flat_indices_buf = get_tensor_buffer(&flat_indices)?;
 
         // Reset counter
@@ -613,7 +613,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         )?;
 
         // Phase 3: Convert flat indices to multi-indices
-        let multi_indices = alloc_output(self, &[nnz, ndim], DType::I32);
+        let multi_indices = alloc_output(self, &[nnz, ndim], DType::I32)?;
         let multi_indices_buf = get_tensor_buffer(&multi_indices)?;
 
         // Create shape buffer
@@ -683,7 +683,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let seq_contig = ensure_contiguous(sorted_sequence)?;
         let values_contig = ensure_contiguous(values)?;
 
-        let out = alloc_output(self, values.shape(), DType::I32);
+        let out = alloc_output(self, values.shape(), DType::I32)?;
 
         let seq_buf = get_tensor_buffer(&seq_contig)?;
         let values_buf = get_tensor_buffer(&values_contig)?;

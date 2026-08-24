@@ -122,7 +122,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
             self,
             &[params.batch, params.c_out, params.output_length],
             dtype,
-        );
+        )?;
 
         // Get buffers
         let input_buf = get_tensor_buffer(&input)?;
@@ -215,7 +215,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
             self,
             &[params.batch, params.c_out, params.output_length],
             dtype,
-        );
+        )?;
 
         let input_buf = get_tensor_buffer(&input)?;
         let weight_buf = get_tensor_buffer(&weight)?;
@@ -305,7 +305,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
             self,
             &[params.batch, params.c_out, params.output_h, params.output_w],
             dtype,
-        );
+        )?;
 
         // Get buffers
         let input_buf = get_tensor_buffer(&input)?;
@@ -403,7 +403,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
             self,
             &[params.batch, params.c_out, params.output_h, params.output_w],
             dtype,
-        );
+        )?;
 
         // Get buffers
         let input_buf = get_tensor_buffer(&input)?;

@@ -34,7 +34,7 @@ pub(crate) fn native_gemm_bias_activation(
         let a_c = ensure_contiguous(a)?;
         let b_c = ensure_contiguous(b)?;
         let bias_c = ensure_contiguous(bias)?;
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;
@@ -82,7 +82,7 @@ pub(crate) fn native_gemm_bias_activation(
         let a_c = ensure_contiguous(a)?;
         let b_c = ensure_contiguous(b)?;
         let bias_c = ensure_contiguous(bias)?;
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;
@@ -163,7 +163,7 @@ pub(crate) fn native_gemm_bias_residual(
         let b_c = ensure_contiguous(b)?;
         let bias_c = ensure_contiguous(bias)?;
         let res_c = ensure_contiguous(residual)?;
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;
@@ -213,7 +213,7 @@ pub(crate) fn native_gemm_bias_residual(
         let b_c = ensure_contiguous(b)?;
         let bias_c = ensure_contiguous(bias)?;
         let res_c = ensure_contiguous(residual)?;
-        let out = alloc_output(client, &out_shape, dtype);
+        let out = alloc_output(client, &out_shape, dtype)?;
 
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;
@@ -313,7 +313,7 @@ pub(crate) fn native_gemm_bias_activation_bwd(
     let bias_c = ensure_contiguous(bias)?;
     let grad_c = ensure_contiguous(grad)?;
 
-    let d_a = alloc_output(client, a_shape, dtype);
+    let d_a = alloc_output(client, a_shape, dtype)?;
     // The db shader sums the gradient over the batch dimension and writes only
     // the leading [K, N] slice of d_b; the CPU and CUDA references explicitly
     // allocate d_b with zeros, leaving the remaining [batch-1, K, N] elements
@@ -323,11 +323,11 @@ pub(crate) fn native_gemm_bias_activation_bwd(
     let d_b = if batch_size > 1 {
         Tensor::<WgpuRuntime>::try_zeros(b_shape, dtype, RuntimeClient::device(client))?
     } else {
-        alloc_output(client, b_shape, dtype)
+        alloc_output(client, b_shape, dtype)?
     };
-    let d_bias = alloc_output(client, &[n], dtype);
+    let d_bias = alloc_output(client, &[n], dtype)?;
     // grad_pre scratch has the same shape as grad/output: [batch, M, N].
-    let grad_pre = alloc_output(client, grad.shape(), dtype);
+    let grad_pre = alloc_output(client, grad.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_c)?;
     let b_buf = get_tensor_buffer(&b_c)?;

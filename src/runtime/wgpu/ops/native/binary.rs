@@ -18,7 +18,7 @@ pub(crate) fn native_binary_op(
     let dtype = validate_binary_dtypes(a, b)?;
     let out_shape = compute_broadcast_shape(a, b)?;
 
-    let out = alloc_output(client, &out_shape, dtype);
+    let out = alloc_output(client, &out_shape, dtype)?;
     run_binary(client, op, a, b, &out, &out_shape, dtype)?;
 
     Ok(out)
@@ -179,7 +179,7 @@ pub(crate) fn native_scalar_op(
     let a_contig = ensure_contiguous(a)?;
     let numel = a.numel();
 
-    let out = alloc_output(client, a.shape(), dtype);
+    let out = alloc_output(client, a.shape(), dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

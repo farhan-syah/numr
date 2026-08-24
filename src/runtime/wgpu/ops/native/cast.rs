@@ -21,7 +21,7 @@ pub(crate) fn native_cast_op(
     let numel = a.numel();
 
     // Allocate output with target dtype
-    let out = alloc_output(client, a.shape(), dst_dtype);
+    let out = alloc_output(client, a.shape(), dst_dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

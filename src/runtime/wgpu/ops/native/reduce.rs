@@ -89,7 +89,7 @@ fn native_single_dim_reduce(
     // Reducing the only dimension of a 1-D tensor must give a scalar, not `[1]`.
     let out_shape = reduce_output_shape(shape, &[dim], keepdim);
 
-    let out = alloc_output(client, &out_shape, dtype);
+    let out = alloc_output(client, &out_shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
@@ -135,7 +135,7 @@ fn native_full_reduce(
 
     if num_workgroups <= 1 {
         // Single pass
-        let out = alloc_output(client, &[1], dtype);
+        let out = alloc_output(client, &[1], dtype)?;
         let a_buf = get_tensor_buffer(&a_contig)?;
         let out_buf = get_tensor_buffer(&out)?;
 
@@ -162,7 +162,7 @@ fn native_full_reduce(
     }
 
     // Multi-pass: first reduce to num_workgroups values, then reduce again
-    let partial = alloc_output(client, &[num_workgroups], dtype);
+    let partial = alloc_output(client, &[num_workgroups], dtype)?;
     let a_buf = get_tensor_buffer(&a_contig)?;
     let partial_buf = get_tensor_buffer(&partial)?;
 
@@ -183,7 +183,7 @@ fn native_full_reduce(
     )?;
 
     // Second pass
-    let out = alloc_output(client, &[1], dtype);
+    let out = alloc_output(client, &[1], dtype)?;
     let out_buf = get_tensor_buffer(&out)?;
 
     let params2 = FullReduceParams {
@@ -277,7 +277,7 @@ fn native_softmax_last_dim(
     let batch_size: usize = shape[..dim].iter().product();
     let dim_size = shape[dim];
 
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
@@ -361,7 +361,7 @@ fn native_softmax_bwd_last_dim(
     let batch_size: usize = shape[..dim].iter().product();
     let dim_size = shape[dim];
 
-    let d_input = alloc_output(client, shape, dtype);
+    let d_input = alloc_output(client, shape, dtype)?;
 
     let grad_buf = get_tensor_buffer(&grad_contig)?;
     let output_buf = get_tensor_buffer(&output_contig)?;
@@ -416,7 +416,7 @@ pub(crate) fn native_argreduce_op(
     let out_shape = reduce_output_shape(shape, &[dim], keepdim);
 
     // Output indices as I32 (WebGPU doesn't support I64, shader uses u32)
-    let out = alloc_output(client, &out_shape, DType::I32);
+    let out = alloc_output(client, &out_shape, DType::I32)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

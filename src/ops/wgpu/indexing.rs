@@ -251,7 +251,7 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
                 )?;
 
                 // Step 3: divide sum by count
-                let result = alloc_output(self, dst_shape, dtype);
+                let result = alloc_output(self, dst_shape, dtype)?;
                 let result_buf = get_tensor_buffer(&result)?;
 
                 let mean_params = MeanDivParams {
@@ -362,7 +362,7 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
         let total_output = num_slices * slice_size;
 
         // Allocate output
-        let output = alloc_output(self, &output_shape, dtype);
+        let output = alloc_output(self, &output_shape, dtype)?;
 
         // Get buffers
         let input_buf = get_tensor_buffer(&input)?;
@@ -582,7 +582,7 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
         let cols = ensure_contiguous(&cols_i32)?;
 
         // Allocate output
-        let output = alloc_output(self, &[num_indices], dtype);
+        let output = alloc_output(self, &[num_indices], dtype)?;
 
         // Get buffers
         let input_buf = get_tensor_buffer(&input)?;

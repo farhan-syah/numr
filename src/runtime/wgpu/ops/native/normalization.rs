@@ -35,7 +35,7 @@ pub(crate) fn native_rms_norm(
     let a_contig = ensure_contiguous(a)?;
     let weight_contig = ensure_contiguous(weight)?;
 
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let weight_buf = get_tensor_buffer(&weight_contig)?;
@@ -85,7 +85,7 @@ pub(crate) fn native_layer_norm(
     let weight_contig = ensure_contiguous(weight)?;
     let bias_contig = ensure_contiguous(bias)?;
 
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let weight_buf = get_tensor_buffer(&weight_contig)?;
@@ -157,7 +157,7 @@ pub(crate) fn native_group_norm(
     let input_contig = ensure_contiguous(input)?;
     let weight_contig = ensure_contiguous(weight)?;
     let bias_contig = ensure_contiguous(bias)?;
-    let out = alloc_output(client, shape, dtype);
+    let out = alloc_output(client, shape, dtype)?;
 
     let input_buf = get_tensor_buffer(&input_contig)?;
     let weight_buf = get_tensor_buffer(&weight_contig)?;
@@ -226,8 +226,8 @@ pub(crate) fn native_fused_add_rms_norm(
     let residual_contig = ensure_contiguous(residual)?;
     let weight_contig = ensure_contiguous(weight)?;
 
-    let output = alloc_output(client, shape, dtype);
-    let pre_norm = alloc_output(client, shape, dtype);
+    let output = alloc_output(client, shape, dtype)?;
+    let pre_norm = alloc_output(client, shape, dtype)?;
 
     let input_buf = get_tensor_buffer(&input_contig)?;
     let residual_buf = get_tensor_buffer(&residual_contig)?;
@@ -290,8 +290,8 @@ pub(crate) fn native_fused_add_layer_norm(
     let weight_contig = ensure_contiguous(weight)?;
     let bias_contig = ensure_contiguous(bias)?;
 
-    let output = alloc_output(client, shape, dtype);
-    let pre_norm = alloc_output(client, shape, dtype);
+    let output = alloc_output(client, shape, dtype)?;
+    let pre_norm = alloc_output(client, shape, dtype)?;
 
     let input_buf = get_tensor_buffer(&input_contig)?;
     let residual_buf = get_tensor_buffer(&residual_contig)?;
@@ -347,9 +347,9 @@ pub(crate) fn native_fused_add_rms_norm_bwd(
     let pn_contig = ensure_contiguous(pre_norm)?;
     let weight_contig = ensure_contiguous(weight)?;
 
-    let d_input_residual = alloc_output(client, shape, dtype);
-    let d_weight_scratch = alloc_output(client, &[batch_size, hidden_size], dtype);
-    let d_weight = alloc_output(client, &[hidden_size], dtype);
+    let d_input_residual = alloc_output(client, shape, dtype)?;
+    let d_weight_scratch = alloc_output(client, &[batch_size, hidden_size], dtype)?;
+    let d_weight = alloc_output(client, &[hidden_size], dtype)?;
 
     let grad_buf = get_tensor_buffer(&grad_contig)?;
     let pn_buf = get_tensor_buffer(&pn_contig)?;
@@ -427,11 +427,11 @@ pub(crate) fn native_fused_add_layer_norm_bwd(
     let weight_contig = ensure_contiguous(weight)?;
     let bias_contig = ensure_contiguous(bias)?;
 
-    let d_input_residual = alloc_output(client, shape, dtype);
-    let d_weight_scratch = alloc_output(client, &[batch_size, hidden_size], dtype);
-    let d_bias_scratch = alloc_output(client, &[batch_size, hidden_size], dtype);
-    let d_weight = alloc_output(client, &[hidden_size], dtype);
-    let d_bias = alloc_output(client, &[hidden_size], dtype);
+    let d_input_residual = alloc_output(client, shape, dtype)?;
+    let d_weight_scratch = alloc_output(client, &[batch_size, hidden_size], dtype)?;
+    let d_bias_scratch = alloc_output(client, &[batch_size, hidden_size], dtype)?;
+    let d_weight = alloc_output(client, &[hidden_size], dtype)?;
+    let d_bias = alloc_output(client, &[hidden_size], dtype)?;
 
     let grad_buf = get_tensor_buffer(&grad_contig)?;
     let pn_buf = get_tensor_buffer(&pn_contig)?;
