@@ -56,23 +56,26 @@ pub fn sparse_solve_triangular_wgpu(
     // Convert all indices to i32 on GPU (eliminates manual CPU conversion)
     let level_rows_i32: Vec<i32> = level_rows.iter().map(|&x| x as i32).collect();
     let row_ptrs_i64_gpu =
-        Tensor::<WgpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], &client.device_id);
-    let col_indices_i64_gpu =
-        Tensor::<WgpuRuntime>::from_slice(&col_indices, &[col_indices.len()], &client.device_id);
+        Tensor::<WgpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], &client.device_id)?;
+    let col_indices_i64_gpu = Tensor::<WgpuRuntime>::try_from_slice(
+        &col_indices,
+        &[col_indices.len()],
+        &client.device_id,
+    )?;
 
     // Cast i64→i32 on GPU (native WGSL shader, avoids manual conversion)
     let row_ptrs_gpu = cast_i64_to_i32_gpu(client, &row_ptrs_i64_gpu)?;
     let col_indices_gpu = cast_i64_to_i32_gpu(client, &col_indices_i64_gpu)?;
 
     // Create GPU buffer for level rows
-    let level_rows_gpu = Tensor::<WgpuRuntime>::from_slice(
+    let level_rows_gpu = Tensor::<WgpuRuntime>::try_from_slice(
         &level_rows_i32,
         &[level_rows_i32.len()],
         &client.device_id,
-    );
+    )?;
 
     // Allocate output and copy b into it on GPU (must be separate buffer)
-    let x = Tensor::<WgpuRuntime>::zeros(b.shape(), dtype, &client.device_id);
+    let x = Tensor::<WgpuRuntime>::try_zeros(b.shape(), dtype, &client.device_id)?;
     let copy_size = b.numel() * dtype.size_in_bytes();
     WgpuRuntime::copy_within_device(b.ptr(), x.ptr(), copy_size, &client.device_id)?;
 

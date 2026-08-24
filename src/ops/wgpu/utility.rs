@@ -24,7 +24,7 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
     }
 
     fn fill(&self, shape: &[usize], value: f64, dtype: DType) -> Result<Tensor<WgpuRuntime>> {
-        let zeros = Tensor::zeros(shape, dtype, self.device());
+        let zeros = Tensor::try_zeros(shape, dtype, self.device())?;
         self.add_scalar(&zeros, value)
     }
 
@@ -40,7 +40,7 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
 
         // Handle empty tensor case
         if numel == 0 {
-            return Ok(Tensor::empty(&[0], dtype, self.device()));
+            return Tensor::try_empty(&[0], dtype, self.device());
         }
 
         // WebGPU only supports F32, I32, U32 natively (no F64, F16, I64, etc.)
@@ -96,11 +96,15 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
         }
 
         if steps == 0 {
-            return Ok(Tensor::empty(&[0], dtype, self.device()));
+            return Tensor::try_empty(&[0], dtype, self.device());
         }
 
         if steps == 1 {
-            return Ok(Tensor::from_slice(&[start as f32], &[1], &self.device_id));
+            return Ok(Tensor::try_from_slice(
+                &[start as f32],
+                &[1],
+                &self.device_id,
+            )?);
         }
 
         // Allocate output
@@ -149,7 +153,7 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
         let (rows, cols) = validate_eye(n, m);
 
         if rows == 0 || cols == 0 {
-            return Ok(Tensor::empty(&[rows, cols], dtype, self.device()));
+            return Tensor::try_empty(&[rows, cols], dtype, self.device());
         }
 
         // WebGPU only supports F32, I32, U32 natively (no F64, F16, I64, etc.)

@@ -58,7 +58,7 @@ pub(super) fn column_parallel_dsmm(
     let a_contig = dense_a.contiguous()?;
 
     // Allocate output C [M, N]
-    let output = Tensor::<WgpuRuntime>::zeros(&[m, n], dtype, device);
+    let output = Tensor::<WgpuRuntime>::try_zeros(&[m, n], dtype, device)?;
 
     // Convert col_ptrs and row_indices from I64 to I32 for WGSL shader
     let col_ptrs_i32 = client.cast(&sparse_b_csc.col_ptrs, DType::I32)?;

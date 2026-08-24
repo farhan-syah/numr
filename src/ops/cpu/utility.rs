@@ -68,7 +68,7 @@ impl UtilityOps<CpuRuntime> for CpuClient {
 
         // Handle empty tensor case
         if numel == 0 {
-            return Ok(Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device)?);
+            return Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device);
         }
 
         let out = Tensor::<CpuRuntime>::try_empty(&[numel], dtype, &self.device)?;
@@ -95,7 +95,7 @@ impl UtilityOps<CpuRuntime> for CpuClient {
 
         // Handle edge cases
         if steps == 0 {
-            return Ok(Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device)?);
+            return Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device);
         }
 
         if steps == 1 {
@@ -130,11 +130,7 @@ impl UtilityOps<CpuRuntime> for CpuClient {
 
         // Handle edge cases
         if rows == 0 || cols == 0 {
-            return Ok(Tensor::<CpuRuntime>::try_empty(
-                &[rows, cols],
-                dtype,
-                &self.device,
-            )?);
+            return Tensor::<CpuRuntime>::try_empty(&[rows, cols], dtype, &self.device);
         }
 
         let out = Tensor::<CpuRuntime>::try_empty(&[rows, cols], dtype, &self.device)?;

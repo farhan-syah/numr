@@ -120,7 +120,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
 
         // For real types, return zeros
         if !dtype.is_complex() {
-            return Ok(Tensor::<CpuRuntime>::try_zeros(shape, dtype, &self.device)?);
+            return Tensor::<CpuRuntime>::try_zeros(shape, dtype, &self.device);
         }
 
         let a_contig = ensure_contiguous(a)?;
@@ -212,7 +212,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
                 _ => {
                     // For integer types, angle doesn't make mathematical sense
                     // Return zeros
-                    return Ok(Tensor::<CpuRuntime>::try_zeros(shape, dtype, &self.device)?);
+                    return Tensor::<CpuRuntime>::try_zeros(shape, dtype, &self.device);
                 }
             }
             return Ok(out);

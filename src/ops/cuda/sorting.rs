@@ -100,11 +100,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let ndim = shape.len();
 
         if ndim == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_zeros(
-                shape,
-                DType::I64,
-                &self.device,
-            )?);
+            return Tensor::<CudaRuntime>::try_zeros(shape, DType::I64, &self.device);
         }
 
         let dim_idx = normalize_dim(dim, ndim)?;
@@ -209,7 +205,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let numel = a.numel();
 
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device)?);
+            return Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device);
         }
 
         // Flatten and make contiguous
@@ -243,7 +239,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let unique_count = count_data[0] as usize;
 
         if unique_count == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device)?);
+            return Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device);
         }
 
         // Reset counter and allocate output
@@ -318,11 +314,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let numel = a.numel();
 
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(
-                &[0, ndim],
-                DType::I64,
-                &self.device,
-            )?);
+            return Tensor::<CudaRuntime>::try_empty(&[0, ndim], DType::I64, &self.device);
         }
 
         let a_contig = ensure_contiguous(a)?;
@@ -350,19 +342,11 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let nnz = count_data[0] as usize;
 
         if nnz == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(
-                &[0, ndim],
-                DType::I64,
-                &self.device,
-            )?);
+            return Tensor::<CudaRuntime>::try_empty(&[0, ndim], DType::I64, &self.device);
         }
 
         if ndim == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(
-                &[1, 0],
-                DType::I64,
-                &self.device,
-            )?);
+            return Tensor::<CudaRuntime>::try_empty(&[1, 0], DType::I64, &self.device);
         }
 
         // Phase 2: Gather flat indices
@@ -431,11 +415,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let num_values = values.numel();
 
         if num_values == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(
-                values.shape(),
-                DType::I64,
-                &self.device,
-            )?);
+            return Tensor::<CudaRuntime>::try_empty(values.shape(), DType::I64, &self.device);
         }
 
         let seq_contig = ensure_contiguous(sorted_sequence)?;

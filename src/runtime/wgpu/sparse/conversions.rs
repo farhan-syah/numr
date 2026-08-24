@@ -134,7 +134,7 @@ impl WgpuClient {
         let nnz = values.numel();
 
         // Allocate output row_indices
-        let row_indices = Tensor::<WgpuRuntime>::zeros(&[nnz], DType::I32, &self.device_id);
+        let row_indices = Tensor::<WgpuRuntime>::try_zeros(&[nnz], DType::I32, &self.device_id)?;
 
         // Setup params
         let expand_params = ExpandParams {
@@ -187,7 +187,7 @@ impl WgpuClient {
         let nnz = values.numel();
 
         // Allocate output col_indices
-        let col_indices = Tensor::<WgpuRuntime>::zeros(&[nnz], DType::I32, &self.device_id);
+        let col_indices = Tensor::<WgpuRuntime>::try_zeros(&[nnz], DType::I32, &self.device_id)?;
 
         // Setup params
         let expand_params = ExpandParams {
@@ -248,7 +248,7 @@ impl WgpuClient {
         validate_wgpu_dtype(dtype, "coo_to_csr")?;
 
         // Step 1: Count elements per row (histogram)
-        let row_counts = Tensor::<WgpuRuntime>::zeros(&[nrows], DType::I32, &self.device_id);
+        let row_counts = Tensor::<WgpuRuntime>::try_zeros(&[nrows], DType::I32, &self.device_id)?;
         let histogram_params = HistogramParams {
             nnz: nnz as u32,
             _pad0: 0,
@@ -279,7 +279,7 @@ impl WgpuClient {
         )?;
 
         // Step 2: Exclusive scan to build row_ptrs
-        let row_ptrs = Tensor::<WgpuRuntime>::zeros(&[nrows + 1], DType::I32, &self.device_id);
+        let row_ptrs = Tensor::<WgpuRuntime>::try_zeros(&[nrows + 1], DType::I32, &self.device_id)?;
         let scan_params = ScanParams {
             n: nrows as u32,
             _pad0: 0,
@@ -309,7 +309,7 @@ impl WgpuClient {
 
         // Step 3: Copy row_ptrs for atomic scatter (scatter modifies positions atomically)
         let row_ptrs_atomic =
-            Tensor::<WgpuRuntime>::zeros(&[nrows + 1], DType::I32, &self.device_id);
+            Tensor::<WgpuRuntime>::try_zeros(&[nrows + 1], DType::I32, &self.device_id)?;
         let copy_params = CopyParams {
             n: (nrows + 1) as u32,
             _pad0: 0,
@@ -339,8 +339,9 @@ impl WgpuClient {
         )?;
 
         // Step 4: Scatter elements to their positions
-        let out_col_indices = Tensor::<WgpuRuntime>::zeros(&[nnz], DType::I32, &self.device_id);
-        let out_values = Tensor::<WgpuRuntime>::zeros(&[nnz], dtype, &self.device_id);
+        let out_col_indices =
+            Tensor::<WgpuRuntime>::try_zeros(&[nnz], DType::I32, &self.device_id)?;
+        let out_values = Tensor::<WgpuRuntime>::try_zeros(&[nnz], dtype, &self.device_id)?;
         let scatter_params = ScatterParams {
             nnz: nnz as u32,
             _pad0: 0,
@@ -398,7 +399,7 @@ impl WgpuClient {
         validate_wgpu_dtype(dtype, "coo_to_csc")?;
 
         // Step 1: Count elements per column (histogram)
-        let col_counts = Tensor::<WgpuRuntime>::zeros(&[ncols], DType::I32, &self.device_id);
+        let col_counts = Tensor::<WgpuRuntime>::try_zeros(&[ncols], DType::I32, &self.device_id)?;
         let histogram_params = HistogramParams {
             nnz: nnz as u32,
             _pad0: 0,
@@ -429,7 +430,7 @@ impl WgpuClient {
         )?;
 
         // Step 2: Exclusive scan to build col_ptrs
-        let col_ptrs = Tensor::<WgpuRuntime>::zeros(&[ncols + 1], DType::I32, &self.device_id);
+        let col_ptrs = Tensor::<WgpuRuntime>::try_zeros(&[ncols + 1], DType::I32, &self.device_id)?;
         let scan_params = ScanParams {
             n: ncols as u32,
             _pad0: 0,
@@ -459,7 +460,7 @@ impl WgpuClient {
 
         // Step 3: Copy col_ptrs for atomic scatter
         let col_ptrs_atomic =
-            Tensor::<WgpuRuntime>::zeros(&[ncols + 1], DType::I32, &self.device_id);
+            Tensor::<WgpuRuntime>::try_zeros(&[ncols + 1], DType::I32, &self.device_id)?;
         let copy_params = CopyParams {
             n: (ncols + 1) as u32,
             _pad0: 0,
@@ -489,8 +490,9 @@ impl WgpuClient {
         )?;
 
         // Step 4: Scatter elements to their positions
-        let out_row_indices = Tensor::<WgpuRuntime>::zeros(&[nnz], DType::I32, &self.device_id);
-        let out_values = Tensor::<WgpuRuntime>::zeros(&[nnz], dtype, &self.device_id);
+        let out_row_indices =
+            Tensor::<WgpuRuntime>::try_zeros(&[nnz], DType::I32, &self.device_id)?;
+        let out_values = Tensor::<WgpuRuntime>::try_zeros(&[nnz], dtype, &self.device_id)?;
         let scatter_params = ScatterParams {
             nnz: nnz as u32,
             _pad0: 0,
@@ -550,7 +552,7 @@ impl WgpuClient {
         validate_wgpu_dtype(dtype, "csr_to_csc")?;
 
         // Step 1: Count elements per column (histogram over col_indices)
-        let col_counts = Tensor::<WgpuRuntime>::zeros(&[ncols], DType::I32, &self.device_id);
+        let col_counts = Tensor::<WgpuRuntime>::try_zeros(&[ncols], DType::I32, &self.device_id)?;
         let histogram_params = HistogramParams {
             nnz: nnz as u32,
             _pad0: 0,
@@ -581,7 +583,7 @@ impl WgpuClient {
         )?;
 
         // Step 2: Exclusive scan to build col_ptrs
-        let col_ptrs = Tensor::<WgpuRuntime>::zeros(&[ncols + 1], DType::I32, &self.device_id);
+        let col_ptrs = Tensor::<WgpuRuntime>::try_zeros(&[ncols + 1], DType::I32, &self.device_id)?;
         let scan_params = ScanParams {
             n: ncols as u32,
             _pad0: 0,
@@ -611,7 +613,7 @@ impl WgpuClient {
 
         // Step 3: Copy col_ptrs for atomic scatter
         let col_ptrs_atomic =
-            Tensor::<WgpuRuntime>::zeros(&[ncols + 1], DType::I32, &self.device_id);
+            Tensor::<WgpuRuntime>::try_zeros(&[ncols + 1], DType::I32, &self.device_id)?;
         let copy_params = CopyParams {
             n: (ncols + 1) as u32,
             _pad0: 0,
@@ -641,8 +643,9 @@ impl WgpuClient {
         )?;
 
         // Step 4: Scatter CSR elements to CSC positions
-        let out_row_indices = Tensor::<WgpuRuntime>::zeros(&[nnz], DType::I32, &self.device_id);
-        let out_values = Tensor::<WgpuRuntime>::zeros(&[nnz], dtype, &self.device_id);
+        let out_row_indices =
+            Tensor::<WgpuRuntime>::try_zeros(&[nnz], DType::I32, &self.device_id)?;
+        let out_values = Tensor::<WgpuRuntime>::try_zeros(&[nnz], dtype, &self.device_id)?;
         let transpose_params = TransposeParams {
             n: nrows as u32,
             _pad0: 0,
@@ -700,7 +703,7 @@ impl WgpuClient {
         validate_wgpu_dtype(dtype, "csc_to_csr")?;
 
         // Step 1: Count elements per row (histogram over row_indices)
-        let row_counts = Tensor::<WgpuRuntime>::zeros(&[nrows], DType::I32, &self.device_id);
+        let row_counts = Tensor::<WgpuRuntime>::try_zeros(&[nrows], DType::I32, &self.device_id)?;
         let histogram_params = HistogramParams {
             nnz: nnz as u32,
             _pad0: 0,
@@ -731,7 +734,7 @@ impl WgpuClient {
         )?;
 
         // Step 2: Exclusive scan to build row_ptrs
-        let row_ptrs = Tensor::<WgpuRuntime>::zeros(&[nrows + 1], DType::I32, &self.device_id);
+        let row_ptrs = Tensor::<WgpuRuntime>::try_zeros(&[nrows + 1], DType::I32, &self.device_id)?;
         let scan_params = ScanParams {
             n: nrows as u32,
             _pad0: 0,
@@ -761,7 +764,7 @@ impl WgpuClient {
 
         // Step 3: Copy row_ptrs for atomic scatter
         let row_ptrs_atomic =
-            Tensor::<WgpuRuntime>::zeros(&[nrows + 1], DType::I32, &self.device_id);
+            Tensor::<WgpuRuntime>::try_zeros(&[nrows + 1], DType::I32, &self.device_id)?;
         let copy_params = CopyParams {
             n: (nrows + 1) as u32,
             _pad0: 0,
@@ -791,8 +794,9 @@ impl WgpuClient {
         )?;
 
         // Step 4: Scatter CSC elements to CSR positions
-        let out_col_indices = Tensor::<WgpuRuntime>::zeros(&[nnz], DType::I32, &self.device_id);
-        let out_values = Tensor::<WgpuRuntime>::zeros(&[nnz], dtype, &self.device_id);
+        let out_col_indices =
+            Tensor::<WgpuRuntime>::try_zeros(&[nnz], DType::I32, &self.device_id)?;
+        let out_values = Tensor::<WgpuRuntime>::try_zeros(&[nnz], dtype, &self.device_id)?;
         let transpose_params = TransposeParams {
             n: ncols as u32,
             _pad0: 0,
@@ -854,7 +858,7 @@ impl WgpuClient {
         validate_wgpu_dtype(dtype, "sparse_to_dense")?;
 
         // Allocate dense output initialized to zeros
-        let dense = Tensor::<WgpuRuntime>::zeros(&[nrows, ncols], dtype, &self.device_id);
+        let dense = Tensor::<WgpuRuntime>::try_zeros(&[nrows, ncols], dtype, &self.device_id)?;
 
         // Setup params
         let params = CsrToDenseParams {
@@ -991,9 +995,11 @@ impl WgpuClient {
 
         // Step 3: Allocate output COO tensors
         // Note: WGSL shader uses i32 for indices, we create I32 tensors
-        let row_indices = Tensor::<WgpuRuntime>::zeros(&[total_nnz], DType::I32, &self.device_id);
-        let col_indices = Tensor::<WgpuRuntime>::zeros(&[total_nnz], DType::I32, &self.device_id);
-        let values = Tensor::<WgpuRuntime>::zeros(&[total_nnz], dtype, &self.device_id);
+        let row_indices =
+            Tensor::<WgpuRuntime>::try_zeros(&[total_nnz], DType::I32, &self.device_id)?;
+        let col_indices =
+            Tensor::<WgpuRuntime>::try_zeros(&[total_nnz], DType::I32, &self.device_id)?;
+        let values = Tensor::<WgpuRuntime>::try_zeros(&[total_nnz], dtype, &self.device_id)?;
 
         // Create atomic write position buffer (initialized to 0)
         let write_pos_buffer = self.create_storage_buffer("write_pos", 4);

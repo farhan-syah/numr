@@ -106,7 +106,7 @@ fn dispatch_multinomial_count_shader(
     use crate::runtime::wgpu::client::get_buffer;
 
     // Allocate output tensor [n_samples, k]
-    let output = Tensor::<WgpuRuntime>::empty(&[n_samples, k], DType::F32, client.device());
+    let output = Tensor::<WgpuRuntime>::try_empty(&[n_samples, k], DType::F32, client.device())?;
 
     // Get buffers
     let cdf_buf =

@@ -78,33 +78,33 @@ impl WgpuClient {
         match dst_dtype {
             DType::F32 => {
                 let data: Vec<f32> = f64_values.iter().map(|&v| v as f32).collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             DType::I32 => {
                 let data: Vec<i32> = f64_values.iter().map(|&v| v as i32).collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             DType::U32 => {
                 let data: Vec<u32> = f64_values.iter().map(|&v| v as u32).collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             DType::I64 => {
                 let data: Vec<i64> = f64_values.iter().map(|&v| v as i64).collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
-            DType::F64 => Ok(Tensor::from_slice(&f64_values, &shape, device)),
+            DType::F64 => Tensor::try_from_slice(&f64_values, &shape, device),
             DType::Bool => {
                 let data: Vec<u8> = f64_values
                     .iter()
                     .map(|&v| if v != 0.0 { 1u8 } else { 0u8 })
                     .collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             #[cfg(feature = "f16")]
             DType::F16 => {
                 let data: Vec<half::f16> =
                     f64_values.iter().map(|&v| half::f16::from_f64(v)).collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             #[cfg(feature = "f16")]
             DType::BF16 => {
@@ -112,7 +112,7 @@ impl WgpuClient {
                     .iter()
                     .map(|&v| half::bf16::from_f64(v))
                     .collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             #[cfg(feature = "fp8")]
             DType::FP8E4M3 => {
@@ -121,7 +121,7 @@ impl WgpuClient {
                     .iter()
                     .map(|&v| FP8E4M3::from_f32(v as f32))
                     .collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             #[cfg(feature = "fp8")]
             DType::FP8E5M2 => {
@@ -130,7 +130,7 @@ impl WgpuClient {
                     .iter()
                     .map(|&v| FP8E5M2::from_f32(v as f32))
                     .collect();
-                Ok(Tensor::from_slice(&data, &shape, device))
+                Tensor::try_from_slice(&data, &shape, device)
             }
             _ => Err(Error::UnsupportedDType {
                 dtype: dst_dtype,

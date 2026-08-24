@@ -184,7 +184,7 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
             // modifies it in-place via atomics, which would corrupt the original.
             self.add_scalar(&dst, 0.0)?
         } else {
-            Tensor::full_scalar(dst_shape, dtype, identity, self.device())
+            Tensor::try_full_scalar(dst_shape, dtype, identity, self.device())?
         };
 
         // Create shared params
@@ -237,7 +237,7 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
                 let count_init = if include_self { 1u32 } else { 0u32 };
                 let count_data = vec![count_init; numel];
                 let count_tensor =
-                    Tensor::<WgpuRuntime>::from_slice(&count_data, dst_shape, self.device());
+                    Tensor::<WgpuRuntime>::try_from_slice(&count_data, dst_shape, self.device())?;
                 let count_buf = get_tensor_buffer(&count_tensor)?;
 
                 launch_scatter_reduce_count(
@@ -465,9 +465,9 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
         // Unweighted: U32 counts. Weighted: same dtype as weights (shader uses atomic<u32> bitcast).
         let output = if output_dtype == DType::U32 {
             let zeros = vec![0u32; output_len];
-            Tensor::<WgpuRuntime>::from_slice(&zeros, &[output_len], self.device())
+            Tensor::<WgpuRuntime>::try_from_slice(&zeros, &[output_len], self.device())?
         } else {
-            Tensor::zeros(&[output_len], output_dtype, self.device())
+            Tensor::try_zeros(&[output_len], output_dtype, self.device())?
         };
 
         // Get buffers

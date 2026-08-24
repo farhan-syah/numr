@@ -240,7 +240,7 @@ pub fn extract_diagonal_csr<T: Element>(
     let device = values.device();
 
     if n == 0 {
-        return Ok(Tensor::try_empty(&[0], values.dtype(), device)?);
+        return Tensor::try_empty(&[0], values.dtype(), device);
     }
 
     let row_ptrs_data: Vec<i64> = row_ptrs.to_vec();
@@ -259,5 +259,5 @@ pub fn extract_diagonal_csr<T: Element>(
         }
     }
 
-    Ok(Tensor::try_from_slice(&diag, &[n], device)?)
+    Tensor::try_from_slice(&diag, &[n], device)
 }

@@ -60,15 +60,15 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     if total == 0 {
         // Both matrices are empty
         return Ok((
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], dtype, device),
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], dtype, device)?,
         ));
     }
 
     // Step 1: Compute keys for both matrices
-    let keys_a = Tensor::<CudaRuntime>::zeros(&[nnz_a], DType::I64, device);
-    let keys_b = Tensor::<CudaRuntime>::zeros(&[nnz_b], DType::I64, device);
+    let keys_a = Tensor::<CudaRuntime>::try_zeros(&[nnz_a], DType::I64, device)?;
+    let keys_b = Tensor::<CudaRuntime>::try_zeros(&[nnz_b], DType::I64, device)?;
 
     if nnz_a > 0 {
         launch_coo_compute_keys(
@@ -97,9 +97,9 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     }
 
     // Step 2: Concatenate keys, values, and source flags
-    let concat_keys = Tensor::<CudaRuntime>::zeros(&[total], DType::I64, device);
-    let concat_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let concat_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let concat_keys = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I64, device)?;
+    let concat_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let concat_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_concat_keys(
         context,
@@ -125,7 +125,7 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 3: Initialize indices array [0, 1, 2, ..., total-1] on GPU
-    let indices = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let indices = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_init_indices(context, stream, device_index, indices.ptr(), total)?;
 
     // Step 4: Sort (keys, indices) using Thrust stable_sort_by_key - FULLY ON GPU
@@ -144,8 +144,8 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     // After sorting, concat_keys and indices are now sorted
 
     // Step 5: Gather values and sources using sorted indices - ALL ON GPU
-    let sorted_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let sorted_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let sorted_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let sorted_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_gather::<T>(
         context,
@@ -168,7 +168,7 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 6: Mark unique positions - ALL ON GPU
-    let unique_flags = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let unique_flags = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_mark_unique(
         context,
         stream,
@@ -190,8 +190,8 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     };
 
     // Step 8: Merge duplicates (add operation) - ALL ON GPU
-    let merged_keys = Tensor::<CudaRuntime>::zeros(&[num_unique], DType::I64, device);
-    let merged_values = Tensor::<CudaRuntime>::zeros(&[num_unique], dtype, device);
+    let merged_keys = Tensor::<CudaRuntime>::try_zeros(&[num_unique], DType::I64, device)?;
+    let merged_values = Tensor::<CudaRuntime>::try_zeros(&[num_unique], dtype, device)?;
 
     launch_coo_merge_duplicates_add::<T>(
         context,
@@ -209,7 +209,7 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
 
     // Step 9: Filter out zeros - ALL ON GPU (using CUB)
     let threshold = crate::runtime::common::sparse_utils::zero_tolerance::<T>();
-    let nonzero_flags = Tensor::<CudaRuntime>::zeros(&[num_unique], DType::I32, device);
+    let nonzero_flags = Tensor::<CudaRuntime>::try_zeros(&[num_unique], DType::I32, device)?;
 
     launch_coo_mark_nonzero::<T>(
         context,
@@ -233,8 +233,8 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     };
 
     // Compact arrays to remove zeros
-    let final_keys = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_values = Tensor::<CudaRuntime>::zeros(&[nnz_out], dtype, device);
+    let final_keys = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_values = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], dtype, device)?;
 
     launch_coo_compact::<T>(
         context,
@@ -250,8 +250,8 @@ pub unsafe fn coo_add_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 10: Extract row/col indices from keys - ALL ON GPU
-    let final_row_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_col_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
+    let final_row_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_col_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
 
     launch_coo_extract_indices(
         context,
@@ -312,15 +312,15 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     if total == 0 {
         // Both matrices are empty
         return Ok((
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], dtype, device),
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], dtype, device)?,
         ));
     }
 
     // Step 1: Compute keys for both matrices
-    let keys_a = Tensor::<CudaRuntime>::zeros(&[nnz_a], DType::I64, device);
-    let keys_b = Tensor::<CudaRuntime>::zeros(&[nnz_b], DType::I64, device);
+    let keys_a = Tensor::<CudaRuntime>::try_zeros(&[nnz_a], DType::I64, device)?;
+    let keys_b = Tensor::<CudaRuntime>::try_zeros(&[nnz_b], DType::I64, device)?;
 
     if nnz_a > 0 {
         launch_coo_compute_keys(
@@ -349,9 +349,9 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     }
 
     // Step 2: Concatenate keys, values, and source flags - ALL ON GPU
-    let concat_keys = Tensor::<CudaRuntime>::zeros(&[total], DType::I64, device);
-    let concat_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let concat_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let concat_keys = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I64, device)?;
+    let concat_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let concat_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_concat_keys(
         context,
@@ -377,7 +377,7 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 3: Initialize indices array [0, 1, 2, ..., total-1] on GPU
-    let indices = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let indices = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_init_indices(context, stream, device_index, indices.ptr(), total)?;
 
     // Step 4: Sort (keys, indices) using Thrust stable_sort_by_key - FULLY ON GPU
@@ -393,8 +393,8 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     }
 
     // Step 5: Gather values and sources using sorted indices - ALL ON GPU
-    let sorted_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let sorted_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let sorted_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let sorted_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_gather::<T>(
         context,
@@ -417,7 +417,7 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 6: Mark unique positions - ALL ON GPU
-    let unique_flags = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let unique_flags = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_mark_unique(
         context,
         stream,
@@ -439,8 +439,8 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     };
 
     // Step 8: Merge duplicates (subtract operation) - ALL ON GPU
-    let merged_keys = Tensor::<CudaRuntime>::zeros(&[num_unique], DType::I64, device);
-    let merged_values = Tensor::<CudaRuntime>::zeros(&[num_unique], dtype, device);
+    let merged_keys = Tensor::<CudaRuntime>::try_zeros(&[num_unique], DType::I64, device)?;
+    let merged_values = Tensor::<CudaRuntime>::try_zeros(&[num_unique], dtype, device)?;
 
     launch_coo_merge_sub::<T>(
         context,
@@ -458,7 +458,7 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
 
     // Step 9: Filter out zeros - ALL ON GPU (using CUB)
     let threshold = crate::runtime::common::sparse_utils::zero_tolerance::<T>();
-    let nonzero_flags = Tensor::<CudaRuntime>::zeros(&[num_unique], DType::I32, device);
+    let nonzero_flags = Tensor::<CudaRuntime>::try_zeros(&[num_unique], DType::I32, device)?;
 
     launch_coo_mark_nonzero::<T>(
         context,
@@ -482,8 +482,8 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     };
 
     // Compact arrays to remove zeros
-    let final_keys = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_values = Tensor::<CudaRuntime>::zeros(&[nnz_out], dtype, device);
+    let final_keys = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_values = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], dtype, device)?;
 
     launch_coo_compact::<T>(
         context,
@@ -499,8 +499,8 @@ pub unsafe fn coo_sub_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 10: Extract row/col indices from keys - ALL ON GPU
-    let final_row_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_col_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
+    let final_row_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_col_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
 
     launch_coo_extract_indices(
         context,
@@ -561,15 +561,15 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     if nnz_a == 0 || nnz_b == 0 {
         // One matrix is empty, intersection is empty
         return Ok((
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], dtype, device),
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], dtype, device)?,
         ));
     }
 
     // Step 1: Compute keys for both matrices
-    let keys_a = Tensor::<CudaRuntime>::zeros(&[nnz_a], DType::I64, device);
-    let keys_b = Tensor::<CudaRuntime>::zeros(&[nnz_b], DType::I64, device);
+    let keys_a = Tensor::<CudaRuntime>::try_zeros(&[nnz_a], DType::I64, device)?;
+    let keys_b = Tensor::<CudaRuntime>::try_zeros(&[nnz_b], DType::I64, device)?;
 
     launch_coo_compute_keys(
         context,
@@ -594,9 +594,9 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 2: Concatenate keys, values, and source flags - ALL ON GPU
-    let concat_keys = Tensor::<CudaRuntime>::zeros(&[total], DType::I64, device);
-    let concat_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let concat_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let concat_keys = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I64, device)?;
+    let concat_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let concat_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_concat_keys(
         context,
@@ -622,7 +622,7 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 3: Initialize indices array [0, 1, 2, ..., total-1] on GPU
-    let indices = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let indices = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_init_indices(context, stream, device_index, indices.ptr(), total)?;
 
     // Step 4: Sort (keys, indices) using Thrust stable_sort_by_key - FULLY ON GPU
@@ -638,8 +638,8 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     }
 
     // Step 5: Gather values and sources using sorted indices - ALL ON GPU
-    let sorted_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let sorted_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let sorted_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let sorted_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_gather::<T>(
         context,
@@ -662,7 +662,7 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 6: Count intersections - ALL ON GPU
-    let intersection_flags = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let intersection_flags = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_count_intersections(
         context,
         stream,
@@ -685,8 +685,8 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     };
 
     // Step 8: Merge intersections (multiply operation) - ALL ON GPU
-    let merged_keys = Tensor::<CudaRuntime>::zeros(&[num_intersections], DType::I64, device);
-    let merged_values = Tensor::<CudaRuntime>::zeros(&[num_intersections], dtype, device);
+    let merged_keys = Tensor::<CudaRuntime>::try_zeros(&[num_intersections], DType::I64, device)?;
+    let merged_values = Tensor::<CudaRuntime>::try_zeros(&[num_intersections], dtype, device)?;
 
     launch_coo_merge_mul::<T>(
         context,
@@ -704,7 +704,7 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
 
     // Step 9: Filter out zeros - ALL ON GPU (using CUB)
     let threshold = crate::runtime::common::sparse_utils::zero_tolerance::<T>();
-    let nonzero_flags = Tensor::<CudaRuntime>::zeros(&[num_intersections], DType::I32, device);
+    let nonzero_flags = Tensor::<CudaRuntime>::try_zeros(&[num_intersections], DType::I32, device)?;
 
     launch_coo_mark_nonzero::<T>(
         context,
@@ -728,8 +728,8 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     };
 
     // Compact arrays to remove zeros
-    let final_keys = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_values = Tensor::<CudaRuntime>::zeros(&[nnz_out], dtype, device);
+    let final_keys = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_values = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], dtype, device)?;
 
     launch_coo_compact::<T>(
         context,
@@ -745,8 +745,8 @@ pub unsafe fn coo_mul_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 10: Extract row/col indices from keys - ALL ON GPU
-    let final_row_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_col_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
+    let final_row_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_col_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
 
     launch_coo_extract_indices(
         context,
@@ -807,15 +807,15 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     if nnz_a == 0 || nnz_b == 0 {
         // One matrix is empty, intersection is empty
         return Ok((
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], DType::I64, device),
-            Tensor::<CudaRuntime>::zeros(&[0], dtype, device),
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], DType::I64, device)?,
+            Tensor::<CudaRuntime>::try_zeros(&[0], dtype, device)?,
         ));
     }
 
     // Step 1: Compute keys for both matrices
-    let keys_a = Tensor::<CudaRuntime>::zeros(&[nnz_a], DType::I64, device);
-    let keys_b = Tensor::<CudaRuntime>::zeros(&[nnz_b], DType::I64, device);
+    let keys_a = Tensor::<CudaRuntime>::try_zeros(&[nnz_a], DType::I64, device)?;
+    let keys_b = Tensor::<CudaRuntime>::try_zeros(&[nnz_b], DType::I64, device)?;
 
     launch_coo_compute_keys(
         context,
@@ -840,9 +840,9 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 2: Concatenate keys, values, and source flags - ALL ON GPU
-    let concat_keys = Tensor::<CudaRuntime>::zeros(&[total], DType::I64, device);
-    let concat_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let concat_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let concat_keys = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I64, device)?;
+    let concat_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let concat_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_concat_keys(
         context,
@@ -868,7 +868,7 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 3: Initialize indices array [0, 1, 2, ..., total-1] on GPU
-    let indices = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let indices = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_init_indices(context, stream, device_index, indices.ptr(), total)?;
 
     // Step 4: Sort (keys, indices) using Thrust stable_sort_by_key - FULLY ON GPU
@@ -884,8 +884,8 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     }
 
     // Step 5: Gather values and sources using sorted indices - ALL ON GPU
-    let sorted_values = Tensor::<CudaRuntime>::zeros(&[total], dtype, device);
-    let sorted_sources = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let sorted_values = Tensor::<CudaRuntime>::try_zeros(&[total], dtype, device)?;
+    let sorted_sources = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
 
     launch_coo_gather::<T>(
         context,
@@ -908,7 +908,7 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 6: Count intersections - ALL ON GPU
-    let intersection_flags = Tensor::<CudaRuntime>::zeros(&[total], DType::I32, device);
+    let intersection_flags = Tensor::<CudaRuntime>::try_zeros(&[total], DType::I32, device)?;
     launch_coo_count_intersections(
         context,
         stream,
@@ -931,8 +931,8 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     };
 
     // Step 8: Merge intersections (divide operation) - ALL ON GPU
-    let merged_keys = Tensor::<CudaRuntime>::zeros(&[num_intersections], DType::I64, device);
-    let merged_values = Tensor::<CudaRuntime>::zeros(&[num_intersections], dtype, device);
+    let merged_keys = Tensor::<CudaRuntime>::try_zeros(&[num_intersections], DType::I64, device)?;
+    let merged_values = Tensor::<CudaRuntime>::try_zeros(&[num_intersections], dtype, device)?;
 
     launch_coo_merge_div::<T>(
         context,
@@ -950,7 +950,7 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
 
     // Step 9: Filter out zeros and non-finite values - ALL ON GPU (using CUB)
     let threshold = crate::runtime::common::sparse_utils::zero_tolerance::<T>();
-    let nonzero_flags = Tensor::<CudaRuntime>::zeros(&[num_intersections], DType::I32, device);
+    let nonzero_flags = Tensor::<CudaRuntime>::try_zeros(&[num_intersections], DType::I32, device)?;
 
     launch_coo_mark_nonzero::<T>(
         context,
@@ -974,8 +974,8 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     };
 
     // Compact arrays to remove zeros
-    let final_keys = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_values = Tensor::<CudaRuntime>::zeros(&[nnz_out], dtype, device);
+    let final_keys = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_values = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], dtype, device)?;
 
     launch_coo_compact::<T>(
         context,
@@ -991,8 +991,8 @@ pub unsafe fn coo_div_merge<T: CudaTypeName + Element>(
     )?;
 
     // Step 10: Extract row/col indices from keys - ALL ON GPU
-    let final_row_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
-    let final_col_indices = Tensor::<CudaRuntime>::zeros(&[nnz_out], DType::I64, device);
+    let final_row_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
+    let final_col_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz_out], DType::I64, device)?;
 
     launch_coo_extract_indices(
         context,

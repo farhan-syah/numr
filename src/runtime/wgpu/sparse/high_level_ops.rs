@@ -701,7 +701,7 @@ impl SparseOps<WgpuRuntime> for WgpuClient {
 
         // Use SpMV with a vector of ones to compute row sums efficiently
         // row_sums = A * ones_vector
-        let ones = Tensor::ones(&[csr.shape[1]], csr.values.dtype(), csr.values.device());
+        let ones = Tensor::try_ones(&[csr.shape[1]], csr.values.dtype(), csr.values.device())?;
 
         let dtype = csr.values.dtype();
         crate::dispatch_dtype!(dtype, T => {
@@ -729,7 +729,7 @@ impl SparseOps<WgpuRuntime> for WgpuClient {
         //
         // In CSC format: col_ptrs -> row_ptrs, row_indices -> col_indices
         // So we can compute as if it were CSR for the transpose
-        let ones = Tensor::ones(&[csc.shape[0]], csc.values.dtype(), csc.values.device());
+        let ones = Tensor::try_ones(&[csc.shape[0]], csc.values.dtype(), csc.values.device())?;
 
         let dtype = csc.values.dtype();
         // Shape for transpose: [ncols, nrows]
@@ -925,10 +925,10 @@ impl SparseOps<WgpuRuntime> for WgpuClient {
         validate_wgpu_dtype(dtype, "extract_diagonal_csr")?;
 
         if n == 0 {
-            return Ok(Tensor::empty(&[0], dtype, &self.device_id));
+            return Tensor::try_empty(&[0], dtype, &self.device_id);
         }
 
-        let diag = Tensor::<WgpuRuntime>::zeros(&[n], dtype, &self.device_id);
+        let diag = Tensor::<WgpuRuntime>::try_zeros(&[n], dtype, &self.device_id)?;
 
         // Create params buffer
         let params_buffer = self.create_uniform_buffer("diag_params", 16);

@@ -105,11 +105,11 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
 
         // Handle empty output
         if params.output_length == 0 || params.batch == 0 {
-            return Ok(Tensor::<WgpuRuntime>::empty(
+            return Ok(Tensor::<WgpuRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_length],
                 dtype,
                 self.device(),
-            ));
+            )?);
         }
 
         // Ensure contiguous
@@ -134,7 +134,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
             get_tensor_buffer(b)?
         } else {
             // Create a small dummy buffer (1 element)
-            let dummy = Tensor::<WgpuRuntime>::empty(&[1], dtype, self.device());
+            let dummy = Tensor::<WgpuRuntime>::try_empty(&[1], dtype, self.device())?;
             get_tensor_buffer(&dummy)?
         };
 
@@ -200,11 +200,11 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
         )?;
 
         if params.output_length == 0 || params.batch == 0 {
-            return Ok(Tensor::<WgpuRuntime>::empty(
+            return Ok(Tensor::<WgpuRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_length],
                 dtype,
                 self.device(),
-            ));
+            )?);
         }
 
         let input = ensure_contiguous(input)?;
@@ -223,7 +223,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
         let bias_buf = if let Some(ref b) = bias {
             get_tensor_buffer(b)?
         } else {
-            let dummy = Tensor::<WgpuRuntime>::empty(&[1], dtype, self.device());
+            let dummy = Tensor::<WgpuRuntime>::try_empty(&[1], dtype, self.device())?;
             get_tensor_buffer(&dummy)?
         };
 
@@ -288,11 +288,11 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
 
         // Handle empty output
         if params.output_h == 0 || params.output_w == 0 || params.batch == 0 {
-            return Ok(Tensor::<WgpuRuntime>::empty(
+            return Ok(Tensor::<WgpuRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_h, params.output_w],
                 dtype,
                 self.device(),
-            ));
+            )?);
         }
 
         // Ensure contiguous
@@ -316,7 +316,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
         let bias_buf = if let Some(ref b) = bias {
             get_tensor_buffer(b)?
         } else {
-            let dummy = Tensor::<WgpuRuntime>::empty(&[1], dtype, self.device());
+            let dummy = Tensor::<WgpuRuntime>::try_empty(&[1], dtype, self.device())?;
             get_tensor_buffer(&dummy)?
         };
 
@@ -386,11 +386,11 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
 
         // Handle empty output
         if params.output_h == 0 || params.output_w == 0 || params.batch == 0 {
-            return Ok(Tensor::<WgpuRuntime>::empty(
+            return Ok(Tensor::<WgpuRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_h, params.output_w],
                 dtype,
                 self.device(),
-            ));
+            )?);
         }
 
         // Ensure contiguous
@@ -414,7 +414,7 @@ impl ConvOps<WgpuRuntime> for WgpuClient {
         let bias_buf = if let Some(ref b) = bias {
             get_tensor_buffer(b)?
         } else {
-            let dummy = Tensor::<WgpuRuntime>::empty(&[1], dtype, self.device());
+            let dummy = Tensor::<WgpuRuntime>::try_empty(&[1], dtype, self.device())?;
             get_tensor_buffer(&dummy)?
         };
 

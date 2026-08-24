@@ -72,7 +72,7 @@ impl WgpuClient {
         }
 
         // Allocate output on GPU
-        let y = Tensor::<WgpuRuntime>::zeros(&[nrows], dtype, &self.device_id);
+        let y = Tensor::<WgpuRuntime>::try_zeros(&[nrows], dtype, &self.device_id)?;
 
         // Create params buffer
         let params = SpmvParams {
@@ -161,7 +161,7 @@ impl WgpuClient {
         }
 
         // Allocate output on GPU
-        let c = Tensor::<WgpuRuntime>::zeros(&[m, n], dtype, &self.device_id);
+        let c = Tensor::<WgpuRuntime>::try_zeros(&[m, n], dtype, &self.device_id)?;
 
         // Create params buffer
         let params = SpmmParams {

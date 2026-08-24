@@ -56,7 +56,7 @@ impl SparseOps<CpuRuntime> for CpuClient {
             y_data.push(T::from_f64(sum));
         }
 
-        Ok(Tensor::try_from_slice(&y_data, &[nrows], device)?)
+        Tensor::try_from_slice(&y_data, &[nrows], device)
     }
 
     fn spmm_csr<T: Element>(
@@ -108,7 +108,7 @@ impl SparseOps<CpuRuntime> for CpuClient {
             }
         }
 
-        Ok(Tensor::try_from_slice(&c_data, &[m, n], device)?)
+        Tensor::try_from_slice(&c_data, &[m, n], device)
     }
 
     fn add_csr<T: Element>(

@@ -139,13 +139,9 @@ fn solve_banded_typed<T: Element + LinalgElement>(
     let b_is_1d = b.ndim() == 1;
 
     if b_is_1d {
-        Ok(Tensor::<CpuRuntime>::try_from_slice(&result, &[n], device)?)
+        Tensor::<CpuRuntime>::try_from_slice(&result, &[n], device)
     } else {
-        Ok(Tensor::<CpuRuntime>::try_from_slice(
-            &result,
-            &[n, nrhs],
-            device,
-        )?)
+        Tensor::<CpuRuntime>::try_from_slice(&result, &[n, nrhs], device)
     }
 }
 

@@ -117,7 +117,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let ndim = shape.len();
 
         if ndim == 0 {
-            let indices = Tensor::zeros(&[], DType::I32, self.device());
+            let indices = Tensor::try_zeros(&[], DType::I32, self.device())?;
             return Ok((a.clone(), indices));
         }
 
@@ -361,7 +361,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let numel = a.numel();
 
         if numel == 0 {
-            return Ok(Tensor::empty(&[0], dtype, self.device()));
+            return Tensor::try_empty(&[0], dtype, self.device());
         }
 
         // Step 1: Flatten and sort
@@ -402,7 +402,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let count = read_u32_from_buffer(self, &count_buf)?;
 
         if count == 0 {
-            return Ok(Tensor::empty(&[0], dtype, self.device()));
+            return Tensor::try_empty(&[0], dtype, self.device());
         }
 
         // Step 3: Extract unique elements
@@ -447,9 +447,9 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let numel = a.numel();
 
         if numel == 0 {
-            let empty_values = Tensor::empty(&[0], dtype, self.device());
-            let empty_inverse = Tensor::empty(&[0], DType::I32, self.device());
-            let empty_counts = Tensor::empty(&[0], DType::I32, self.device());
+            let empty_values = Tensor::try_empty(&[0], dtype, self.device())?;
+            let empty_inverse = Tensor::try_empty(&[0], DType::I32, self.device())?;
+            let empty_counts = Tensor::try_empty(&[0], DType::I32, self.device())?;
             return Ok((empty_values, empty_inverse, empty_counts));
         }
 
@@ -498,9 +498,9 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let num_unique = read_u32_from_buffer_at_offset(self, &prefix_sum_buf, numel - 1)?;
 
         if num_unique == 0 {
-            let empty_values = Tensor::empty(&[0], dtype, self.device());
-            let empty_inverse = Tensor::empty(&[0], DType::I32, self.device());
-            let empty_counts = Tensor::empty(&[0], DType::I32, self.device());
+            let empty_values = Tensor::try_empty(&[0], dtype, self.device())?;
+            let empty_inverse = Tensor::try_empty(&[0], DType::I32, self.device())?;
+            let empty_counts = Tensor::try_empty(&[0], DType::I32, self.device())?;
             return Ok((empty_values, empty_inverse, empty_counts));
         }
 
@@ -553,7 +553,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let numel = a.numel();
 
         if numel == 0 {
-            return Ok(Tensor::empty(&[0, ndim], DType::I32, self.device()));
+            return Tensor::try_empty(&[0, ndim], DType::I32, self.device());
         }
 
         let a_contig = ensure_contiguous(a)?;
@@ -590,7 +590,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let nnz = read_u32_from_buffer(self, &count_buf)? as usize;
 
         if nnz == 0 {
-            return Ok(Tensor::empty(&[0, ndim], DType::I32, self.device()));
+            return Tensor::try_empty(&[0, ndim], DType::I32, self.device());
         }
 
         // Phase 2: Gather flat indices
@@ -677,7 +677,11 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let num_values = values.numel();
 
         if num_values == 0 {
-            return Ok(Tensor::empty(values.shape(), DType::I32, self.device()));
+            return Ok(Tensor::try_empty(
+                values.shape(),
+                DType::I32,
+                self.device(),
+            )?);
         }
 
         let seq_contig = ensure_contiguous(sorted_sequence)?;

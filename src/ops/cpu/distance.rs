@@ -66,11 +66,7 @@ impl DistanceOps<CpuRuntime> for CpuClient {
 
         // Handle empty tensors
         if n == 0 || m == 0 {
-            return Ok(Tensor::<CpuRuntime>::try_empty(
-                &[n, m],
-                dtype,
-                &self.device,
-            )?);
+            return Tensor::<CpuRuntime>::try_empty(&[n, m], dtype, &self.device);
         }
 
         // Ensure contiguous
@@ -184,18 +180,10 @@ impl DistanceOps<CpuRuntime> for CpuClient {
 
         // Handle edge case
         if n == 0 {
-            return Ok(Tensor::<CpuRuntime>::try_empty(
-                &[0, 0],
-                dtype,
-                &self.device,
-            )?);
+            return Tensor::<CpuRuntime>::try_empty(&[0, 0], dtype, &self.device);
         }
         if n == 1 {
-            return Ok(Tensor::<CpuRuntime>::try_zeros(
-                &[1, 1],
-                dtype,
-                &self.device,
-            )?);
+            return Tensor::<CpuRuntime>::try_zeros(&[1, 1], dtype, &self.device);
         }
 
         // Ensure contiguous
@@ -231,10 +219,10 @@ impl DistanceOps<CpuRuntime> for CpuClient {
 
         // Handle edge cases
         if n == 0 {
-            return Ok(Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device)?);
+            return Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device);
         }
         if n == 1 {
-            return Ok(Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device)?);
+            return Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device);
         }
 
         // Ensure contiguous
