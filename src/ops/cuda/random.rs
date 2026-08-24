@@ -32,11 +32,15 @@ impl RandomOps<CudaRuntime> for CudaClient {
         let numel: usize = shape.iter().product();
         if numel == 0 {
             // Empty tensor - just allocate
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
         // Allocate output tensor
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Generate seed using atomic counter + time for better entropy
         let seed = generate_random_seed();
@@ -73,10 +77,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         unsafe {
             launch_rand(
@@ -109,11 +117,15 @@ impl RandomOps<CudaRuntime> for CudaClient {
         let numel: usize = shape.iter().product();
         if numel == 0 {
             // Empty tensor - just allocate
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
         // Allocate output tensor
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Generate seed using atomic counter + time for better entropy
         let seed = generate_random_seed();
@@ -158,11 +170,15 @@ impl RandomOps<CudaRuntime> for CudaClient {
         let numel: usize = shape.iter().product();
         if numel == 0 {
             // Empty tensor - just allocate
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
         // Allocate output tensor
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Launch native CUDA randn kernel (uses Box-Muller transform) with the caller's seed
         unsafe {
@@ -220,11 +236,15 @@ impl RandomOps<CudaRuntime> for CudaClient {
         let numel: usize = shape.iter().product();
         if numel == 0 {
             // Empty tensor - just allocate
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
         // Allocate output tensor
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Generate seed using atomic counter + time for better entropy
         let seed = generate_random_seed();
@@ -313,7 +333,7 @@ impl RandomOps<CudaRuntime> for CudaClient {
             out_shape.push(num_samples);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &self.device)?;
 
         // Generate seed
         let seed = generate_random_seed();
@@ -368,10 +388,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -415,10 +439,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -463,10 +491,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -502,10 +534,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -540,10 +576,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -590,10 +630,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -635,10 +679,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -674,10 +722,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -712,10 +764,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {
@@ -762,10 +818,14 @@ impl RandomOps<CudaRuntime> for CudaClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(shape, dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(
+                shape,
+                dtype,
+                &self.device,
+            )?);
         }
 
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
         let seed = generate_random_seed();
 
         unsafe {

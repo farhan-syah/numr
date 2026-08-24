@@ -12,7 +12,7 @@ impl ShapeOps<CudaRuntime> for CudaClient {
         let params = crate::runtime::common::shape_ops::validate_cat(tensors, dim)?;
 
         // Allocate output
-        let out = Tensor::<CudaRuntime>::empty(&params.out_shape, params.dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(&params.out_shape, params.dtype, &self.device)?;
 
         // Copy data from each tensor using CUDA kernel
         let mut cat_offset = 0usize;
@@ -87,7 +87,8 @@ impl ShapeOps<CudaRuntime> for CudaClient {
         }
 
         let tensor_contig = ensure_contiguous(tensor)?;
-        let out = Tensor::<CudaRuntime>::empty(&params.out_shape, tensor.dtype(), &self.device);
+        let out =
+            Tensor::<CudaRuntime>::try_empty(&params.out_shape, tensor.dtype(), &self.device)?;
 
         unsafe {
             launch_repeat(
@@ -120,7 +121,8 @@ impl ShapeOps<CudaRuntime> for CudaClient {
         }
 
         let tensor_contig = ensure_contiguous(tensor)?;
-        let out = Tensor::<CudaRuntime>::empty(&params.out_shape, tensor.dtype(), &self.device);
+        let out =
+            Tensor::<CudaRuntime>::try_empty(&params.out_shape, tensor.dtype(), &self.device)?;
 
         // Extract pad_before from pad_per_dim
         let pad_before: Vec<usize> = params.pad_per_dim.iter().map(|(b, _)| *b).collect();
@@ -158,7 +160,7 @@ impl ShapeOps<CudaRuntime> for CudaClient {
         }
 
         let tensor_contig = ensure_contiguous(tensor)?;
-        let out = Tensor::<CudaRuntime>::empty(tensor.shape(), tensor.dtype(), &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(tensor.shape(), tensor.dtype(), &self.device)?;
 
         // Compute outer/inner sizes
         let outer_size: usize = tensor.shape()[..params.dim_idx].iter().product();

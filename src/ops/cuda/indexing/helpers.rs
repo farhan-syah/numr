@@ -89,8 +89,8 @@ impl BroadcastContext {
         let ndim = a.shape().len();
 
         // Allocate device memory for strides and shape
-        let strides_tensor = Tensor::<CudaRuntime>::from_slice(&mask_strides, &[ndim], device);
-        let shape_tensor = Tensor::<CudaRuntime>::from_slice(&out_shape_u32, &[ndim], device);
+        let strides_tensor = Tensor::<CudaRuntime>::try_from_slice(&mask_strides, &[ndim], device)?;
+        let shape_tensor = Tensor::<CudaRuntime>::try_from_slice(&out_shape_u32, &[ndim], device)?;
 
         Ok(Self {
             needs_broadcast: true,

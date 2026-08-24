@@ -75,7 +75,7 @@ impl MultinomialSamplingOps<CudaRuntime> for CudaClient {
         let uniforms = self.rand(&[n_samples, n_trials], dtype)?;
 
         // Step 4: Allocate output and launch CUDA kernel
-        let output = Tensor::<CudaRuntime>::zeros(&[n_samples, k], dtype, &self.device);
+        let output = Tensor::<CudaRuntime>::try_zeros(&[n_samples, k], dtype, &self.device)?;
 
         // Get device pointers
         let cdf_ptr = cdf.ptr();

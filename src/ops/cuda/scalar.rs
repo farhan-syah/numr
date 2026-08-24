@@ -41,7 +41,7 @@ impl ScalarOps<CudaRuntime> for CudaClient {
     ) -> Result<Tensor<CudaRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_fused_mul_add_scalar(

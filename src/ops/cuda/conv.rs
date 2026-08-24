@@ -40,11 +40,11 @@ impl ConvOps<CudaRuntime> for CudaClient {
 
         // Handle empty output
         if params.output_length == 0 || params.batch == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_length],
                 dtype,
                 &self.device,
-            ));
+            )?);
         }
 
         // Ensure contiguous
@@ -53,11 +53,11 @@ impl ConvOps<CudaRuntime> for CudaClient {
         let bias = bias.map(ensure_contiguous).transpose()?;
 
         // Allocate output
-        let output = Tensor::<CudaRuntime>::empty(
+        let output = Tensor::<CudaRuntime>::try_empty(
             &[params.batch, params.c_out, params.output_length],
             dtype,
             &self.device,
-        );
+        )?;
 
         // Get device pointers
         let input_ptr = input.ptr();
@@ -120,22 +120,22 @@ impl ConvOps<CudaRuntime> for CudaClient {
         )?;
 
         if params.output_length == 0 || params.batch == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_length],
                 dtype,
                 &self.device,
-            ));
+            )?);
         }
 
         let input = ensure_contiguous(input)?;
         let weight = ensure_contiguous(weight)?;
         let bias = bias.map(ensure_contiguous).transpose()?;
 
-        let output = Tensor::<CudaRuntime>::empty(
+        let output = Tensor::<CudaRuntime>::try_empty(
             &[params.batch, params.c_out, params.output_length],
             dtype,
             &self.device,
-        );
+        )?;
 
         let input_ptr = input.ptr();
         let weight_ptr = weight.ptr();
@@ -196,11 +196,11 @@ impl ConvOps<CudaRuntime> for CudaClient {
 
         // Handle empty output
         if params.output_h == 0 || params.output_w == 0 || params.batch == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_h, params.output_w],
                 dtype,
                 &self.device,
-            ));
+            )?);
         }
 
         // Ensure contiguous
@@ -209,11 +209,11 @@ impl ConvOps<CudaRuntime> for CudaClient {
         let bias = bias.map(ensure_contiguous).transpose()?;
 
         // Allocate output
-        let output = Tensor::<CudaRuntime>::empty(
+        let output = Tensor::<CudaRuntime>::try_empty(
             &[params.batch, params.c_out, params.output_h, params.output_w],
             dtype,
             &self.device,
-        );
+        )?;
 
         // Get device pointers
         let input_ptr = input.ptr();
@@ -280,11 +280,11 @@ impl ConvOps<CudaRuntime> for CudaClient {
 
         // Handle empty output
         if params.output_h == 0 || params.output_w == 0 || params.batch == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 &[params.batch, params.c_out, params.output_h, params.output_w],
                 dtype,
                 &self.device,
-            ));
+            )?);
         }
 
         // Ensure contiguous
@@ -293,11 +293,11 @@ impl ConvOps<CudaRuntime> for CudaClient {
         let bias = bias.map(ensure_contiguous).transpose()?;
 
         // Allocate output
-        let output = Tensor::<CudaRuntime>::empty(
+        let output = Tensor::<CudaRuntime>::try_empty(
             &[params.batch, params.c_out, params.output_h, params.output_w],
             dtype,
             &self.device,
-        );
+        )?;
 
         // Get device pointers
         let input_ptr = input.ptr();

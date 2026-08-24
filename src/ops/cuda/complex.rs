@@ -21,7 +21,7 @@ impl ComplexOps<CudaRuntime> for CudaClient {
         }
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_conj(
@@ -54,7 +54,7 @@ impl ComplexOps<CudaRuntime> for CudaClient {
         };
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), out_dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), out_dtype, &self.device)?;
 
         unsafe {
             launch_real(
@@ -86,7 +86,7 @@ impl ComplexOps<CudaRuntime> for CudaClient {
             dtype
         };
 
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), out_dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), out_dtype, &self.device)?;
 
         // For real types, fill with zeros
         if !dtype.is_complex() {
@@ -137,7 +137,7 @@ impl ComplexOps<CudaRuntime> for CudaClient {
             dtype
         };
 
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), out_dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), out_dtype, &self.device)?;
         let a_contig = ensure_contiguous(a)?;
 
         // For real types: angle(x) = 0 if x >= 0, π if x < 0
@@ -208,7 +208,7 @@ impl ComplexOps<CudaRuntime> for CudaClient {
 
         let real_contig = ensure_contiguous(real)?;
         let imag_contig = ensure_contiguous(imag)?;
-        let out = Tensor::<CudaRuntime>::empty(shape, out_dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, out_dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -244,7 +244,7 @@ impl ComplexOps<CudaRuntime> for CudaClient {
 
         let complex_contig = ensure_contiguous(complex)?;
         let real_contig = ensure_contiguous(real)?;
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -280,7 +280,7 @@ impl ComplexOps<CudaRuntime> for CudaClient {
 
         let complex_contig = ensure_contiguous(complex)?;
         let real_contig = ensure_contiguous(real)?;
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {

@@ -137,7 +137,7 @@ impl UnaryOps<CudaRuntime> for CudaClient {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
         // Output is always U8 (boolean)
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         unsafe {
             launch_isnan_op(
@@ -158,7 +158,7 @@ impl UnaryOps<CudaRuntime> for CudaClient {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
         // Output is always U8 (boolean)
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         unsafe {
             launch_isinf_op(

@@ -29,7 +29,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let dim_idx = normalize_dim(dim, ndim)?;
         let (outer_size, sort_size, inner_size) = compute_reduce_strides(shape, dim_idx);
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
 
         unsafe {
             launch_sort_values_only(
@@ -60,15 +60,15 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let ndim = shape.len();
 
         if ndim == 0 {
-            let indices = Tensor::<CudaRuntime>::zeros(shape, DType::I64, &self.device);
+            let indices = Tensor::<CudaRuntime>::try_zeros(shape, DType::I64, &self.device)?;
             return Ok((a.clone(), indices));
         }
 
         let dim_idx = normalize_dim(dim, ndim)?;
         let (outer_size, sort_size, inner_size) = compute_reduce_strides(shape, dim_idx);
         let a_contig = ensure_contiguous(a)?;
-        let out_values = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
-        let out_indices = Tensor::<CudaRuntime>::empty(shape, DType::I64, &self.device);
+        let out_values = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
+        let out_indices = Tensor::<CudaRuntime>::try_empty(shape, DType::I64, &self.device)?;
 
         unsafe {
             launch_sort(
@@ -100,17 +100,17 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let ndim = shape.len();
 
         if ndim == 0 {
-            return Ok(Tensor::<CudaRuntime>::zeros(
+            return Ok(Tensor::<CudaRuntime>::try_zeros(
                 shape,
                 DType::I64,
                 &self.device,
-            ));
+            )?);
         }
 
         let dim_idx = normalize_dim(dim, ndim)?;
         let (outer_size, sort_size, inner_size) = compute_reduce_strides(shape, dim_idx);
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(shape, DType::I64, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(shape, DType::I64, &self.device)?;
 
         unsafe {
             launch_argsort(
@@ -149,7 +149,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
                     reason: "k cannot be greater than 1 for scalar tensors".to_string(),
                 });
             }
-            let indices = Tensor::<CudaRuntime>::zeros(shape, DType::I64, &self.device);
+            let indices = Tensor::<CudaRuntime>::try_zeros(shape, DType::I64, &self.device)?;
             return Ok((a.clone(), indices));
         }
 
@@ -168,8 +168,9 @@ impl SortingOps<CudaRuntime> for CudaClient {
         if k == 0 {
             let mut out_shape = shape.to_vec();
             out_shape[dim_idx] = 0;
-            let out_values = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device);
-            let out_indices = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &self.device);
+            let out_values = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+            let out_indices =
+                Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &self.device)?;
             return Ok((out_values, out_indices));
         }
 
@@ -179,8 +180,8 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let mut out_shape = shape.to_vec();
         out_shape[dim_idx] = k;
 
-        let out_values = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device);
-        let out_indices = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &self.device);
+        let out_values = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+        let out_indices = Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &self.device)?;
 
         unsafe {
             launch_topk(
@@ -208,7 +209,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let numel = a.numel();
 
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(&[0], dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device)?);
         }
 
         // Flatten and make contiguous
@@ -219,7 +220,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let sorted_tensor = self.sort(&a_contig, 0, false)?;
 
         // Allocate counter on device (using U32)
-        let counter = Tensor::<CudaRuntime>::zeros(&[1], DType::U32, &self.device);
+        let counter = Tensor::<CudaRuntime>::try_zeros(&[1], DType::U32, &self.device)?;
 
         // Count unique elements
         unsafe {
@@ -242,12 +243,12 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let unique_count = count_data[0] as usize;
 
         if unique_count == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(&[0], dtype, &self.device));
+            return Ok(Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device)?);
         }
 
         // Reset counter and allocate output
-        let counter = Tensor::<CudaRuntime>::zeros(&[1], DType::U32, &self.device);
-        let out = Tensor::<CudaRuntime>::empty(&[unique_count], dtype, &self.device);
+        let counter = Tensor::<CudaRuntime>::try_zeros(&[1], DType::U32, &self.device)?;
+        let out = Tensor::<CudaRuntime>::try_empty(&[unique_count], dtype, &self.device)?;
 
         // Extract unique elements
         unsafe {
@@ -278,9 +279,9 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let numel = a.numel();
 
         if numel == 0 {
-            let unique = Tensor::<CudaRuntime>::empty(&[0], dtype, &self.device);
-            let inverse = Tensor::<CudaRuntime>::empty(&[0], DType::I64, &self.device);
-            let counts = Tensor::<CudaRuntime>::empty(&[0], DType::I64, &self.device);
+            let unique = Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device)?;
+            let inverse = Tensor::<CudaRuntime>::try_empty(&[0], DType::I64, &self.device)?;
+            let counts = Tensor::<CudaRuntime>::try_empty(&[0], DType::I64, &self.device)?;
             return Ok((unique, inverse, counts));
         }
 
@@ -293,7 +294,7 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let inverse = self.searchsorted(&unique, &a_flat, false)?;
 
         // Count occurrences using GPU bincount kernel (no CPU round-trip)
-        let counts = Tensor::<CudaRuntime>::zeros(&[unique_count], DType::I64, &self.device);
+        let counts = Tensor::<CudaRuntime>::try_zeros(&[unique_count], DType::I64, &self.device)?;
 
         unsafe {
             launch_bincount(
@@ -317,17 +318,17 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let numel = a.numel();
 
         if numel == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 &[0, ndim],
                 DType::I64,
                 &self.device,
-            ));
+            )?);
         }
 
         let a_contig = ensure_contiguous(a)?;
 
         // Phase 1: Count nonzero elements
-        let counter = Tensor::<CudaRuntime>::zeros(&[1], DType::U32, &self.device);
+        let counter = Tensor::<CudaRuntime>::try_zeros(&[1], DType::U32, &self.device)?;
 
         unsafe {
             launch_count_nonzero(
@@ -349,24 +350,24 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let nnz = count_data[0] as usize;
 
         if nnz == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 &[0, ndim],
                 DType::I64,
                 &self.device,
-            ));
+            )?);
         }
 
         if ndim == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 &[1, 0],
                 DType::I64,
                 &self.device,
-            ));
+            )?);
         }
 
         // Phase 2: Gather flat indices
-        let counter = Tensor::<CudaRuntime>::zeros(&[1], DType::U32, &self.device);
-        let flat_indices = Tensor::<CudaRuntime>::empty(&[nnz], DType::I64, &self.device);
+        let counter = Tensor::<CudaRuntime>::try_zeros(&[1], DType::U32, &self.device)?;
+        let flat_indices = Tensor::<CudaRuntime>::try_empty(&[nnz], DType::I64, &self.device)?;
 
         unsafe {
             launch_gather_nonzero(
@@ -382,12 +383,12 @@ impl SortingOps<CudaRuntime> for CudaClient {
         }
 
         // Phase 3: Convert flat indices to multi-indices
-        let shape_tensor = Tensor::<CudaRuntime>::from_slice(
+        let shape_tensor = Tensor::<CudaRuntime>::try_from_slice(
             &shape.iter().map(|&s| s as u32).collect::<Vec<_>>(),
             &[ndim],
             &self.device,
-        );
-        let out = Tensor::<CudaRuntime>::empty(&[nnz, ndim], DType::I64, &self.device);
+        )?;
+        let out = Tensor::<CudaRuntime>::try_empty(&[nnz, ndim], DType::I64, &self.device)?;
 
         unsafe {
             launch_flat_to_multi_index(
@@ -430,16 +431,16 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let num_values = values.numel();
 
         if num_values == 0 {
-            return Ok(Tensor::<CudaRuntime>::empty(
+            return Ok(Tensor::<CudaRuntime>::try_empty(
                 values.shape(),
                 DType::I64,
                 &self.device,
-            ));
+            )?);
         }
 
         let seq_contig = ensure_contiguous(sorted_sequence)?;
         let values_contig = ensure_contiguous(values)?;
-        let out = Tensor::<CudaRuntime>::empty(values.shape(), DType::I64, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(values.shape(), DType::I64, &self.device)?;
 
         unsafe {
             launch_searchsorted(

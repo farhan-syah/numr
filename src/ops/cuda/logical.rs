@@ -42,7 +42,7 @@ impl LogicalOps<CudaRuntime> for CudaClient {
         validate_logical_inputs(a, b)?;
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         unsafe {
             launch_logical_and_op(
@@ -67,7 +67,7 @@ impl LogicalOps<CudaRuntime> for CudaClient {
         validate_logical_inputs(a, b)?;
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         unsafe {
             launch_logical_or_op(
@@ -92,7 +92,7 @@ impl LogicalOps<CudaRuntime> for CudaClient {
         validate_logical_inputs(a, b)?;
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         unsafe {
             launch_logical_xor_op(
@@ -118,7 +118,7 @@ impl LogicalOps<CudaRuntime> for CudaClient {
         }
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         unsafe {
             launch_logical_not_op(
