@@ -18,7 +18,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             return Err(Error::UnsupportedDType { dtype, op: "rand" });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         // Handle empty tensor
@@ -45,7 +45,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -71,7 +71,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             return Err(Error::UnsupportedDType { dtype, op: "randn" });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         // Handle empty tensor
@@ -98,7 +98,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -155,7 +155,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         // Handle empty tensor
@@ -273,7 +273,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             out_shape.push(num_samples);
         }
 
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, DType::I64, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I64, &self.device)?;
         let out_ptr = out.ptr() as *mut i64;
         let probs_ptr = probs.ptr();
 
@@ -320,7 +320,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -360,7 +360,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -400,7 +400,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -431,7 +431,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -462,7 +462,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -505,7 +505,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -542,7 +542,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -573,7 +573,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -604,7 +604,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);
@@ -626,7 +626,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(&[n], DType::I64, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[n], DType::I64, &self.device)?;
         let out_ptr = out.ptr() as *mut i64;
 
         unsafe {
@@ -665,7 +665,7 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
         if numel == 0 {
             return Ok(out);

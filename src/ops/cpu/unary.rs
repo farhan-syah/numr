@@ -139,7 +139,7 @@ impl UnaryOps<CpuRuntime> for CpuClient {
     fn isnan(&self, a: &Tensor<CpuRuntime>) -> Result<Tensor<CpuRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CpuRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let out_ptr = out.ptr();
@@ -161,7 +161,7 @@ impl UnaryOps<CpuRuntime> for CpuClient {
     fn isinf(&self, a: &Tensor<CpuRuntime>) -> Result<Tensor<CpuRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CpuRuntime>::empty(a.shape(), DType::U8, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(a.shape(), DType::U8, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let out_ptr = out.ptr();

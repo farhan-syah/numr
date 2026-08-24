@@ -48,7 +48,7 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
             .product::<usize>()
             .max(1);
 
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();
@@ -164,7 +164,7 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
             .product::<usize>()
             .max(1);
 
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();
@@ -268,11 +268,11 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
             .max(1);
 
         // Output gradients
-        let d_a = Tensor::<CpuRuntime>::empty(a_shape, dtype, &self.device);
-        let d_b = Tensor::<CpuRuntime>::zeros(b_shape, dtype, &self.device);
+        let d_a = Tensor::<CpuRuntime>::try_empty(a_shape, dtype, &self.device)?;
+        let d_b = Tensor::<CpuRuntime>::try_zeros(b_shape, dtype, &self.device)?;
 
         // d_bias is always [N] — we need to sum across batches
-        let d_bias_full = Tensor::<CpuRuntime>::empty(&[n], dtype, &self.device);
+        let d_bias_full = Tensor::<CpuRuntime>::try_empty(&[n], dtype, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();

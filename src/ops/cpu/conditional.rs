@@ -42,7 +42,7 @@ impl ConditionalOps<CpuRuntime> for CpuClient {
                 rhs: xy_shape.clone(),
             })?;
 
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
         let out_ptr = out.ptr();
 
         // Fast path: all same shape, use simple kernel

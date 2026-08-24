@@ -22,7 +22,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -54,7 +54,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -86,7 +86,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -118,7 +118,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -150,7 +150,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -182,7 +182,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -213,7 +213,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {
@@ -244,7 +244,7 @@ impl AdvancedRandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
         let numel = out.numel();
 
         if numel == 0 {

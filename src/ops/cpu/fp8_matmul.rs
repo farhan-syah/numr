@@ -145,7 +145,7 @@ impl Fp8MatmulOps<CpuRuntime> for CpuClient {
 
         let a_contig = crate::runtime::cpu::helpers::ensure_contiguous(a)?;
         let b_contig = crate::runtime::cpu::helpers::ensure_contiguous(b)?;
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, out_dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, out_dtype, &self.device)?;
 
         fused_fp8_matmul_kernel(
             a_contig.ptr() as *const u8,
@@ -177,7 +177,7 @@ impl Fp8MatmulOps<CpuRuntime> for CpuClient {
 
         let a_contig = crate::runtime::cpu::helpers::ensure_contiguous(a)?;
         let b_contig = crate::runtime::cpu::helpers::ensure_contiguous(b)?;
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, out_dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, out_dtype, &self.device)?;
 
         fused_fp8_matmul_kernel(
             a_contig.ptr() as *const u8,

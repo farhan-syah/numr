@@ -45,7 +45,11 @@ where
     if numel == 0 {
         let mut out_shape = indices.shape().to_vec();
         out_shape.push(num_classes);
-        return Ok(Tensor::<R>::empty(&out_shape, DType::F32, indices.device()));
+        return Ok(Tensor::<R>::try_empty(
+            &out_shape,
+            DType::F32,
+            indices.device(),
+        )?);
     }
 
     // Cast indices to F32 for comparison (GPU compare ops work on same dtype)

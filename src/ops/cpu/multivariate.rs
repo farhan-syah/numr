@@ -127,11 +127,7 @@ where
         }
     }
 
-    Ok(Tensor::<CpuRuntime>::from_slice(
-        &counts,
-        &[n_samples, k],
-        device,
-    ))
+    Tensor::<CpuRuntime>::try_from_slice(&counts, &[n_samples, k], device)
 }
 
 /// Binary search to find the category for a uniform sample.

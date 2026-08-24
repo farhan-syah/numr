@@ -134,11 +134,11 @@ pub fn repeat_interleave_impl<R: Runtime, C: ShapeOps<R>>(
     if dim_size == 0 {
         let mut out_shape = input.shape().to_vec();
         out_shape[dim_idx] = 0;
-        return Ok(Tensor::<R>::empty(
+        return Ok(Tensor::<R>::try_empty(
             &out_shape,
             input.dtype(),
             input.device(),
-        ));
+        )?);
     }
 
     let mut chunks: Vec<Tensor<R>> = Vec::with_capacity(dim_size * repeats);

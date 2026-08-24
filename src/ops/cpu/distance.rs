@@ -66,14 +66,18 @@ impl DistanceOps<CpuRuntime> for CpuClient {
 
         // Handle empty tensors
         if n == 0 || m == 0 {
-            return Ok(Tensor::<CpuRuntime>::empty(&[n, m], dtype, &self.device));
+            return Ok(Tensor::<CpuRuntime>::try_empty(
+                &[n, m],
+                dtype,
+                &self.device,
+            )?);
         }
 
         // Ensure contiguous
         let x = ensure_contiguous(x)?;
         let y = ensure_contiguous(y)?;
 
-        let out = Tensor::<CpuRuntime>::empty(&[n, m], dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[n, m], dtype, &self.device)?;
         let x_ptr = x.ptr();
         let y_ptr = y.ptr();
         let out_ptr = out.ptr();
@@ -83,7 +87,7 @@ impl DistanceOps<CpuRuntime> for CpuClient {
         if dtype == DType::FP8E4M3 || dtype == DType::FP8E5M2 {
             let x_f32 = self.cast(&x, DType::F32)?;
             let y_f32 = self.cast(&y, DType::F32)?;
-            let out_f32 = Tensor::<CpuRuntime>::empty(&[n, m], DType::F32, &self.device);
+            let out_f32 = Tensor::<CpuRuntime>::try_empty(&[n, m], DType::F32, &self.device)?;
             unsafe {
                 kernels::cdist_kernel::<f32>(
                     x_f32.ptr() as *const f32,
@@ -133,7 +137,7 @@ impl DistanceOps<CpuRuntime> for CpuClient {
         // Ensure contiguous
         let x = ensure_contiguous(x)?;
 
-        let out = Tensor::<CpuRuntime>::empty(&[out_size], dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[out_size], dtype, &self.device)?;
         let x_ptr = x.ptr();
         let out_ptr = out.ptr();
 
@@ -141,7 +145,7 @@ impl DistanceOps<CpuRuntime> for CpuClient {
         #[cfg(feature = "fp8")]
         if dtype == DType::FP8E4M3 || dtype == DType::FP8E5M2 {
             let x_f32 = self.cast(&x, DType::F32)?;
-            let out_f32 = Tensor::<CpuRuntime>::empty(&[out_size], DType::F32, &self.device);
+            let out_f32 = Tensor::<CpuRuntime>::try_empty(&[out_size], DType::F32, &self.device)?;
             unsafe {
                 kernels::pdist_kernel::<f32>(
                     x_f32.ptr() as *const f32,
@@ -180,16 +184,24 @@ impl DistanceOps<CpuRuntime> for CpuClient {
 
         // Handle edge case
         if n == 0 {
-            return Ok(Tensor::<CpuRuntime>::empty(&[0, 0], dtype, &self.device));
+            return Ok(Tensor::<CpuRuntime>::try_empty(
+                &[0, 0],
+                dtype,
+                &self.device,
+            )?);
         }
         if n == 1 {
-            return Ok(Tensor::<CpuRuntime>::zeros(&[1, 1], dtype, &self.device));
+            return Ok(Tensor::<CpuRuntime>::try_zeros(
+                &[1, 1],
+                dtype,
+                &self.device,
+            )?);
         }
 
         // Ensure contiguous
         let condensed = ensure_contiguous(condensed)?;
 
-        let out = Tensor::<CpuRuntime>::empty(&[n, n], dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[n, n], dtype, &self.device)?;
         let cond_ptr = condensed.ptr();
         let out_ptr = out.ptr();
 
@@ -219,17 +231,17 @@ impl DistanceOps<CpuRuntime> for CpuClient {
 
         // Handle edge cases
         if n == 0 {
-            return Ok(Tensor::<CpuRuntime>::empty(&[0], dtype, &self.device));
+            return Ok(Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device)?);
         }
         if n == 1 {
-            return Ok(Tensor::<CpuRuntime>::empty(&[0], dtype, &self.device));
+            return Ok(Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device)?);
         }
 
         // Ensure contiguous
         let square = ensure_contiguous(square)?;
 
         let out_size = n * (n - 1) / 2;
-        let out = Tensor::<CpuRuntime>::empty(&[out_size], dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[out_size], dtype, &self.device)?;
         let sq_ptr = square.ptr();
         let out_ptr = out.ptr();
 

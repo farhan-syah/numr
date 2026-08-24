@@ -20,7 +20,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
         let shape = a.shape();
         let numel = a.numel();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -75,7 +75,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
             .complex_component_dtype()
             .ok_or_else(|| Error::Internal("Expected complex dtype".to_string()))?;
 
-        let out = Tensor::<CpuRuntime>::empty(shape, out_dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, out_dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -120,7 +120,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
 
         // For real types, return zeros
         if !dtype.is_complex() {
-            return Ok(Tensor::<CpuRuntime>::zeros(shape, dtype, &self.device));
+            return Ok(Tensor::<CpuRuntime>::try_zeros(shape, dtype, &self.device)?);
         }
 
         let a_contig = ensure_contiguous(a)?;
@@ -130,7 +130,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
             .complex_component_dtype()
             .ok_or_else(|| Error::Internal("Expected complex dtype".to_string()))?;
 
-        let out = Tensor::<CpuRuntime>::empty(shape, out_dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, out_dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -178,7 +178,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
 
         // For real types: angle(x) = 0 if x >= 0, π if x < 0
         if !dtype.is_complex() {
-            let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+            let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
 
             // Handle empty tensors
             if numel == 0 {
@@ -212,7 +212,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
                 _ => {
                     // For integer types, angle doesn't make mathematical sense
                     // Return zeros
-                    return Ok(Tensor::<CpuRuntime>::zeros(shape, dtype, &self.device));
+                    return Ok(Tensor::<CpuRuntime>::try_zeros(shape, dtype, &self.device)?);
                 }
             }
             return Ok(out);
@@ -223,7 +223,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
             .complex_component_dtype()
             .ok_or_else(|| Error::Internal("Expected complex dtype".to_string()))?;
 
-        let out = Tensor::<CpuRuntime>::empty(shape, out_dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, out_dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -280,7 +280,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
 
         let real_contig = ensure_contiguous(real)?;
         let imag_contig = ensure_contiguous(imag)?;
-        let out = Tensor::<CpuRuntime>::empty(shape, out_dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, out_dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -334,7 +334,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
 
         let complex_contig = ensure_contiguous(complex)?;
         let real_contig = ensure_contiguous(real)?;
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {
@@ -388,7 +388,7 @@ impl ComplexOps<CpuRuntime> for CpuClient {
 
         let complex_contig = ensure_contiguous(complex)?;
         let real_contig = ensure_contiguous(real)?;
-        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
 
         // Handle empty tensors
         if numel == 0 {

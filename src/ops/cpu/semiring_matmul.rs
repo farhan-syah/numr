@@ -70,7 +70,7 @@ impl SemiringMatmulOps<CpuRuntime> for CpuClient {
             crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
 
         // Create output tensor
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();

@@ -22,7 +22,7 @@ impl QuasiRandomOps<CpuRuntime> for CpuClient {
     ) -> Result<Tensor<CpuRuntime>> {
         validate_sobol_params(n_points, dimension, dtype, SUPPORTED_DTYPES, "sobol")?;
 
-        let out = Tensor::<CpuRuntime>::empty(&[n_points, dimension], dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[n_points, dimension], dtype, &self.device)?;
 
         match dtype {
             DType::F32 => unsafe {
@@ -46,7 +46,7 @@ impl QuasiRandomOps<CpuRuntime> for CpuClient {
     ) -> Result<Tensor<CpuRuntime>> {
         validate_halton_params(n_points, dimension, dtype, SUPPORTED_DTYPES, "halton")?;
 
-        let out = Tensor::<CpuRuntime>::empty(&[n_points, dimension], dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[n_points, dimension], dtype, &self.device)?;
 
         match dtype {
             DType::F32 => unsafe {
@@ -75,7 +75,7 @@ impl QuasiRandomOps<CpuRuntime> for CpuClient {
             "latin_hypercube",
         )?;
 
-        let out = Tensor::<CpuRuntime>::empty(&[n_samples, dimension], dtype, &self.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[n_samples, dimension], dtype, &self.device)?;
 
         match dtype {
             DType::F32 => unsafe {
