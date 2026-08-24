@@ -652,7 +652,7 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
                         (freq * scale) as f32
                     })
                     .collect();
-                Tensor::<WgpuRuntime>::try_from_slice(&data, &[n], device)
+                Tensor::<WgpuRuntime>::from_slice(&data, &[n], device)
             }
             DType::F64 => {
                 let data: Vec<f64> = (0..n)
@@ -665,7 +665,7 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
                         freq * scale
                     })
                     .collect();
-                Tensor::<WgpuRuntime>::try_from_slice(&data, &[n], device)
+                Tensor::<WgpuRuntime>::from_slice(&data, &[n], device)
             }
             _ => Err(Error::UnsupportedDType {
                 dtype,
@@ -696,11 +696,11 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
         match dtype {
             DType::F32 => {
                 let data: Vec<f32> = (0..output_len).map(|i| (i as f64 * scale) as f32).collect();
-                Tensor::<WgpuRuntime>::try_from_slice(&data, &[output_len], device)
+                Tensor::<WgpuRuntime>::from_slice(&data, &[output_len], device)
             }
             DType::F64 => {
                 let data: Vec<f64> = (0..output_len).map(|i| i as f64 * scale).collect();
-                Tensor::<WgpuRuntime>::try_from_slice(&data, &[output_len], device)
+                Tensor::<WgpuRuntime>::from_slice(&data, &[output_len], device)
             }
             _ => Err(Error::UnsupportedDType {
                 dtype,

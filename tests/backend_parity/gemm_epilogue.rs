@@ -636,12 +636,11 @@ fn test_gemm_bias_activation_none_matches_matmul_bias() {
     use numr::tensor::Tensor;
 
     let (client, dev) = create_cpu_client();
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &dev)
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &dev)
         .unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, -0.3, 0.1, 0.7, -0.2, 0.4], &[3, 2], &dev)
-            .unwrap();
-    let bias = Tensor::<CpuRuntime>::try_from_slice(&[-0.1f32, 0.2], &[2], &dev).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[0.5f32, -0.3, 0.1, 0.7, -0.2, 0.4], &[3, 2], &dev)
+        .unwrap();
+    let bias = Tensor::<CpuRuntime>::from_slice(&[-0.1f32, 0.2], &[2], &dev).unwrap();
 
     let fused: Vec<f32> = client
         .matmul_bias_activation(&a, &b, &bias, GemmActivation::None)
@@ -662,13 +661,11 @@ fn test_gemm_bias_activation_relu_matches_unfused() {
     use numr::tensor::Tensor;
 
     let (client, dev) = create_cpu_client();
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, -1.0, 3.0, -2.0, 4.0], &[2, 3], &dev)
-            .unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, -0.3, 0.1, 0.7, -0.2, 0.4], &[3, 2], &dev)
-            .unwrap();
-    let bias = Tensor::<CpuRuntime>::try_from_slice(&[-0.5f32, 0.3], &[2], &dev).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, -1.0, 3.0, -2.0, 4.0], &[2, 3], &dev)
+        .unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[0.5f32, -0.3, 0.1, 0.7, -0.2, 0.4], &[3, 2], &dev)
+        .unwrap();
+    let bias = Tensor::<CpuRuntime>::from_slice(&[-0.5f32, 0.3], &[2], &dev).unwrap();
 
     let fused: Vec<f32> = client
         .matmul_bias_activation(&a, &b, &bias, GemmActivation::ReLU)
@@ -690,14 +687,13 @@ fn test_gemm_bias_residual_matches_unfused() {
     use numr::tensor::Tensor;
 
     let (client, dev) = create_cpu_client();
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &dev)
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &dev)
         .unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, -0.3, 0.1, 0.7, -0.2, 0.4], &[3, 2], &dev)
-            .unwrap();
-    let bias = Tensor::<CpuRuntime>::try_from_slice(&[-0.1f32, 0.2], &[2], &dev).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[0.5f32, -0.3, 0.1, 0.7, -0.2, 0.4], &[3, 2], &dev)
+        .unwrap();
+    let bias = Tensor::<CpuRuntime>::from_slice(&[-0.1f32, 0.2], &[2], &dev).unwrap();
     let residual =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &dev).unwrap();
+        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &dev).unwrap();
 
     let fused: Vec<f32> = client
         .matmul_bias_residual(&a, &b, &bias, &residual)

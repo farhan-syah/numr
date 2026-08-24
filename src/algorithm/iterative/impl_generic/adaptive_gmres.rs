@@ -62,7 +62,7 @@ where
     // Initialize solution
     let mut x = match x0 {
         Some(x0) => x0.clone(),
-        None => Tensor::<R>::try_zeros(&[n], dtype, device)?,
+        None => Tensor::<R>::zeros(&[n], dtype, device)?,
     };
 
     // Compute ||b|| for relative tolerance check

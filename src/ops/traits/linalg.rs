@@ -57,8 +57,8 @@ pub trait LinalgOps<R: Runtime> {
     /// # let client = CpuRuntime::default_client(&device);
     /// // Solve 2x + 3y = 5
     /// //       4x + 5y = 11
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0, 3.0, 4.0, 5.0], &[2, 2], &device)?;
-    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0, 11.0], &[2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[2.0, 3.0, 4.0, 5.0], &[2, 2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::from_slice(&[5.0, 11.0], &[2], &device)?;
     /// let x = client.solve(&a, &b)?;
     /// // x = [2.0, 1.0]
     /// # Ok::<(), numr::error::Error>(())
@@ -104,8 +104,8 @@ pub trait LinalgOps<R: Runtime> {
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
     /// // Fit line y = mx + c to overdetermined system
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 1.0, 2.0, 1.0, 3.0, 1.0], &[3, 2], &device)?;
-    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0, 4.0, 6.0], &[3], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 1.0, 2.0, 1.0, 3.0, 1.0], &[3, 2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::from_slice(&[2.0, 4.0, 6.0], &[3], &device)?;
     /// let x = client.lstsq(&a, &b)?; // [m, c]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -151,7 +151,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
     /// let a_pinv = client.pinverse(&a, None)?; // Shape: [3, 2]
     /// // Verify: a @ a_pinv @ a ≈ a
     /// # Ok::<(), numr::error::Error>(())
@@ -211,7 +211,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::algorithm::linalg::MatrixNormOrder;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
     /// let fro = client.matrix_norm(&a, MatrixNormOrder::Frobenius)?;
     /// let spec = client.matrix_norm(&a, MatrixNormOrder::Spectral)?;
     /// # Ok::<(), numr::error::Error>(())
@@ -259,7 +259,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[4.0, 7.0, 2.0, 6.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[4.0, 7.0, 2.0, 6.0], &[2, 2], &device)?;
     /// let a_inv = client.inverse(&a)?;
     /// // Verify: a @ a_inv ≈ I
     /// # Ok::<(), numr::error::Error>(())
@@ -301,7 +301,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
     /// let det = client.det(&a)?;
     /// // det = 1*4 - 2*3 = -2
     /// # Ok::<(), numr::error::Error>(())
@@ -335,7 +335,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
     /// let tr = client.trace(&a)?;
     /// // tr = 1 + 4 = 5
     /// # Ok::<(), numr::error::Error>(())
@@ -369,7 +369,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
     /// let d = client.diag(&a)?;
     /// // d = [1, 5]
     /// # Ok::<(), numr::error::Error>(())
@@ -403,7 +403,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0], &[3], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0], &[3], &device)?;
     /// let d = client.diagflat(&a)?;
     /// // d = [[1, 0, 0],
     /// //      [0, 2, 0],
@@ -448,7 +448,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 2.0, 4.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 2.0, 4.0], &[2, 2], &device)?;
     /// let rank = client.matrix_rank(&a, None)?;
     /// // rank = 1 (rank-deficient: rows are linearly dependent)
     /// # Ok::<(), numr::error::Error>(())
@@ -512,8 +512,8 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
-    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[0.0, 5.0, 6.0, 7.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::from_slice(&[0.0, 5.0, 6.0, 7.0], &[2, 2], &device)?;
     /// let c = client.kron(&a, &b)?;
     /// // c has shape [4, 4]:
     /// // [[0, 5, 0, 10],
@@ -600,8 +600,8 @@ pub trait LinalgOps<R: Runtime> {
     /// # let client = CpuRuntime::default_client(&device);
     /// // A = [[1, 2], [3, 4]]  (2x2)
     /// // B = [[5, 6], [7, 8]]  (2x2)
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
-    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0, 6.0, 7.0, 8.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::from_slice(&[5.0, 6.0, 7.0, 8.0], &[2, 2], &device)?;
     /// let c = client.khatri_rao(&a, &b)?;
     /// // c has shape [4, 2]:
     /// // [[5, 12],   // 1*5, 2*6
@@ -636,7 +636,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3], &device)?;
     /// let u = client.triu(&a, 0)?;
     /// // u = [[1, 2, 3],
     /// //      [0, 5, 6],
@@ -669,7 +669,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &[3, 3], &device)?;
     /// let l = client.tril(&a, 0)?;
     /// // l = [[1, 0, 0],
     /// //      [4, 5, 0],
@@ -717,7 +717,7 @@ pub trait LinalgOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
     /// let result = client.slogdet(&a)?;
     /// // sign = -1.0, logabsdet = log(2) ≈ 0.693
     /// # Ok::<(), numr::error::Error>(())

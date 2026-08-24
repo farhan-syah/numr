@@ -77,5 +77,5 @@ fn dsmm_typed<T: Element>(
         }
     }
 
-    Tensor::try_from_slice(&c_data, &[m, n], device)
+    Tensor::from_slice(&c_data, &[m, n], device)
 }

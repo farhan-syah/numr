@@ -43,7 +43,7 @@ fn pinverse_typed<T: Element + LinalgElement>(
 
     // Handle empty matrix
     if m == 0 || n == 0 {
-        return Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[n, m], device);
+        return Tensor::<CpuRuntime>::from_slice::<T>(&[], &[n, m], device);
     }
 
     // Compute SVD: A = U @ S @ V^T
@@ -97,7 +97,7 @@ fn pinverse_typed<T: Element + LinalgElement>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&pinv, &[n, m], device)
+    Tensor::<CpuRuntime>::from_slice(&pinv, &[n, m], device)
 }
 
 /// Condition number via SVD: cond(A) = σ_max / σ_min
@@ -130,7 +130,7 @@ fn cond_typed<T: Element + LinalgElement>(
     // Handle empty matrix
     if m == 0 || n == 0 {
         // Return infinity for empty matrix (undefined condition number)
-        return Tensor::<CpuRuntime>::try_from_slice(&[T::from_f64(f64::INFINITY)], &[], device);
+        return Tensor::<CpuRuntime>::from_slice(&[T::from_f64(f64::INFINITY)], &[], device);
     }
 
     // Compute SVD to get singular values
@@ -138,7 +138,7 @@ fn cond_typed<T: Element + LinalgElement>(
     let s_data: Vec<T> = svd.s.to_vec();
 
     if s_data.is_empty() {
-        return Tensor::<CpuRuntime>::try_from_slice(&[T::from_f64(f64::INFINITY)], &[], device);
+        return Tensor::<CpuRuntime>::from_slice(&[T::from_f64(f64::INFINITY)], &[], device);
     }
 
     // Find max and min singular values (s is sorted descending)
@@ -154,7 +154,7 @@ fn cond_typed<T: Element + LinalgElement>(
         T::from_f64(s_max / s_min)
     };
 
-    Tensor::<CpuRuntime>::try_from_slice(&[cond], &[], device)
+    Tensor::<CpuRuntime>::from_slice(&[cond], &[], device)
 }
 
 /// Covariance matrix
@@ -201,7 +201,7 @@ fn cov_typed<T: Element + LinalgElement>(
 
     // Handle edge case: single feature
     if n_features == 0 {
-        return Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[0, 0], device);
+        return Tensor::<CpuRuntime>::from_slice::<T>(&[], &[0, 0], device);
     }
 
     let a_data: Vec<T> = a.to_vec();
@@ -237,7 +237,7 @@ fn cov_typed<T: Element + LinalgElement>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&cov, &[n_features, n_features], device)
+    Tensor::<CpuRuntime>::from_slice(&cov, &[n_features, n_features], device)
 }
 
 /// Correlation coefficient matrix
@@ -278,7 +278,7 @@ fn corrcoef_typed<T: Element + LinalgElement>(
 
     // Handle edge case: single feature
     if n_features == 0 {
-        return Tensor::<CpuRuntime>::try_from_slice::<T>(&[], &[0, 0], device);
+        return Tensor::<CpuRuntime>::from_slice::<T>(&[], &[0, 0], device);
     }
 
     // Compute covariance matrix (with ddof=1 for sample covariance)
@@ -313,5 +313,5 @@ fn corrcoef_typed<T: Element + LinalgElement>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&corr, &[n_features, n_features], device)
+    Tensor::<CpuRuntime>::from_slice(&corr, &[n_features, n_features], device)
 }

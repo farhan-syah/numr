@@ -24,7 +24,7 @@ fn test_prune_to_24_correctness() {
         4.0, 1.0, -5.0, 3.0, // group 2: top-2 = 4.0 (0), -5.0 (2)
         0.0, 0.0, 0.0, 0.0, // group 3: all zero, keeps (0), (1)
     ];
-    let dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 8], &device).unwrap();
+    let dense = Tensor::<CpuRuntime>::from_slice(&data, &[2, 8], &device).unwrap();
     let sparse = client.prune_to_24(&dense).unwrap();
 
     assert_eq!(sparse.shape(), [2, 8]);
@@ -48,7 +48,7 @@ fn test_sparse_24_roundtrip() {
     let data: Vec<f32> = vec![
         1.0, -3.0, 2.0, 0.5, 0.1, 0.2, 0.3, 0.4, 4.0, 1.0, -5.0, 3.0, 0.0, 0.0, 0.0, 0.0,
     ];
-    let dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 8], &device).unwrap();
+    let dense = Tensor::<CpuRuntime>::from_slice(&data, &[2, 8], &device).unwrap();
     let sparse = client.prune_to_24(&dense).unwrap();
     let reconstructed = client.sparse_24_to_dense(&sparse).unwrap();
 
@@ -79,12 +79,12 @@ fn test_sparse_24_matmul_matches_dense() {
         1.0, -3.0, 2.0, 0.5, 0.1, 0.2, 0.3, 0.4, 4.0, 1.0, -5.0, 3.0, 0.5, 0.5, 0.5, 0.5, 2.0, 0.0,
         1.0, 0.0, 0.0, 3.0, 0.0, 1.0, 0.5, 1.5, 0.5, 1.5, 2.0, 0.0, 2.0, 0.0,
     ];
-    let weight = Tensor::<CpuRuntime>::try_from_slice(&weight_data, &[4, 8], &device).unwrap();
+    let weight = Tensor::<CpuRuntime>::from_slice(&weight_data, &[4, 8], &device).unwrap();
 
     let input_data: Vec<f32> = vec![
         1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0,
     ];
-    let input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &[2, 8], &device).unwrap();
+    let input = Tensor::<CpuRuntime>::from_slice(&input_data, &[2, 8], &device).unwrap();
 
     // Prune weight
     let sparse_weight = client.prune_to_24(&weight).unwrap();
@@ -111,10 +111,10 @@ fn test_sparse_24_matmul_larger() {
 
     // Larger: weight [16, 32], input [8, 32]
     let weight_data: Vec<f32> = (0..16 * 32).map(|i| (i as f32 * 0.1).sin() * 3.0).collect();
-    let weight = Tensor::<CpuRuntime>::try_from_slice(&weight_data, &[16, 32], &device).unwrap();
+    let weight = Tensor::<CpuRuntime>::from_slice(&weight_data, &[16, 32], &device).unwrap();
 
     let input_data: Vec<f32> = (0..8 * 32).map(|i| (i as f32 * 0.07).cos() * 2.0).collect();
-    let input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &[8, 32], &device).unwrap();
+    let input = Tensor::<CpuRuntime>::from_slice(&input_data, &[8, 32], &device).unwrap();
 
     let sparse_weight = client.prune_to_24(&weight).unwrap();
     let sparse_result = client.sparse_24_matmul(&input, &sparse_weight).unwrap();
@@ -145,14 +145,14 @@ mod cuda_parity {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let data: Vec<f32> = (0..4 * 16).map(|i| (i as f32 * 0.13).sin() * 5.0).collect();
-        let cpu_dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[4, 16], &cpu_device).unwrap();
+        let cpu_dense = Tensor::<CpuRuntime>::from_slice(&data, &[4, 16], &cpu_device).unwrap();
         let cpu_sparse = cpu_client.prune_to_24(&cpu_dense).unwrap();
         let cpu_vals: Vec<f32> = cpu_sparse.compressed_values().to_vec();
         let cpu_meta: Vec<u32> = cpu_sparse.metadata().to_vec();
 
         with_cuda_backend(|cuda_client, cuda_device| {
             let cuda_dense =
-                Tensor::<CudaRuntime>::try_from_slice(&data, &[4, 16], &cuda_device).unwrap();
+                Tensor::<CudaRuntime>::from_slice(&data, &[4, 16], &cuda_device).unwrap();
             let cuda_sparse = cuda_client.prune_to_24(&cuda_dense).unwrap();
             let cuda_vals: Vec<f32> = cuda_sparse.compressed_values().to_vec();
             let cuda_meta: Vec<u32> = cuda_sparse.metadata().to_vec();
@@ -167,13 +167,13 @@ mod cuda_parity {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let data: Vec<f32> = (0..4 * 16).map(|i| (i as f32 * 0.13).sin() * 5.0).collect();
-        let cpu_dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[4, 16], &cpu_device).unwrap();
+        let cpu_dense = Tensor::<CpuRuntime>::from_slice(&data, &[4, 16], &cpu_device).unwrap();
         let cpu_sparse = cpu_client.prune_to_24(&cpu_dense).unwrap();
         let cpu_recon: Vec<f32> = cpu_client.sparse_24_to_dense(&cpu_sparse).unwrap().to_vec();
 
         with_cuda_backend(|cuda_client, cuda_device| {
             let cuda_dense =
-                Tensor::<CudaRuntime>::try_from_slice(&data, &[4, 16], &cuda_device).unwrap();
+                Tensor::<CudaRuntime>::from_slice(&data, &[4, 16], &cuda_device).unwrap();
             let cuda_sparse = cuda_client.prune_to_24(&cuda_dense).unwrap();
             let cuda_recon: Vec<f32> = cuda_client
                 .sparse_24_to_dense(&cuda_sparse)
@@ -192,9 +192,9 @@ mod cuda_parity {
         let input_data: Vec<f32> = (0..4 * 16).map(|i| (i as f32 * 0.07).cos() * 2.0).collect();
 
         let cpu_weight =
-            Tensor::<CpuRuntime>::try_from_slice(&weight_data, &[8, 16], &cpu_device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&weight_data, &[8, 16], &cpu_device).unwrap();
         let cpu_input =
-            Tensor::<CpuRuntime>::try_from_slice(&input_data, &[4, 16], &cpu_device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&input_data, &[4, 16], &cpu_device).unwrap();
         let cpu_sparse = cpu_client.prune_to_24(&cpu_weight).unwrap();
         let cpu_result: Vec<f32> = cpu_client
             .sparse_24_matmul(&cpu_input, &cpu_sparse)
@@ -203,10 +203,9 @@ mod cuda_parity {
 
         with_cuda_backend(|cuda_client, cuda_device| {
             let cuda_weight =
-                Tensor::<CudaRuntime>::try_from_slice(&weight_data, &[8, 16], &cuda_device)
-                    .unwrap();
+                Tensor::<CudaRuntime>::from_slice(&weight_data, &[8, 16], &cuda_device).unwrap();
             let cuda_input =
-                Tensor::<CudaRuntime>::try_from_slice(&input_data, &[4, 16], &cuda_device).unwrap();
+                Tensor::<CudaRuntime>::from_slice(&input_data, &[4, 16], &cuda_device).unwrap();
             let cuda_sparse = cuda_client.prune_to_24(&cuda_weight).unwrap();
             let cuda_result: Vec<f32> = cuda_client
                 .sparse_24_matmul(&cuda_input, &cuda_sparse)
@@ -234,14 +233,14 @@ mod wgpu_parity {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let data: Vec<f32> = (0..4 * 16).map(|i| (i as f32 * 0.13).sin() * 5.0).collect();
-        let cpu_dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[4, 16], &cpu_device).unwrap();
+        let cpu_dense = Tensor::<CpuRuntime>::from_slice(&data, &[4, 16], &cpu_device).unwrap();
         let cpu_sparse = cpu_client.prune_to_24(&cpu_dense).unwrap();
         let cpu_vals: Vec<f32> = cpu_sparse.compressed_values().to_vec();
         let cpu_meta: Vec<u32> = cpu_sparse.metadata().to_vec();
 
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             let wgpu_dense =
-                Tensor::<WgpuRuntime>::try_from_slice(&data, &[4, 16], &wgpu_device).unwrap();
+                Tensor::<WgpuRuntime>::from_slice(&data, &[4, 16], &wgpu_device).unwrap();
             let wgpu_sparse = wgpu_client.prune_to_24(&wgpu_dense).unwrap();
             let wgpu_vals: Vec<f32> = wgpu_sparse.compressed_values().to_vec();
             let wgpu_meta: Vec<u32> = wgpu_sparse.metadata().to_vec();
@@ -256,13 +255,13 @@ mod wgpu_parity {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let data: Vec<f32> = (0..4 * 16).map(|i| (i as f32 * 0.13).sin() * 5.0).collect();
-        let cpu_dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[4, 16], &cpu_device).unwrap();
+        let cpu_dense = Tensor::<CpuRuntime>::from_slice(&data, &[4, 16], &cpu_device).unwrap();
         let cpu_sparse = cpu_client.prune_to_24(&cpu_dense).unwrap();
         let cpu_recon: Vec<f32> = cpu_client.sparse_24_to_dense(&cpu_sparse).unwrap().to_vec();
 
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             let wgpu_dense =
-                Tensor::<WgpuRuntime>::try_from_slice(&data, &[4, 16], &wgpu_device).unwrap();
+                Tensor::<WgpuRuntime>::from_slice(&data, &[4, 16], &wgpu_device).unwrap();
             let wgpu_sparse = wgpu_client.prune_to_24(&wgpu_dense).unwrap();
             let wgpu_recon: Vec<f32> = wgpu_client
                 .sparse_24_to_dense(&wgpu_sparse)
@@ -281,9 +280,9 @@ mod wgpu_parity {
         let input_data: Vec<f32> = (0..4 * 16).map(|i| (i as f32 * 0.07).cos() * 2.0).collect();
 
         let cpu_weight =
-            Tensor::<CpuRuntime>::try_from_slice(&weight_data, &[8, 16], &cpu_device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&weight_data, &[8, 16], &cpu_device).unwrap();
         let cpu_input =
-            Tensor::<CpuRuntime>::try_from_slice(&input_data, &[4, 16], &cpu_device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&input_data, &[4, 16], &cpu_device).unwrap();
         let cpu_sparse = cpu_client.prune_to_24(&cpu_weight).unwrap();
         let cpu_result: Vec<f32> = cpu_client
             .sparse_24_matmul(&cpu_input, &cpu_sparse)
@@ -292,10 +291,9 @@ mod wgpu_parity {
 
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             let wgpu_weight =
-                Tensor::<WgpuRuntime>::try_from_slice(&weight_data, &[8, 16], &wgpu_device)
-                    .unwrap();
+                Tensor::<WgpuRuntime>::from_slice(&weight_data, &[8, 16], &wgpu_device).unwrap();
             let wgpu_input =
-                Tensor::<WgpuRuntime>::try_from_slice(&input_data, &[4, 16], &wgpu_device).unwrap();
+                Tensor::<WgpuRuntime>::from_slice(&input_data, &[4, 16], &wgpu_device).unwrap();
             let wgpu_sparse = wgpu_client.prune_to_24(&wgpu_weight).unwrap();
             let wgpu_result: Vec<f32> = wgpu_client
                 .sparse_24_matmul(&wgpu_input, &wgpu_sparse)

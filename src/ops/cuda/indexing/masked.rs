@@ -69,7 +69,7 @@ pub fn masked_select(
     let count = count_buf[0] as usize;
     CudaRuntime::deallocate(count_ptr, count_bytes, &client.device);
 
-    let out = Tensor::<CudaRuntime>::try_empty(&[count], dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&[count], dtype, &client.device)?;
     if count == 0 {
         return Ok(out);
     }
@@ -158,7 +158,7 @@ pub fn masked_fill(
     let numel = a.numel();
 
     let bcast = BroadcastContext::prepare(a, mask, &client.device)?;
-    let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &client.device)?;
 
     if bcast.needs_broadcast {
         unsafe {

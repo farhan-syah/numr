@@ -44,7 +44,7 @@ pub fn gather(
 
     // Output has same shape as index
     let out_shape = index_i64.shape().to_vec();
-    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
     // Prepare shape and stride arrays as host Vecs (passed as scalar args, no device alloc needed)
     let input_shape: Vec<u32> = a.shape().iter().map(|&s| s as u32).collect();
@@ -121,7 +121,7 @@ pub fn scatter(
     let src_contig = ensure_contiguous(src)?;
 
     // Output has same shape as input
-    let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &client.device)?;
 
     // First, copy input to output (scatter modifies output in-place)
     unsafe {
@@ -210,7 +210,7 @@ pub fn index_select(
     let dim_size = shape[dim];
 
     // Validate indices on GPU (only costs copying 4 bytes back)
-    let error_count_tensor = Tensor::<CudaRuntime>::try_empty(&[1], DType::U32, &client.device)?;
+    let error_count_tensor = Tensor::<CudaRuntime>::empty(&[1], DType::U32, &client.device)?;
     unsafe {
         // Initialize error count to 0
         launch_fill_with_f64(
@@ -244,7 +244,7 @@ pub fn index_select(
         });
     }
 
-    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
     // Compute outer/dim/inner sizes
     let outer_size: usize = shape[..dim].iter().product();
@@ -327,7 +327,7 @@ pub fn gather_2d(
     let cols_contig = ensure_contiguous(&cols_i64)?;
 
     // Allocate output
-    let out = Tensor::<CudaRuntime>::try_empty(&[num_indices], dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&[num_indices], dtype, &client.device)?;
 
     unsafe {
         launch_gather_2d(
@@ -406,7 +406,7 @@ pub fn index_put(
     let dim_size = shape[dim];
 
     // Validate indices on GPU (only costs copying 4 bytes back)
-    let error_count_tensor = Tensor::<CudaRuntime>::try_empty(&[1], DType::U32, &client.device)?;
+    let error_count_tensor = Tensor::<CudaRuntime>::empty(&[1], DType::U32, &client.device)?;
     unsafe {
         // Initialize error count to 0
         launch_fill_with_f64(
@@ -528,7 +528,7 @@ pub fn slice_assign(
     let dst_contig = ensure_contiguous(dst)?;
     let src_contig = ensure_contiguous(src)?;
 
-    let out = Tensor::<CudaRuntime>::try_empty(dst.shape(), dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(dst.shape(), dtype, &client.device)?;
 
     unsafe {
         // Copy dst → output

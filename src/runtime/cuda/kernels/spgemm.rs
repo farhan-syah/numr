@@ -46,7 +46,7 @@ pub unsafe fn spgemm_symbolic_phase(
     let func = get_kernel_function(&module, "spgemm_symbolic_phase")?;
 
     // Output: row_nnz[m]
-    let row_nnz = Tensor::<CudaRuntime>::try_zeros(&[m], DType::I32, device)?;
+    let row_nnz = Tensor::<CudaRuntime>::zeros(&[m], DType::I32, device)?;
 
     // Dynamic shared memory allocation for flexible matrix sizes
     // Allocate for ALL launched threads (block_size), not just working threads

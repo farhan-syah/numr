@@ -35,11 +35,11 @@ impl UtilityOps<CudaRuntime> for CudaClient {
         let numel: usize = shape.iter().product();
         if numel == 0 {
             // Empty tensor - just allocate
-            return Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device);
+            return Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
         }
 
         // Allocate output tensor
-        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device)?;
 
         // Launch native CUDA fill kernel
         unsafe {
@@ -69,10 +69,10 @@ impl UtilityOps<CudaRuntime> for CudaClient {
 
         // Handle empty tensor case
         if numel == 0 {
-            return Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device);
+            return Tensor::<CudaRuntime>::empty(&[0], dtype, &self.device);
         }
 
-        let out = Tensor::<CudaRuntime>::try_empty(&[numel], dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&[numel], dtype, &self.device)?;
 
         unsafe {
             launch_arange(
@@ -102,14 +102,14 @@ impl UtilityOps<CudaRuntime> for CudaClient {
 
         // Handle edge cases
         if steps == 0 {
-            return Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device);
+            return Tensor::<CudaRuntime>::empty(&[0], dtype, &self.device);
         }
 
         if steps == 1 {
             return self.fill(&[1], start, dtype);
         }
 
-        let out = Tensor::<CudaRuntime>::try_empty(&[steps], dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&[steps], dtype, &self.device)?;
 
         unsafe {
             launch_linspace(
@@ -149,10 +149,10 @@ impl UtilityOps<CudaRuntime> for CudaClient {
 
         // Handle edge cases
         if rows == 0 || cols == 0 {
-            return Tensor::<CudaRuntime>::try_empty(&[rows, cols], dtype, &self.device);
+            return Tensor::<CudaRuntime>::empty(&[rows, cols], dtype, &self.device);
         }
 
-        let out = Tensor::<CudaRuntime>::try_empty(&[rows, cols], dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&[rows, cols], dtype, &self.device)?;
 
         unsafe {
             launch_eye(

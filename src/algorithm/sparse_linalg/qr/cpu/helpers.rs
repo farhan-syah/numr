@@ -76,9 +76,9 @@ pub(crate) fn create_vector_tensor<R: Runtime<DType = DType>>(
     match dtype {
         DType::F32 => {
             let data_f32: Vec<f32> = data.iter().map(|&x| x as f32).collect();
-            Tensor::<R>::try_from_slice(&data_f32, &[n], device)
+            Tensor::<R>::from_slice(&data_f32, &[n], device)
         }
-        DType::F64 => Tensor::<R>::try_from_slice(data, &[n], device),
+        DType::F64 => Tensor::<R>::from_slice(data, &[n], device),
         _ => Err(Error::UnsupportedDType {
             dtype,
             op: "sparse_qr",

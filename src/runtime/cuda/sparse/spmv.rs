@@ -30,7 +30,7 @@ impl CudaClient {
         }
 
         // Allocate output on GPU
-        let y = Tensor::<CudaRuntime>::try_zeros(&[nrows], dtype, device)?;
+        let y = Tensor::<CudaRuntime>::zeros(&[nrows], dtype, device)?;
 
         // Get device pointers (no data transfer!)
         let row_ptrs_ptr = row_ptrs.ptr();
@@ -203,7 +203,7 @@ impl CudaClient {
         }
 
         // Allocate output on GPU
-        let c = Tensor::<CudaRuntime>::try_zeros(&[m, n], dtype, device)?;
+        let c = Tensor::<CudaRuntime>::zeros(&[m, n], dtype, device)?;
 
         // Get device pointers (no data transfer!)
         let row_ptrs_ptr = row_ptrs.ptr();

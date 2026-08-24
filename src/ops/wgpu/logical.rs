@@ -97,10 +97,8 @@ mod tests {
     fn test_logical_and() {
         let client = create_client();
 
-        let a =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 0, 1, 0], &[4], client.device()).unwrap();
-        let b =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 1, 0, 0], &[4], client.device()).unwrap();
+        let a = Tensor::<WgpuRuntime>::from_slice(&[1u32, 0, 1, 0], &[4], client.device()).unwrap();
+        let b = Tensor::<WgpuRuntime>::from_slice(&[1u32, 1, 0, 0], &[4], client.device()).unwrap();
 
         let result = client.logical_and(&a, &b).unwrap();
         let data: Vec<u32> = result.to_vec();
@@ -112,10 +110,8 @@ mod tests {
     fn test_logical_or() {
         let client = create_client();
 
-        let a =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 0, 1, 0], &[4], client.device()).unwrap();
-        let b =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 1, 0, 0], &[4], client.device()).unwrap();
+        let a = Tensor::<WgpuRuntime>::from_slice(&[1u32, 0, 1, 0], &[4], client.device()).unwrap();
+        let b = Tensor::<WgpuRuntime>::from_slice(&[1u32, 1, 0, 0], &[4], client.device()).unwrap();
 
         let result = client.logical_or(&a, &b).unwrap();
         let data: Vec<u32> = result.to_vec();
@@ -127,10 +123,8 @@ mod tests {
     fn test_logical_xor() {
         let client = create_client();
 
-        let a =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 0, 1, 0], &[4], client.device()).unwrap();
-        let b =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 1, 0, 0], &[4], client.device()).unwrap();
+        let a = Tensor::<WgpuRuntime>::from_slice(&[1u32, 0, 1, 0], &[4], client.device()).unwrap();
+        let b = Tensor::<WgpuRuntime>::from_slice(&[1u32, 1, 0, 0], &[4], client.device()).unwrap();
 
         let result = client.logical_xor(&a, &b).unwrap();
         let data: Vec<u32> = result.to_vec();
@@ -142,8 +136,7 @@ mod tests {
     fn test_logical_not() {
         let client = create_client();
 
-        let a =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 0, 5, 0], &[4], client.device()).unwrap();
+        let a = Tensor::<WgpuRuntime>::from_slice(&[1u32, 0, 5, 0], &[4], client.device()).unwrap();
 
         let result = client.logical_not(&a).unwrap();
         let data: Vec<u32> = result.to_vec();
@@ -155,10 +148,8 @@ mod tests {
     fn test_logical_rejects_non_u32() {
         let client = create_client();
 
-        let a =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[2], client.device()).unwrap();
-        let b =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], client.device()).unwrap();
+        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 0.0], &[2], client.device()).unwrap();
+        let b = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], client.device()).unwrap();
 
         assert!(client.logical_and(&a, &b).is_err());
         assert!(client.logical_not(&a).is_err());
@@ -168,9 +159,8 @@ mod tests {
     fn test_logical_shape_mismatch() {
         let client = create_client();
 
-        let a =
-            Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 0, 1], &[3], client.device()).unwrap();
-        let b = Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 1], &[2], client.device()).unwrap();
+        let a = Tensor::<WgpuRuntime>::from_slice(&[1u32, 0, 1], &[3], client.device()).unwrap();
+        let b = Tensor::<WgpuRuntime>::from_slice(&[1u32, 1], &[2], client.device()).unwrap();
 
         assert!(client.logical_and(&a, &b).is_err());
     }

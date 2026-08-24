@@ -299,17 +299,14 @@ fn solve_impl<T: SolveScalar>(
     let r_col_ptrs_i32: Vec<i32> = r_col_ptrs.iter().map(|&x| x as i32).collect();
     let r_row_indices_i32: Vec<i32> = r_row_indices.iter().map(|&x| x as i32).collect();
     let r_col_ptrs_gpu =
-        Tensor::<CudaRuntime>::try_from_slice(&r_col_ptrs_i32, &[r_col_ptrs_i32.len()], &device)?;
-    let r_row_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
-        &r_row_indices_i32,
-        &[r_row_indices_i32.len()],
-        &device,
-    )?;
+        Tensor::<CudaRuntime>::from_slice(&r_col_ptrs_i32, &[r_col_ptrs_i32.len()], &device)?;
+    let r_row_indices_gpu =
+        Tensor::<CudaRuntime>::from_slice(&r_row_indices_i32, &[r_row_indices_i32.len()], &device)?;
     let u_level_cols_gpu =
-        Tensor::<CudaRuntime>::try_from_slice(&u_level_cols, &[u_level_cols.len()], &device)?;
+        Tensor::<CudaRuntime>::from_slice(&u_level_cols, &[u_level_cols.len()], &device)?;
 
     // Find diagonal indices on GPU
-    let u_diag_ptr_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, &device)?;
+    let u_diag_ptr_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, &device)?;
     unsafe {
         launch_find_diag_indices_csc(
             context,
@@ -359,9 +356,9 @@ fn solve_impl<T: SolveScalar>(
     for (k, &orig_col) in factors.col_perm.iter().enumerate() {
         inv_perm[orig_col] = k as i32;
     }
-    let inv_perm_gpu = Tensor::<CudaRuntime>::try_from_slice(&inv_perm, &[n], &device)?;
+    let inv_perm_gpu = Tensor::<CudaRuntime>::from_slice(&inv_perm, &[n], &device)?;
 
-    let result = Tensor::<CudaRuntime>::try_zeros(&[n], dtype, &device)?;
+    let result = Tensor::<CudaRuntime>::zeros(&[n], dtype, &device)?;
     unsafe {
         T::launch_perm(
             context,

@@ -139,9 +139,9 @@ fn solve_banded_typed<T: Element + LinalgElement>(
     let b_is_1d = b.ndim() == 1;
 
     if b_is_1d {
-        Tensor::<CpuRuntime>::try_from_slice(&result, &[n], device)
+        Tensor::<CpuRuntime>::from_slice(&result, &[n], device)
     } else {
-        Tensor::<CpuRuntime>::try_from_slice(&result, &[n, nrhs], device)
+        Tensor::<CpuRuntime>::from_slice(&result, &[n, nrhs], device)
     }
 }
 
@@ -357,7 +357,7 @@ mod tests {
         // Row 1 (main):  [2,  2,  2,  2]  (ab[1,j] = A[j,j])
         // Row 2 (lower): [-1,-1, -1,  0]  (ab[2,j] = A[j+1,j])
         let device = CpuDevice::default();
-        let ab = Tensor::<CpuRuntime>::try_from_slice(
+        let ab = Tensor::<CpuRuntime>::from_slice(
             &[
                 0.0f64, -1.0, -1.0, -1.0, 2.0, 2.0, 2.0, 2.0, -1.0, -1.0, -1.0, 0.0,
             ],
@@ -365,8 +365,7 @@ mod tests {
             &device,
         )
         .unwrap();
-        let b =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[4], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[4], &device).unwrap();
         let client = create_client();
         let x = solve_banded_impl(&client, &ab, &b, 1, 1).unwrap();
 
@@ -397,7 +396,7 @@ mod tests {
         //       [1, 5, 7],   row 2
         //       [4, 6, 0]]   row 3
         let device = CpuDevice::default();
-        let ab = Tensor::<CpuRuntime>::try_from_slice(
+        let ab = Tensor::<CpuRuntime>::from_slice(
             &[
                 0.0f64, 0.0, 3.0, 0.0, 2.0, 0.0, 1.0, 5.0, 7.0, 4.0, 6.0, 0.0,
             ],
@@ -406,7 +405,7 @@ mod tests {
         )
         .unwrap();
         // b = [1, 2, 3], solve Ax = b
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0], &[3], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0], &[3], &device).unwrap();
         let client = create_client();
         let x = solve_banded_impl(&client, &ab, &b, 1, 2).unwrap();
 
@@ -429,13 +428,13 @@ mod tests {
     #[test]
     fn test_tridiagonal_f32() {
         let device = CpuDevice::default();
-        let ab = Tensor::<CpuRuntime>::try_from_slice(
+        let ab = Tensor::<CpuRuntime>::from_slice(
             &[0.0f32, -1.0, -1.0, 2.0, 2.0, 2.0, -1.0, -1.0, 0.0],
             &[3, 3],
             &device,
         )
         .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 1.0], &[3], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 1.0], &[3], &device).unwrap();
         let client = create_client();
         let x = solve_banded_impl(&client, &ab, &b, 1, 1).unwrap();
 

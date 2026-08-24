@@ -387,7 +387,7 @@ pub fn matrix_rank(
 
     // Handle empty matrix
     if k == 0 {
-        return Tensor::<WgpuRuntime>::try_from_slice(&[0i64], &[], a.device());
+        return Tensor::<WgpuRuntime>::from_slice(&[0i64], &[], a.device());
     }
 
     // Compute tolerance factor (depends only on dimensions, no GPU data needed)

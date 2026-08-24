@@ -41,7 +41,7 @@ impl IndexingOps<CpuRuntime> for CpuClient {
         let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I64, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, DType::I64, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let out_ptr = out.ptr();
@@ -83,7 +83,7 @@ impl IndexingOps<CpuRuntime> for CpuClient {
         let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I64, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, DType::I64, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let out_ptr = out.ptr();

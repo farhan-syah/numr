@@ -28,7 +28,7 @@ fn make_tensor(
     device: &<CpuRuntime as numr::runtime::Runtime>::Device,
     client: &impl TypeConversionOps<CpuRuntime>,
 ) -> Result<Tensor<CpuRuntime>> {
-    let t = Tensor::try_from_slice(data, shape, device).unwrap();
+    let t = Tensor::from_slice(data, shape, device).unwrap();
     if dtype == DType::F32 {
         Ok(t)
     } else {
@@ -70,8 +70,7 @@ fn audit_dtype(dtype: DType) {
 
     // Cast F32 -> target
     let cast_ok = audit_op!("cast F32 -> target", {
-        let t =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+        let t = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
         let _ = client.cast(&t, dtype)?;
     });
     tally!(cast_ok);

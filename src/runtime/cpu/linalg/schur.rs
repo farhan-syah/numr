@@ -44,16 +44,16 @@ fn schur_decompose_typed<T: Element + LinalgElement>(
     // Handle trivial cases
     if n == 0 {
         return Ok(SchurDecomposition {
-            z: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
-            t: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            z: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device)?,
+            t: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device)?,
         });
     }
 
     if n == 1 {
         let data: Vec<T> = a.to_vec();
         return Ok(SchurDecomposition {
-            z: Tensor::<CpuRuntime>::try_from_slice(&[T::one()], &[1, 1], device)?,
-            t: Tensor::<CpuRuntime>::try_from_slice(&data, &[1, 1], device)?,
+            z: Tensor::<CpuRuntime>::from_slice(&[T::one()], &[1, 1], device)?,
+            t: Tensor::<CpuRuntime>::from_slice(&data, &[1, 1], device)?,
         });
     }
 
@@ -117,8 +117,8 @@ fn schur_decompose_typed<T: Element + LinalgElement>(
     }
 
     Ok(SchurDecomposition {
-        z: Tensor::<CpuRuntime>::try_from_slice(&z_data, &[n, n], device)?,
-        t: Tensor::<CpuRuntime>::try_from_slice(&t_data, &[n, n], device)?,
+        z: Tensor::<CpuRuntime>::from_slice(&z_data, &[n, n], device)?,
+        t: Tensor::<CpuRuntime>::from_slice(&t_data, &[n, n], device)?,
     })
 }
 

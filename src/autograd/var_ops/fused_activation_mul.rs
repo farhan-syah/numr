@@ -382,8 +382,8 @@ where
         }
         FusedKind::Relu => {
             // relu'(x) = 1 if x > 0, else 0
-            let zeros = crate::tensor::Tensor::<R>::try_zeros(a.shape(), a.dtype(), a.device())?;
-            let ones = crate::tensor::Tensor::<R>::try_ones(a.shape(), a.dtype(), a.device())?;
+            let zeros = crate::tensor::Tensor::<R>::zeros(a.shape(), a.dtype(), a.device())?;
+            let ones = crate::tensor::Tensor::<R>::ones(a.shape(), a.dtype(), a.device())?;
             let mask = client.gt(a, &zeros)?;
             client.where_cond(&mask, &ones, &zeros)
         }
@@ -410,11 +410,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0, -1.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0, -1.0], &[3], &device).unwrap(),
             false,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap(),
             false,
         );
 
@@ -440,19 +440,19 @@ mod tests {
         // Fused
         let fused = client
             .silu_mul(
-                &Tensor::<CpuRuntime>::try_from_slice(&a_data, &[5], &device).unwrap(),
-                &Tensor::<CpuRuntime>::try_from_slice(&b_data, &[5], &device).unwrap(),
+                &Tensor::<CpuRuntime>::from_slice(&a_data, &[5], &device).unwrap(),
+                &Tensor::<CpuRuntime>::from_slice(&b_data, &[5], &device).unwrap(),
             )
             .unwrap();
 
         // Separate
         let silu_a = client
-            .silu(&Tensor::<CpuRuntime>::try_from_slice(&a_data, &[5], &device).unwrap())
+            .silu(&Tensor::<CpuRuntime>::from_slice(&a_data, &[5], &device).unwrap())
             .unwrap();
         let separate = client
             .mul(
                 &silu_a,
-                &Tensor::<CpuRuntime>::try_from_slice(&b_data, &[5], &device).unwrap(),
+                &Tensor::<CpuRuntime>::from_slice(&b_data, &[5], &device).unwrap(),
             )
             .unwrap();
 
@@ -474,11 +474,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, -1.0], &[2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, -1.0], &[2], &device).unwrap(),
             true,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device).unwrap(),
             true,
         );
 
@@ -519,11 +519,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[-1.0f32, 0.0, 2.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[-1.0f32, 0.0, 2.0], &[3], &device).unwrap(),
             false,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 5.0, 5.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32, 5.0, 5.0], &[3], &device).unwrap(),
             false,
         );
 
@@ -540,11 +540,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device).unwrap(),
             true,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -568,11 +568,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device).unwrap(),
             false,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             false,
         );
 

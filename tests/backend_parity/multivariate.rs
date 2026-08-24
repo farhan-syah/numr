@@ -70,9 +70,9 @@ fn check_column_mean_f32(vals: &[f32], k: usize, expected_means: &[f32], tol: f3
 #[test]
 fn test_multivariate_normal_shape_and_dtype() {
     let (cpu_client, cpu_device) = create_cpu_client();
-    let mean = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &cpu_device).unwrap();
-    let cov = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cpu_device)
-        .unwrap();
+    let mean = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0], &[2], &cpu_device).unwrap();
+    let cov =
+        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cpu_device).unwrap();
     let n_samples = 100usize;
 
     let result = cpu_client
@@ -97,13 +97,10 @@ fn test_multivariate_normal_shape_and_dtype() {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
             let mean_cuda =
-                Tensor::<CudaRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &cuda_device).unwrap();
-            let cov_cuda = Tensor::<CudaRuntime>::try_from_slice(
-                &[1.0f32, 0.0, 0.0, 1.0],
-                &[2, 2],
-                &cuda_device,
-            )
-            .unwrap();
+                Tensor::<CudaRuntime>::from_slice(&[0.0f32, 0.0], &[2], &cuda_device).unwrap();
+            let cov_cuda =
+                Tensor::<CudaRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cuda_device)
+                    .unwrap();
             let result = cuda_client
                 .multivariate_normal(&mean_cuda, &cov_cuda, n_samples)
                 .unwrap_or_else(|e| panic!("CUDA multivariate_normal failed: {e}"));
@@ -119,13 +116,10 @@ fn test_multivariate_normal_shape_and_dtype() {
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             use numr::runtime::wgpu::WgpuRuntime;
             let mean_wgpu =
-                Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &wgpu_device).unwrap();
-            let cov_wgpu = Tensor::<WgpuRuntime>::try_from_slice(
-                &[1.0f32, 0.0, 0.0, 1.0],
-                &[2, 2],
-                &wgpu_device,
-            )
-            .unwrap();
+                Tensor::<WgpuRuntime>::from_slice(&[0.0f32, 0.0], &[2], &wgpu_device).unwrap();
+            let cov_wgpu =
+                Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &wgpu_device)
+                    .unwrap();
             let result = wgpu_client
                 .multivariate_normal(&mean_wgpu, &cov_wgpu, n_samples)
                 .unwrap_or_else(|e| panic!("WebGPU multivariate_normal failed: {e}"));
@@ -144,9 +138,9 @@ fn test_multivariate_normal_statistical_properties() {
     // With 5000 samples and identity cov, sample mean should be within ~0.1 of true mean
 
     let (cpu_client, cpu_device) = create_cpu_client();
-    let mean = Tensor::<CpuRuntime>::try_from_slice(&true_mean, &[2], &cpu_device).unwrap();
-    let cov = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cpu_device)
-        .unwrap();
+    let mean = Tensor::<CpuRuntime>::from_slice(&true_mean, &[2], &cpu_device).unwrap();
+    let cov =
+        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cpu_device).unwrap();
     let result = cpu_client
         .multivariate_normal(&mean, &cov, 5000)
         .unwrap_or_else(|e| panic!("CPU multivariate_normal statistical test failed: {e}"));
@@ -158,13 +152,10 @@ fn test_multivariate_normal_statistical_properties() {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
             let mean_cuda =
-                Tensor::<CudaRuntime>::try_from_slice(&true_mean, &[2], &cuda_device).unwrap();
-            let cov_cuda = Tensor::<CudaRuntime>::try_from_slice(
-                &[1.0f32, 0.0, 0.0, 1.0],
-                &[2, 2],
-                &cuda_device,
-            )
-            .unwrap();
+                Tensor::<CudaRuntime>::from_slice(&true_mean, &[2], &cuda_device).unwrap();
+            let cov_cuda =
+                Tensor::<CudaRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cuda_device)
+                    .unwrap();
             let result = cuda_client
                 .multivariate_normal(&mean_cuda, &cov_cuda, 5000)
                 .unwrap_or_else(|e| {
@@ -180,9 +171,9 @@ fn test_multivariate_normal_statistical_properties() {
 #[test]
 fn test_multivariate_normal_f64() {
     let (cpu_client, cpu_device) = create_cpu_client();
-    let mean = Tensor::<CpuRuntime>::try_from_slice(&[0.0f64, 0.0], &[2], &cpu_device).unwrap();
-    let cov = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], &cpu_device)
-        .unwrap();
+    let mean = Tensor::<CpuRuntime>::from_slice(&[0.0f64, 0.0], &[2], &cpu_device).unwrap();
+    let cov =
+        Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], &cpu_device).unwrap();
 
     let result = cpu_client
         .multivariate_normal(&mean, &cov, 100)
@@ -199,13 +190,10 @@ fn test_multivariate_normal_f64() {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
             let mean_cuda =
-                Tensor::<CudaRuntime>::try_from_slice(&[0.0f64, 0.0], &[2], &cuda_device).unwrap();
-            let cov_cuda = Tensor::<CudaRuntime>::try_from_slice(
-                &[1.0f64, 0.0, 0.0, 1.0],
-                &[2, 2],
-                &cuda_device,
-            )
-            .unwrap();
+                Tensor::<CudaRuntime>::from_slice(&[0.0f64, 0.0], &[2], &cuda_device).unwrap();
+            let cov_cuda =
+                Tensor::<CudaRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], &cuda_device)
+                    .unwrap();
             let result = cuda_client
                 .multivariate_normal(&mean_cuda, &cov_cuda, 100)
                 .unwrap_or_else(|e| panic!("CUDA multivariate_normal F64 failed: {e}"));
@@ -232,8 +220,7 @@ fn test_dirichlet_shape_and_constraints() {
     let n_samples = 200usize;
 
     let (cpu_client, cpu_device) = create_cpu_client();
-    let alpha =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &cpu_device).unwrap();
+    let alpha = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &cpu_device).unwrap();
 
     let result = cpu_client
         .dirichlet(&alpha, n_samples)
@@ -251,8 +238,7 @@ fn test_dirichlet_shape_and_constraints() {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
             let alpha_cuda =
-                Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &cuda_device)
-                    .unwrap();
+                Tensor::<CudaRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &cuda_device).unwrap();
             let result = cuda_client
                 .dirichlet(&alpha_cuda, n_samples)
                 .unwrap_or_else(|e| panic!("CUDA dirichlet failed: {e}"));
@@ -270,8 +256,7 @@ fn test_dirichlet_shape_and_constraints() {
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             use numr::runtime::wgpu::WgpuRuntime;
             let alpha_wgpu =
-                Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &wgpu_device)
-                    .unwrap();
+                Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &wgpu_device).unwrap();
             let result = wgpu_client
                 .dirichlet(&alpha_wgpu, n_samples)
                 .unwrap_or_else(|e| panic!("WebGPU dirichlet failed: {e}"));
@@ -293,7 +278,7 @@ fn test_dirichlet_concentrated_mean() {
 
     let (cpu_client, cpu_device) = create_cpu_client();
     let alpha =
-        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 10.0, 10.0], &[3], &cpu_device).unwrap();
+        Tensor::<CpuRuntime>::from_slice(&[10.0f32, 10.0, 10.0], &[3], &cpu_device).unwrap();
     let result = cpu_client
         .dirichlet(&alpha, 2000)
         .unwrap_or_else(|e| panic!("CPU dirichlet concentrated mean test failed: {e}"));
@@ -311,7 +296,7 @@ fn test_dirichlet_concentrated_mean() {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
             let alpha_cuda =
-                Tensor::<CudaRuntime>::try_from_slice(&[10.0f32, 10.0, 10.0], &[3], &cuda_device)
+                Tensor::<CudaRuntime>::from_slice(&[10.0f32, 10.0, 10.0], &[3], &cuda_device)
                     .unwrap();
             let result = cuda_client
                 .dirichlet(&alpha_cuda, 2000)
@@ -339,8 +324,7 @@ fn test_multinomial_samples_shape_and_constraints() {
     let n_samples = 100usize;
 
     let (cpu_client, cpu_device) = create_cpu_client();
-    let probs =
-        Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, 0.3, 0.2], &[3], &cpu_device).unwrap();
+    let probs = Tensor::<CpuRuntime>::from_slice(&[0.5f32, 0.3, 0.2], &[3], &cpu_device).unwrap();
 
     let result = cpu_client
         .multinomial_samples(&probs, n_trials, n_samples)
@@ -358,8 +342,7 @@ fn test_multinomial_samples_shape_and_constraints() {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
             let probs_cuda =
-                Tensor::<CudaRuntime>::try_from_slice(&[0.5f32, 0.3, 0.2], &[3], &cuda_device)
-                    .unwrap();
+                Tensor::<CudaRuntime>::from_slice(&[0.5f32, 0.3, 0.2], &[3], &cuda_device).unwrap();
             let result = cuda_client
                 .multinomial_samples(&probs_cuda, n_trials, n_samples)
                 .unwrap_or_else(|e| panic!("CUDA multinomial_samples failed: {e}"));
@@ -377,8 +360,7 @@ fn test_multinomial_samples_shape_and_constraints() {
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             use numr::runtime::wgpu::WgpuRuntime;
             let probs_wgpu =
-                Tensor::<WgpuRuntime>::try_from_slice(&[0.5f32, 0.3, 0.2], &[3], &wgpu_device)
-                    .unwrap();
+                Tensor::<WgpuRuntime>::from_slice(&[0.5f32, 0.3, 0.2], &[3], &wgpu_device).unwrap();
             let result = wgpu_client
                 .multinomial_samples(&probs_wgpu, n_trials, n_samples)
                 .unwrap_or_else(|e| panic!("WebGPU multinomial_samples failed: {e}"));
@@ -400,8 +382,7 @@ fn test_multinomial_mean_proportional_to_probs() {
     let expected_means = [50.0f32, 30.0, 20.0];
 
     let (cpu_client, cpu_device) = create_cpu_client();
-    let probs =
-        Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, 0.3, 0.2], &[3], &cpu_device).unwrap();
+    let probs = Tensor::<CpuRuntime>::from_slice(&[0.5f32, 0.3, 0.2], &[3], &cpu_device).unwrap();
     let result = cpu_client
         .multinomial_samples(&probs, n_trials, 2000)
         .unwrap_or_else(|e| panic!("CPU multinomial mean test failed: {e}"));
@@ -413,8 +394,7 @@ fn test_multinomial_mean_proportional_to_probs() {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
             let probs_cuda =
-                Tensor::<CudaRuntime>::try_from_slice(&[0.5f32, 0.3, 0.2], &[3], &cuda_device)
-                    .unwrap();
+                Tensor::<CudaRuntime>::from_slice(&[0.5f32, 0.3, 0.2], &[3], &cuda_device).unwrap();
             let result = cuda_client
                 .multinomial_samples(&probs_cuda, n_trials, 2000)
                 .unwrap_or_else(|e| panic!("CUDA multinomial mean test failed: {e}"));
@@ -436,8 +416,7 @@ fn test_wishart_shape_and_positivity() {
 
     let (cpu_client, cpu_device) = create_cpu_client();
     let scale =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cpu_device)
-            .unwrap();
+        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cpu_device).unwrap();
 
     let result = cpu_client
         .wishart(&scale, df, n_samples)
@@ -466,12 +445,9 @@ fn test_wishart_shape_and_positivity() {
     if is_dtype_supported("cuda", DType::F32) {
         with_cuda_backend(|cuda_client, cuda_device| {
             use numr::runtime::cuda::CudaRuntime;
-            let scale_cuda = Tensor::<CudaRuntime>::try_from_slice(
-                &[1.0f32, 0.0, 0.0, 1.0],
-                &[2, 2],
-                &cuda_device,
-            )
-            .unwrap();
+            let scale_cuda =
+                Tensor::<CudaRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &cuda_device)
+                    .unwrap();
             let result = cuda_client
                 .wishart(&scale_cuda, df, n_samples)
                 .unwrap_or_else(|e| panic!("CUDA wishart failed: {e}"));
@@ -497,12 +473,9 @@ fn test_wishart_shape_and_positivity() {
     if is_dtype_supported("wgpu", DType::F32) {
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             use numr::runtime::wgpu::WgpuRuntime;
-            let scale_wgpu = Tensor::<WgpuRuntime>::try_from_slice(
-                &[1.0f32, 0.0, 0.0, 1.0],
-                &[2, 2],
-                &wgpu_device,
-            )
-            .unwrap();
+            let scale_wgpu =
+                Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &wgpu_device)
+                    .unwrap();
             let result = wgpu_client
                 .wishart(&scale_wgpu, df, n_samples)
                 .unwrap_or_else(|e| panic!("WebGPU wishart failed: {e}"));

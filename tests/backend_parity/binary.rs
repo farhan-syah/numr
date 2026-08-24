@@ -317,7 +317,7 @@ fn test_add_into_parity(test_cases: &[TestCase], dtype: DType) {
     for (idx, tc) in test_cases.iter().enumerate() {
         let a = tensor_from_f64(&tc.a, &tc.a_shape, dtype, &cpu_device, &cpu_client).unwrap();
         let b = tensor_from_f64(&tc.b, &tc.b_shape, dtype, &cpu_device, &cpu_client).unwrap();
-        let out = Tensor::<numr::runtime::cpu::CpuRuntime>::try_zeros(
+        let out = Tensor::<numr::runtime::cpu::CpuRuntime>::zeros(
             cpu_results[idx].shape(),
             dtype,
             &cpu_device,
@@ -340,7 +340,7 @@ fn test_add_into_parity(test_cases: &[TestCase], dtype: DType) {
                     tensor_from_f64(&tc.a, &tc.a_shape, dtype, &cuda_device, &cuda_client).unwrap();
                 let b =
                     tensor_from_f64(&tc.b, &tc.b_shape, dtype, &cuda_device, &cuda_client).unwrap();
-                let out = Tensor::<numr::runtime::cuda::CudaRuntime>::try_zeros(
+                let out = Tensor::<numr::runtime::cuda::CudaRuntime>::zeros(
                     cpu_results[idx].shape(),
                     dtype,
                     &cuda_device,
@@ -365,7 +365,7 @@ fn test_add_into_parity(test_cases: &[TestCase], dtype: DType) {
                     tensor_from_f64(&tc.a, &tc.a_shape, dtype, &wgpu_device, &wgpu_client).unwrap();
                 let b =
                     tensor_from_f64(&tc.b, &tc.b_shape, dtype, &wgpu_device, &wgpu_client).unwrap();
-                let out = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_zeros(
+                let out = Tensor::<numr::runtime::wgpu::WgpuRuntime>::zeros(
                     cpu_results[idx].shape(),
                     dtype,
                     &wgpu_device,

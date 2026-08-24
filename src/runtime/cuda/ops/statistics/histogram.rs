@@ -38,7 +38,7 @@ pub fn histogram_impl(
 
     if numel == 0 {
         let (min_val, max_val) = range.unwrap_or((0.0, 1.0));
-        let hist = Tensor::<CudaRuntime>::try_zeros(&[bins], DType::I64, &client.device)?;
+        let hist = Tensor::<CudaRuntime>::zeros(&[bins], DType::I64, &client.device)?;
         let edges = create_bin_edges(client, min_val, max_val, bins, dtype)?;
         return Ok((hist, edges));
     }
@@ -91,7 +91,7 @@ pub fn histogram_impl(
     let bin_max_scalar = (bins - 1) as f32;
     let bin_indices_clamped = if bins > 1 {
         // Use minimum to clamp to bins-1
-        let ones = Tensor::<CudaRuntime>::try_ones(&[numel], DType::F32, &client.device)?;
+        let ones = Tensor::<CudaRuntime>::ones(&[numel], DType::F32, &client.device)?;
         let bin_max_tensor = client.mul_scalar(&ones, bin_max_scalar as f64)?;
         client.minimum(&bin_indices_floored, &bin_max_tensor)?
     } else {

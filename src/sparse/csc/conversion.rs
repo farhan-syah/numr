@@ -41,10 +41,10 @@ impl<R: Runtime<DType = DType>> CscData<R> {
             let values: Vec<T> = self.values.to_vec();
 
             let row_indices_tensor =
-                Tensor::try_from_slice(&row_indices, &[row_indices.len()], device)?;
+                Tensor::from_slice(&row_indices, &[row_indices.len()], device)?;
             let col_indices_tensor =
-                Tensor::try_from_slice(&col_indices, &[col_indices.len()], device)?;
-            let values_tensor = Tensor::try_from_slice(&values, &[values.len()], device)?;
+                Tensor::from_slice(&col_indices, &[col_indices.len()], device)?;
+            let values_tensor = Tensor::from_slice(&values, &[values.len()], device)?;
 
             // COO from CSC is sorted by column, not row, so don't mark as sorted
             return CooData::new(row_indices_tensor, col_indices_tensor, values_tensor, self.shape);

@@ -134,7 +134,7 @@ pub fn repeat_interleave_impl<R: Runtime, C: ShapeOps<R>>(
     if dim_size == 0 {
         let mut out_shape = input.shape().to_vec();
         out_shape[dim_idx] = 0;
-        return Ok(Tensor::<R>::try_empty(
+        return Ok(Tensor::<R>::empty(
             &out_shape,
             input.dtype(),
             input.device(),

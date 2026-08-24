@@ -41,7 +41,7 @@ pub fn quantile_impl(
         let numel = a.numel();
         if numel == 0 {
             let out_shape = if keepdim { vec![1; a.ndim()] } else { vec![] };
-            return Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device);
+            return Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
         }
 
         let flat = a.reshape(&[numel])?;
@@ -61,7 +61,7 @@ pub fn quantile_impl(
 
     if dim_size == 0 {
         let out_shape = reduce_dim_output_shape(shape, dim_idx, keepdim);
-        return Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device);
+        return Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
     }
 
     // Sort along dimension using CUDA sort (GPU)
@@ -74,7 +74,7 @@ pub fn quantile_impl(
     // Check for empty output
     let out_numel = out_shape.iter().product::<usize>();
     if out_numel == 0 {
-        return Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device);
+        return Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
     }
 
     // Calculate quantile indices (small computation, OK on CPU)
@@ -90,18 +90,10 @@ pub fn quantile_impl(
     };
 
     // Create index tensors for gather
-    let floor_indices = Tensor::<CudaRuntime>::try_full_scalar(
-        &work_shape,
-        dtype,
-        floor_idx as f64,
-        &client.device,
-    )?;
-    let ceil_indices = Tensor::<CudaRuntime>::try_full_scalar(
-        &work_shape,
-        dtype,
-        ceil_idx as f64,
-        &client.device,
-    )?;
+    let floor_indices =
+        Tensor::<CudaRuntime>::full_scalar(&work_shape, dtype, floor_idx as f64, &client.device)?;
+    let ceil_indices =
+        Tensor::<CudaRuntime>::full_scalar(&work_shape, dtype, ceil_idx as f64, &client.device)?;
 
     // Cast indices to I64 for gather
     let floor_indices_i64 = client.cast(&floor_indices, DType::I64)?;

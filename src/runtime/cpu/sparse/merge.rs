@@ -181,10 +181,9 @@ fn handle_empty_compressed<T: Element>(
 
     let empty_result =
         || -> Result<(Tensor<CpuRuntime>, Tensor<CpuRuntime>, Tensor<CpuRuntime>)> {
-            let empty_ptrs =
-                Tensor::try_from_slice(&vec![0i64; ptr_dim + 1], &[ptr_dim + 1], device)?;
-            let empty_indices = Tensor::try_from_slice(&Vec::<i64>::new(), &[0], device)?;
-            let empty_vals = Tensor::try_from_slice(&Vec::<T>::new(), &[0], device)?;
+            let empty_ptrs = Tensor::from_slice(&vec![0i64; ptr_dim + 1], &[ptr_dim + 1], device)?;
+            let empty_indices = Tensor::from_slice(&Vec::<i64>::new(), &[0], device)?;
+            let empty_vals = Tensor::from_slice(&Vec::<T>::new(), &[0], device)?;
             Ok((empty_ptrs, empty_indices, empty_vals))
         };
 
@@ -202,7 +201,7 @@ fn handle_empty_compressed<T: Element>(
             let b_vals: Vec<T> = b_values.to_vec();
             let negated_vals: Vec<T> = b_vals.iter().map(|&v| T::from_f64(-v.to_f64())).collect();
             Some(
-                Tensor::try_from_slice(&negated_vals, &[negated_vals.len()], device)
+                Tensor::from_slice(&negated_vals, &[negated_vals.len()], device)
                     .map(|out_vals| (b_ptrs.clone(), b_indices.clone(), out_vals)),
             )
         }
@@ -399,10 +398,10 @@ where
     }
 
     // Create result tensors
-    let result_row_ptrs = Tensor::try_from_slice(&out_row_ptrs, &[nrows + 1], device)?;
+    let result_row_ptrs = Tensor::from_slice(&out_row_ptrs, &[nrows + 1], device)?;
     let result_col_indices =
-        Tensor::try_from_slice(&out_col_indices, &[out_col_indices.len()], device)?;
-    let result_values = Tensor::try_from_slice(&out_values, &[out_values.len()], device)?;
+        Tensor::from_slice(&out_col_indices, &[out_col_indices.len()], device)?;
+    let result_values = Tensor::from_slice(&out_values, &[out_values.len()], device)?;
 
     Ok((result_row_ptrs, result_col_indices, result_values))
 }
@@ -555,10 +554,10 @@ where
     }
 
     // Create result tensors
-    let result_col_ptrs = Tensor::try_from_slice(&out_col_ptrs, &[ncols + 1], device)?;
+    let result_col_ptrs = Tensor::from_slice(&out_col_ptrs, &[ncols + 1], device)?;
     let result_row_indices =
-        Tensor::try_from_slice(&out_row_indices, &[out_row_indices.len()], device)?;
-    let result_values = Tensor::try_from_slice(&out_values, &[out_values.len()], device)?;
+        Tensor::from_slice(&out_row_indices, &[out_row_indices.len()], device)?;
+    let result_values = Tensor::from_slice(&out_values, &[out_values.len()], device)?;
 
     Ok((result_col_ptrs, result_row_indices, result_values))
 }
@@ -603,23 +602,21 @@ where
 
     if a_nnz == 0 && b_nnz == 0 {
         // Both empty - return empty result (always empty regardless of semantics)
-        let empty_rows = Tensor::try_from_slice(&Vec::<i64>::new(), &[0], device)?;
-        let empty_cols = Tensor::try_from_slice(&Vec::<i64>::new(), &[0], device)?;
-        let empty_vals = Tensor::try_from_slice(&Vec::<T>::new(), &[0], device)?;
+        let empty_rows = Tensor::from_slice(&Vec::<i64>::new(), &[0], device)?;
+        let empty_cols = Tensor::from_slice(&Vec::<i64>::new(), &[0], device)?;
+        let empty_vals = Tensor::from_slice(&Vec::<T>::new(), &[0], device)?;
         return Ok((empty_rows, empty_cols, empty_vals));
     } else if a_nnz == 0 {
         // A is empty, B is not - apply B transformation
         let b_vals: Vec<T> = b_values.to_vec();
         let transformed_vals: Vec<T> = b_vals.iter().map(|&v| only_b_op(v)).collect();
-        let out_vals =
-            Tensor::try_from_slice(&transformed_vals, &[transformed_vals.len()], device)?;
+        let out_vals = Tensor::from_slice(&transformed_vals, &[transformed_vals.len()], device)?;
         return Ok((b_row_indices.clone(), b_col_indices.clone(), out_vals));
     } else if b_nnz == 0 {
         // B is empty, A is not - apply A transformation (usually identity)
         let a_vals: Vec<T> = a_values.to_vec();
         let transformed_vals: Vec<T> = a_vals.iter().map(|&v| only_a_op(v)).collect();
-        let out_vals =
-            Tensor::try_from_slice(&transformed_vals, &[transformed_vals.len()], device)?;
+        let out_vals = Tensor::from_slice(&transformed_vals, &[transformed_vals.len()], device)?;
         return Ok((a_row_indices.clone(), a_col_indices.clone(), out_vals));
     }
 
@@ -650,9 +647,9 @@ where
 
     if triplets.is_empty() {
         // Empty result
-        let empty_rows = Tensor::try_from_slice(&result_rows, &[0], device)?;
-        let empty_cols = Tensor::try_from_slice(&result_cols, &[0], device)?;
-        let empty_vals = Tensor::try_from_slice(&result_vals, &[0], device)?;
+        let empty_rows = Tensor::from_slice(&result_rows, &[0], device)?;
+        let empty_cols = Tensor::from_slice(&result_cols, &[0], device)?;
+        let empty_vals = Tensor::from_slice(&result_vals, &[0], device)?;
         return Ok((empty_rows, empty_cols, empty_vals));
     }
 
@@ -718,9 +715,9 @@ where
     }
 
     // Create result tensors
-    let out_rows = Tensor::try_from_slice(&result_rows, &[result_rows.len()], device)?;
-    let out_cols = Tensor::try_from_slice(&result_cols, &[result_cols.len()], device)?;
-    let out_vals = Tensor::try_from_slice(&result_vals, &[result_vals.len()], device)?;
+    let out_rows = Tensor::from_slice(&result_rows, &[result_rows.len()], device)?;
+    let out_cols = Tensor::from_slice(&result_cols, &[result_cols.len()], device)?;
+    let out_vals = Tensor::from_slice(&result_vals, &[result_vals.len()], device)?;
 
     Ok((out_rows, out_cols, out_vals))
 }
@@ -751,9 +748,9 @@ where
 
     if a_nnz == 0 || b_nnz == 0 {
         // If either is empty, result is empty
-        let empty_rows = Tensor::try_from_slice(&Vec::<i64>::new(), &[0], device)?;
-        let empty_cols = Tensor::try_from_slice(&Vec::<i64>::new(), &[0], device)?;
-        let empty_vals = Tensor::try_from_slice(&Vec::<T>::new(), &[0], device)?;
+        let empty_rows = Tensor::from_slice(&Vec::<i64>::new(), &[0], device)?;
+        let empty_cols = Tensor::from_slice(&Vec::<i64>::new(), &[0], device)?;
+        let empty_vals = Tensor::from_slice(&Vec::<T>::new(), &[0], device)?;
         return Ok((empty_rows, empty_cols, empty_vals));
     }
 
@@ -820,9 +817,9 @@ where
     }
 
     // Create result tensors
-    let out_rows = Tensor::try_from_slice(&result_rows, &[result_rows.len()], device)?;
-    let out_cols = Tensor::try_from_slice(&result_cols, &[result_cols.len()], device)?;
-    let out_vals = Tensor::try_from_slice(&result_vals, &[result_vals.len()], device)?;
+    let out_rows = Tensor::from_slice(&result_rows, &[result_rows.len()], device)?;
+    let out_cols = Tensor::from_slice(&result_cols, &[result_cols.len()], device)?;
+    let out_vals = Tensor::from_slice(&result_vals, &[result_vals.len()], device)?;
 
     Ok((out_rows, out_cols, out_vals))
 }

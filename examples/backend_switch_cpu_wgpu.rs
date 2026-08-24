@@ -43,16 +43,10 @@ fn main() -> Result<()> {
     let cpu_device = CpuDevice::new();
     let cpu_client = CpuRuntime::default_client(&cpu_device);
 
-    let a_cpu = Tensor::<CpuRuntime>::try_from_slice(
-        &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-        &cpu_device,
-    )?;
-    let b_cpu = Tensor::<CpuRuntime>::try_from_slice(
-        &[0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6],
-        &[3, 2],
-        &cpu_device,
-    )?;
+    let a_cpu =
+        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &cpu_device)?;
+    let b_cpu =
+        Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6], &[3, 2], &cpu_device)?;
 
     let cpu_result = compute(&a_cpu, &b_cpu, &cpu_client)?;
     let cpu_vec: Vec<f32> = cpu_result.to_vec();
@@ -68,12 +62,12 @@ fn main() -> Result<()> {
         let wgpu_client = WgpuRuntime::default_client(&wgpu_device);
 
         // Create the same data on the WebGPU device.
-        let a_wgpu = Tensor::<WgpuRuntime>::try_from_slice(
+        let a_wgpu = Tensor::<WgpuRuntime>::from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[2, 3],
             &wgpu_device,
         )?;
-        let b_wgpu = Tensor::<WgpuRuntime>::try_from_slice(
+        let b_wgpu = Tensor::<WgpuRuntime>::from_slice(
             &[0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6],
             &[3, 2],
             &wgpu_device,

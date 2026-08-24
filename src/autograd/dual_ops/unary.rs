@@ -147,7 +147,7 @@ where
     let tangent = match a.tangent() {
         Some(at) => {
             let tanh_sq = client.square(&primal)?;
-            let one = Tensor::try_ones(tanh_sq.shape(), tanh_sq.dtype(), tanh_sq.device())?;
+            let one = Tensor::ones(tanh_sq.shape(), tanh_sq.dtype(), tanh_sq.device())?;
             let sech_sq = client.sub(&one, &tanh_sq)?;
             Some(client.mul(&sech_sq, at)?)
         }
@@ -211,8 +211,8 @@ mod tests {
     fn test_dual_exp() {
         let (device, client) = setup();
 
-        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
-        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
+        let x_primal = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_exp(&x, &client).unwrap();
@@ -225,8 +225,8 @@ mod tests {
     fn test_dual_sin_cos() {
         let (device, client) = setup();
 
-        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
-        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
+        let x_primal = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let sin_x = dual_sin(&x, &client).unwrap();

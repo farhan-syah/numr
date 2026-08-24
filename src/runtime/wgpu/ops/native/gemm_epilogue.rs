@@ -321,7 +321,7 @@ pub(crate) fn native_gemm_bias_activation_bwd(
     // WebGPU allocator handing back freshly zero-initialized buffers, so the
     // trailing slices stay correct even if buffer pooling is added later.
     let d_b = if batch_size > 1 {
-        Tensor::<WgpuRuntime>::try_zeros(b_shape, dtype, RuntimeClient::device(client))?
+        Tensor::<WgpuRuntime>::zeros(b_shape, dtype, RuntimeClient::device(client))?
     } else {
         alloc_output(client, b_shape, dtype)?
     };

@@ -23,18 +23,10 @@ pub fn eig_decompose_impl(
     // Handle trivial cases
     if n == 0 {
         return Ok(GeneralEigenDecomposition {
-            eigenvalues_real: Tensor::<CudaRuntime>::try_from_slice(&[] as &[f64], &[0], device)?,
-            eigenvalues_imag: Tensor::<CudaRuntime>::try_from_slice(&[] as &[f64], &[0], device)?,
-            eigenvectors_real: Tensor::<CudaRuntime>::try_from_slice(
-                &[] as &[f64],
-                &[0, 0],
-                device,
-            )?,
-            eigenvectors_imag: Tensor::<CudaRuntime>::try_from_slice(
-                &[] as &[f64],
-                &[0, 0],
-                device,
-            )?,
+            eigenvalues_real: Tensor::<CudaRuntime>::from_slice(&[] as &[f64], &[0], device)?,
+            eigenvalues_imag: Tensor::<CudaRuntime>::from_slice(&[] as &[f64], &[0], device)?,
+            eigenvectors_real: Tensor::<CudaRuntime>::from_slice(&[] as &[f64], &[0, 0], device)?,
+            eigenvectors_imag: Tensor::<CudaRuntime>::from_slice(&[] as &[f64], &[0, 0], device)?,
         });
     }
 

@@ -511,7 +511,7 @@ where
         if self.start > 0 {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = self.start;
-            parts.push(Tensor::<R>::try_zeros(
+            parts.push(Tensor::<R>::zeros(
                 &pad_shape,
                 grad_output.dtype(),
                 grad_output.device(),
@@ -525,7 +525,7 @@ where
         if end < orig_dim_size {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = orig_dim_size - end;
-            parts.push(Tensor::<R>::try_zeros(
+            parts.push(Tensor::<R>::zeros(
                 &pad_shape,
                 grad_output.dtype(),
                 grad_output.device(),
@@ -550,7 +550,7 @@ where
         if self.start > 0 {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = self.start;
-            parts.push(Tensor::<R>::try_zeros(
+            parts.push(Tensor::<R>::zeros(
                 &pad_shape,
                 grad_output.tensor().dtype(),
                 grad_output.tensor().device(),
@@ -562,7 +562,7 @@ where
         if end < orig_dim_size {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = orig_dim_size - end;
-            parts.push(Tensor::<R>::try_zeros(
+            parts.push(Tensor::<R>::zeros(
                 &pad_shape,
                 grad_output.tensor().dtype(),
                 grad_output.tensor().device(),
@@ -766,13 +766,10 @@ mod tests {
         let device = CpuDevice::new();
 
         // Input shape [2, 3], reshape to [3, 2]
-        let input = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3, 2], DType::F32, &device).unwrap();
+        let input =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3, 2], DType::F32, &device).unwrap();
 
         let backward = ReshapeBackward::<CpuRuntime>::new(input.id(), vec![2, 3], None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -787,12 +784,9 @@ mod tests {
 
         // grad_output is [3, 2] but transposed to a non-contiguous [2, 3]
         // view before being fed into backward(); reshape must still work.
-        let grad_source = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let grad_source =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
         let grad_out = grad_source.t().unwrap();
         assert!(!grad_out.is_contiguous());
 
@@ -812,12 +806,9 @@ mod tests {
     fn test_reshape_backward_var_non_contiguous_grad_output() {
         let device = CpuDevice::new();
 
-        let grad_source = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let grad_source =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
         let grad_out_tensor = grad_source.t().unwrap();
         assert!(!grad_out_tensor.is_contiguous());
         let grad_out_var = Var::new(grad_out_tensor, true);
@@ -836,13 +827,10 @@ mod tests {
         let device = CpuDevice::new();
 
         // Input shape [2, 3], transpose to [3, 2]
-        let input = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3, 2], DType::F32, &device).unwrap();
+        let input =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3, 2], DType::F32, &device).unwrap();
 
         let backward = TransposeBackward::<CpuRuntime>::new(input.id(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -855,12 +843,9 @@ mod tests {
     fn test_var_reshape() {
         let device = CpuDevice::new();
 
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
+        let tensor =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap();
         let x = Var::new(tensor, true);
 
         let y = var_reshape(&x, &[3, 2]).unwrap();
@@ -875,12 +860,9 @@ mod tests {
     fn test_var_transpose() {
         let device = CpuDevice::new();
 
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
+        let tensor =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap();
         let x = Var::new(tensor, true);
 
         let y = var_transpose(&x).unwrap();
@@ -896,8 +878,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // Input shape [2, 3, 4], permute to [3, 4, 2] (dims = [1, 2, 0])
-        let input = Tensor::<CpuRuntime>::try_ones(&[2, 3, 4], DType::F32, &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3, 4, 2], DType::F32, &device).unwrap();
+        let input = Tensor::<CpuRuntime>::ones(&[2, 3, 4], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3, 4, 2], DType::F32, &device).unwrap();
 
         let backward = PermuteBackward::<CpuRuntime>::new(input.id(), &[1, 2, 0], None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -912,7 +894,7 @@ mod tests {
     fn test_var_permute() {
         let device = CpuDevice::new();
 
-        let tensor = Tensor::<CpuRuntime>::try_ones(&[2, 3, 4], DType::F32, &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::ones(&[2, 3, 4], DType::F32, &device).unwrap();
         let x = Var::new(tensor, true);
 
         let y = var_permute(&x, &[2, 0, 1]).unwrap();
@@ -929,8 +911,8 @@ mod tests {
 
         // Input shape [1, 3], expanded to [2, 3]
         let input =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 3], DType::F32, &device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device).unwrap();
 
         let backward = ExpandBackward::<CpuRuntime>::new(input.id(), vec![1, 3], None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -948,8 +930,7 @@ mod tests {
     fn test_var_broadcast_to() {
         let device = CpuDevice::new();
 
-        let tensor =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let x = Var::new(tensor, true);
 
         let y = var_broadcast_to(&x, &[2, 3]).unwrap();
@@ -970,8 +951,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // Scalar reshape to [1] and back
-        let input = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32], &[], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
+        let input = Tensor::<CpuRuntime>::from_slice(&[5.0f32], &[], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device).unwrap();
 
         let backward = ReshapeBackward::<CpuRuntime>::new(input.id(), vec![], None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -985,8 +966,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // 3D tensor transpose (swaps last two dims)
-        let input = Tensor::<CpuRuntime>::try_ones(&[2, 3, 4], DType::F32, &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 4, 3], DType::F32, &device).unwrap();
+        let input = Tensor::<CpuRuntime>::ones(&[2, 3, 4], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 4, 3], DType::F32, &device).unwrap();
 
         let backward = TransposeBackward::<CpuRuntime>::new(input.id(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -1000,8 +981,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // Input shape [1, 1], expanded to [3, 4]
-        let input = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1, 1], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3, 4], DType::F32, &device).unwrap();
+        let input = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1, 1], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3, 4], DType::F32, &device).unwrap();
 
         let backward = ExpandBackward::<CpuRuntime>::new(input.id(), vec![1, 1], None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -1024,7 +1005,7 @@ mod tests {
         let backward =
             CatBackward::<CpuRuntime>::new(ids, vec![1, 2, 1], 0, vec![None, None, None]);
 
-        let grad_out = Tensor::<CpuRuntime>::try_from_slice(
+        let grad_out = Tensor::<CpuRuntime>::from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
             &[4, 2],
             &device,
@@ -1051,13 +1032,10 @@ mod tests {
         let device = CpuDevice::new();
 
         // Identity permutation
-        let input = Tensor::<CpuRuntime>::try_ones(&[2, 3], DType::F32, &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
+        let input = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device).unwrap();
+        let grad_out =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap();
 
         let backward = PermuteBackward::<CpuRuntime>::new(input.id(), &[0, 1], None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -1075,7 +1053,7 @@ mod tests {
         let device = CpuDevice::new();
 
         let tensor =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], &device)
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], &device)
                 .unwrap();
         let x = Var::new(tensor, true);
 
@@ -1094,8 +1072,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0], &[5], &device)
-                .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap(),
             true,
         );
 
@@ -1115,11 +1092,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device).unwrap(),
             true,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0, 5.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0, 5.0], &[3], &device).unwrap(),
             true,
         );
 
@@ -1138,11 +1115,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device).unwrap(),
             true,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0, 5.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0, 5.0], &[3], &device).unwrap(),
             true,
         );
 

@@ -221,7 +221,7 @@ pub(crate) fn native_masked_select(
 
     if count == 0 {
         // Return empty tensor
-        return Tensor::try_empty(&[0], dtype, client.device());
+        return Tensor::empty(&[0], dtype, client.device());
     }
 
     // Phase 2: Compute prefix sum

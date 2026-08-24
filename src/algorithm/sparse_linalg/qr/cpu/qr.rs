@@ -277,7 +277,7 @@ mod tests {
         let options = QrOptions::no_ordering();
         let factors = sparse_qr_simple_cpu(&a, &options).unwrap();
 
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[4], &cpu_device())
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[4], &cpu_device())
             .unwrap();
         let x = sparse_qr_solve_cpu(&factors, &b).unwrap();
         let x_vals: Vec<f64> = x.to_vec();
@@ -299,12 +299,9 @@ mod tests {
 
         assert_eq!(factors.rank, 3);
 
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f64, 2.0, 3.0, 4.0, 5.0],
-            &[5],
-            &cpu_device(),
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[5], &cpu_device())
+                .unwrap();
         let x = sparse_qr_least_squares_cpu(&factors, &b).unwrap();
         let x_vals: Vec<f64> = x.to_vec();
 
@@ -373,7 +370,7 @@ mod tests {
 
         assert_eq!(factors.rank, 4);
 
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 0.0], &[4], &cpu_device())
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 0.0], &[4], &cpu_device())
             .unwrap();
         let x = sparse_qr_solve_cpu(&factors, &b).unwrap();
         let x_vals: Vec<f64> = x.to_vec();

@@ -253,12 +253,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device)
-                .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
             true,
         );
 
@@ -286,11 +285,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
             true,
         );
 
@@ -324,16 +323,15 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device)
-                .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
             true,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
             true,
         );
 
@@ -353,15 +351,15 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
             true,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0], &[3], &device).unwrap(),
             true,
         );
 
@@ -418,11 +416,11 @@ mod tests {
 
         // When no inputs require grad, output should not track gradients
         let input = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap(),
             false,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device).unwrap(),
             false,
         );
 
@@ -438,7 +436,7 @@ mod tests {
 
         // [batch=1, channels=4, spatial=3], 2 groups
         let input = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(
+            Tensor::<CpuRuntime>::from_slice(
                 &[
                     1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
                 ],
@@ -449,11 +447,11 @@ mod tests {
             false,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
             false,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
             false,
         );
 
@@ -483,7 +481,7 @@ mod tests {
 
         // [batch=1, channels=4, spatial=2], 2 groups
         let input = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(
+            Tensor::<CpuRuntime>::from_slice(
                 &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
                 &[1, 4, 2],
                 &device,
@@ -492,11 +490,11 @@ mod tests {
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
             true,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
             true,
         );
 
@@ -529,17 +527,15 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device)
-                .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device).unwrap(),
             true,
         );
         let residual = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2, 0.3, 0.4], &[1, 4], &device)
-                .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2, 0.3, 0.4], &[1, 4], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
             true,
         );
 
@@ -558,15 +554,15 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
             true,
         );
         let residual = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2, 0.3], &[1, 3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2, 0.3], &[1, 3], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
             true,
         );
 
@@ -600,15 +596,15 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap(),
             false,
         );
         let residual = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2], &[1, 2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2], &[1, 2], &device).unwrap(),
             false,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device).unwrap(),
             false,
         );
 
@@ -622,21 +618,19 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device)
-                .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device).unwrap(),
             true,
         );
         let residual = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2, 0.3, 0.4], &[1, 4], &device)
-                .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2, 0.3, 0.4], &[1, 4], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap(),
             true,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap(),
             true,
         );
 
@@ -658,19 +652,19 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap(),
             true,
         );
         let residual = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2, 0.3], &[1, 3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2, 0.3], &[1, 3], &device).unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap(),
             true,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0], &[3], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0], &[3], &device).unwrap(),
             true,
         );
 

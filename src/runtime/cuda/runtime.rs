@@ -444,15 +444,13 @@ impl CudaRuntime {
         // neutral dtype; the arena is only accessed as raw bytes by the
         // bump-pointer logic.
         let arena_elems = arena_bytes.div_ceil(std::mem::size_of::<f32>());
-        let arena_tensor =
-            Tensor::<CudaRuntime>::try_empty(&[arena_elems], DType::F32, &client.device).map_err(
-                |e| {
-                    crate::error::Error::Backend(format!(
-                        "capture_graph_into_with_arena: arena allocation failed \
+        let arena_tensor = Tensor::<CudaRuntime>::empty(&[arena_elems], DType::F32, &client.device)
+            .map_err(|e| {
+                crate::error::Error::Backend(format!(
+                    "capture_graph_into_with_arena: arena allocation failed \
                          ({arena_bytes} bytes): {e}"
-                    ))
-                },
-            )?;
+                ))
+            })?;
         let arena_ptr = arena_tensor.ptr();
 
         // Install the arena so freeze-time allocations go into it. Fails if a
@@ -557,11 +555,10 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // Inputs and output allocated OUTSIDE the closure.
-        let a =
-            Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
-        let b = Tensor::<CudaRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device)
-            .unwrap();
-        let c = Tensor::<CudaRuntime>::try_zeros(&[4], DType::F32, &device).unwrap();
+        let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+        let b =
+            Tensor::<CudaRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+        let c = Tensor::<CudaRuntime>::zeros(&[4], DType::F32, &device).unwrap();
 
         // Capture: c = a + b (destination-passing, no allocation inside).
         let captured = CudaRuntime::capture_graph_into(&client, &[&a, &b], &[&c], |cc| {
@@ -589,7 +586,7 @@ mod tests {
         // Drop the captured graph and confirm a subsequent normal allocation
         // does not hit CUDA_ERROR_ILLEGAL_ADDRESS (clean teardown).
         drop(captured);
-        let fresh = Tensor::<CudaRuntime>::try_zeros(&[4], DType::F32, &device).unwrap();
+        let fresh = Tensor::<CudaRuntime>::zeros(&[4], DType::F32, &device).unwrap();
         client.synchronize();
         assert_eq!(fresh.to_vec::<f32>(), vec![0.0, 0.0, 0.0, 0.0]);
     }

@@ -200,12 +200,12 @@ fn split_lu<R: Runtime<DType = DType>>(
     }
 
     // Create output tensors on the original device
-    let l_row_ptrs_tensor = Tensor::<R>::try_from_slice(&l_row_ptrs, &[n + 1], device)?;
+    let l_row_ptrs_tensor = Tensor::<R>::from_slice(&l_row_ptrs, &[n + 1], device)?;
     let l_col_indices_tensor =
-        Tensor::<R>::try_from_slice(&l_col_indices, &[l_col_indices.len()], device)?;
-    let u_row_ptrs_tensor = Tensor::<R>::try_from_slice(&u_row_ptrs, &[n + 1], device)?;
+        Tensor::<R>::from_slice(&l_col_indices, &[l_col_indices.len()], device)?;
+    let u_row_ptrs_tensor = Tensor::<R>::from_slice(&u_row_ptrs, &[n + 1], device)?;
     let u_col_indices_tensor =
-        Tensor::<R>::try_from_slice(&u_col_indices, &[u_col_indices.len()], device)?;
+        Tensor::<R>::from_slice(&u_col_indices, &[u_col_indices.len()], device)?;
 
     // Convert back to original dtype
     let (l_values_tensor, u_values_tensor) = match dtype {
@@ -213,13 +213,13 @@ fn split_lu<R: Runtime<DType = DType>>(
             let l_f32: Vec<f32> = l_values.iter().map(|&x| x as f32).collect();
             let u_f32: Vec<f32> = u_values.iter().map(|&x| x as f32).collect();
             (
-                Tensor::<R>::try_from_slice(&l_f32, &[l_f32.len()], device)?,
-                Tensor::<R>::try_from_slice(&u_f32, &[u_f32.len()], device)?,
+                Tensor::<R>::from_slice(&l_f32, &[l_f32.len()], device)?,
+                Tensor::<R>::from_slice(&u_f32, &[u_f32.len()], device)?,
             )
         }
         DType::F64 => (
-            Tensor::<R>::try_from_slice(&l_values, &[l_values.len()], device)?,
-            Tensor::<R>::try_from_slice(&u_values, &[u_values.len()], device)?,
+            Tensor::<R>::from_slice(&l_values, &[l_values.len()], device)?,
+            Tensor::<R>::from_slice(&u_values, &[u_values.len()], device)?,
         ),
         _ => unreachable!(),
     };

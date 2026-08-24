@@ -31,14 +31,14 @@ impl DistanceOps<CudaRuntime> for CudaClient {
 
         // Handle empty tensors
         if n == 0 || m == 0 {
-            return Tensor::<CudaRuntime>::try_empty(&[n, m], dtype, &self.device);
+            return Tensor::<CudaRuntime>::empty(&[n, m], dtype, &self.device);
         }
 
         // Ensure contiguous
         let x = x.contiguous()?;
         let y = y.contiguous()?;
 
-        let out = Tensor::<CudaRuntime>::try_empty(&[n, m], dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&[n, m], dtype, &self.device)?;
 
         unsafe {
             kernels::launch_cdist(
@@ -83,7 +83,7 @@ impl DistanceOps<CudaRuntime> for CudaClient {
         // Ensure contiguous
         let x = x.contiguous()?;
 
-        let out = Tensor::<CudaRuntime>::try_empty(&[out_size], dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&[out_size], dtype, &self.device)?;
 
         unsafe {
             kernels::launch_pdist(
@@ -114,16 +114,16 @@ impl DistanceOps<CudaRuntime> for CudaClient {
 
         // Handle edge cases
         if n == 0 {
-            return Tensor::<CudaRuntime>::try_empty(&[0, 0], dtype, &self.device);
+            return Tensor::<CudaRuntime>::empty(&[0, 0], dtype, &self.device);
         }
         if n == 1 {
-            return Tensor::<CudaRuntime>::try_zeros(&[1, 1], dtype, &self.device);
+            return Tensor::<CudaRuntime>::zeros(&[1, 1], dtype, &self.device);
         }
 
         // Ensure contiguous
         let condensed = condensed.contiguous()?;
 
-        let out = Tensor::<CudaRuntime>::try_empty(&[n, n], dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&[n, n], dtype, &self.device)?;
 
         unsafe {
             kernels::launch_squareform(
@@ -153,14 +153,14 @@ impl DistanceOps<CudaRuntime> for CudaClient {
 
         // Handle edge cases
         if n == 0 || n == 1 {
-            return Tensor::<CudaRuntime>::try_empty(&[0], dtype, &self.device);
+            return Tensor::<CudaRuntime>::empty(&[0], dtype, &self.device);
         }
 
         // Ensure contiguous
         let square = square.contiguous()?;
 
         let out_size = n * (n - 1) / 2;
-        let out = Tensor::<CudaRuntime>::try_empty(&[out_size], dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&[out_size], dtype, &self.device)?;
 
         unsafe {
             kernels::launch_squareform_inverse(

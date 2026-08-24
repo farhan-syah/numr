@@ -287,11 +287,7 @@ where
     let dtype = mean.dtype();
 
     if d == 0 {
-        return Ok(Tensor::<R>::try_empty(
-            &[n_samples, 0],
-            dtype,
-            mean.device(),
-        )?);
+        return Ok(Tensor::<R>::empty(&[n_samples, 0], dtype, mean.device())?);
     }
 
     // All GPU operations
@@ -335,7 +331,7 @@ where
     let dtype = scale.dtype();
 
     if d == 0 {
-        return Ok(Tensor::<R>::try_empty(
+        return Ok(Tensor::<R>::empty(
             &[n_samples, 0, 0],
             dtype,
             scale.device(),
@@ -431,7 +427,7 @@ where
                 lower_idx += 1;
             } else {
                 // Should not happen if i > 0
-                row_parts.push(Tensor::<R>::try_zeros(&[n_samples, 1], dtype, device)?);
+                row_parts.push(Tensor::<R>::zeros(&[n_samples, 1], dtype, device)?);
             }
         }
 
@@ -441,7 +437,7 @@ where
 
         // Upper triangular part (columns i+1..d) - zeros
         for _j in (i + 1)..d {
-            row_parts.push(Tensor::<R>::try_zeros(&[n_samples, 1], dtype, device)?);
+            row_parts.push(Tensor::<R>::zeros(&[n_samples, 1], dtype, device)?);
         }
 
         // Concatenate row parts along dim 1 to get row shape [n_samples, d]
@@ -476,11 +472,7 @@ where
     let dtype = alpha.dtype();
 
     if k == 0 {
-        return Ok(Tensor::<R>::try_empty(
-            &[n_samples, 0],
-            dtype,
-            alpha.device(),
-        )?);
+        return Ok(Tensor::<R>::empty(&[n_samples, 0], dtype, alpha.device())?);
     }
 
     // Generate gamma samples for each category ON GPU
@@ -526,11 +518,7 @@ where
     let dtype = probs.dtype();
 
     if k == 0 {
-        return Ok(Tensor::<R>::try_empty(
-            &[n_samples, 0],
-            dtype,
-            probs.device(),
-        )?);
+        return Ok(Tensor::<R>::empty(&[n_samples, 0], dtype, probs.device())?);
     }
 
     // Delegate to backend-specific kernel that does:

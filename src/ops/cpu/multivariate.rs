@@ -127,7 +127,7 @@ where
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&counts, &[n_samples, k], device)
+    Tensor::<CpuRuntime>::from_slice(&counts, &[n_samples, k], device)
 }
 
 /// Binary search to find the category for a uniform sample.
@@ -158,10 +158,9 @@ mod tests {
     #[test]
     fn test_multivariate_normal_basic() {
         let client = get_client();
-        let mean =
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &client.device).unwrap();
+        let mean = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0], &[2], &client.device).unwrap();
         let cov =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &client.device)
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &client.device)
                 .unwrap();
 
         let samples = client
@@ -187,10 +186,9 @@ mod tests {
     #[test]
     fn test_multivariate_normal_correlated() {
         let client = get_client();
-        let mean =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0], &[2], &client.device).unwrap();
+        let mean = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0], &[2], &client.device).unwrap();
         let cov =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.8, 0.8, 1.0], &[2, 2], &client.device)
+            Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.8, 0.8, 1.0], &[2, 2], &client.device)
                 .unwrap();
 
         let samples = client
@@ -202,11 +200,10 @@ mod tests {
     #[test]
     fn test_multivariate_normal_invalid_cov() {
         let client = get_client();
-        let mean =
-            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &client.device).unwrap();
+        let mean = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0], &[2], &client.device).unwrap();
         // Not positive definite
         let cov =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 1.0], &[2, 2], &client.device)
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 1.0], &[2, 2], &client.device)
                 .unwrap();
 
         let result = client.multivariate_normal(&mean, &cov, 100);
@@ -219,8 +216,8 @@ mod tests {
     #[test]
     fn test_dirichlet_basic() {
         let client = get_client();
-        let alpha = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &client.device)
-            .unwrap();
+        let alpha =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &client.device).unwrap();
 
         let samples = client
             .dirichlet(&alpha, 100)
@@ -244,8 +241,7 @@ mod tests {
     fn test_dirichlet_concentrated() {
         let client = get_client();
         let alpha =
-            Tensor::<CpuRuntime>::try_from_slice(&[100.0f64, 1.0, 1.0], &[3], &client.device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[100.0f64, 1.0, 1.0], &[3], &client.device).unwrap();
 
         let samples = client
             .dirichlet(&alpha, 100)
@@ -270,8 +266,7 @@ mod tests {
     #[test]
     fn test_multinomial_samples_basic() {
         let client = get_client();
-        let probs =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32; 6], &[6], &client.device).unwrap();
+        let probs = Tensor::<CpuRuntime>::from_slice(&[1.0f32; 6], &[6], &client.device).unwrap();
 
         let samples = client
             .multinomial_samples(&probs, 60, 100)
@@ -295,7 +290,7 @@ mod tests {
     fn test_multinomial_samples_biased() {
         let client = get_client();
         let probs =
-            Tensor::<CpuRuntime>::try_from_slice(&[0.99f64, 0.01], &[2], &client.device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[0.99f64, 0.01], &[2], &client.device).unwrap();
 
         let samples = client
             .multinomial_samples(&probs, 100, 50)
@@ -321,7 +316,7 @@ mod tests {
     fn test_wishart_basic() {
         let client = get_client();
         let scale =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &client.device)
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], &client.device)
                 .unwrap();
 
         let samples = client
@@ -364,7 +359,7 @@ mod tests {
     fn test_wishart_f64() {
         let client = get_client();
         let scale =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], &client.device)
+            Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], &client.device)
                 .unwrap();
 
         let samples = client

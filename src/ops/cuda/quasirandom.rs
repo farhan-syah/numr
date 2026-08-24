@@ -75,7 +75,7 @@ impl QuasiRandomOps<CudaRuntime> for CudaClient {
 
         // Allocate output: shape [n_points, dimension]
         let shape = vec![n_points, dimension];
-        let out = Tensor::<CudaRuntime>::try_empty(&shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&shape, dtype, &self.device)?;
 
         // Launch CUDA kernel — no H2D copy occurs here.
         unsafe {
@@ -122,7 +122,7 @@ impl QuasiRandomOps<CudaRuntime> for CudaClient {
 
         // Allocate output: shape [n_points, dimension]
         let shape = vec![n_points, dimension];
-        let out = Tensor::<CudaRuntime>::try_empty(&shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&shape, dtype, &self.device)?;
 
         // Launch CUDA kernel
         unsafe {
@@ -172,7 +172,7 @@ impl QuasiRandomOps<CudaRuntime> for CudaClient {
 
         // Allocate output: shape [n_samples, dimension]
         let shape = vec![n_samples, dimension];
-        let out = Tensor::<CudaRuntime>::try_empty(&shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&shape, dtype, &self.device)?;
 
         // Generate random seed for shuffling
         let seed = generate_random_seed();

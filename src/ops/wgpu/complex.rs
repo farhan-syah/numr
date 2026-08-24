@@ -99,7 +99,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
 
         // For real types, return zeros with same dtype
         if !dtype.is_complex() {
-            return Tensor::try_zeros(a.shape(), dtype, self.device());
+            return Tensor::zeros(a.shape(), dtype, self.device());
         }
 
         // WebGPU only supports Complex64
@@ -168,7 +168,7 @@ impl ComplexOps<WgpuRuntime> for WgpuClient {
                 }
                 _ => {
                     // For other real types (integers, F64 not supported on WebGPU), return zeros
-                    return Tensor::try_zeros(a.shape(), dtype, self.device());
+                    return Tensor::zeros(a.shape(), dtype, self.device());
                 }
             }
         }

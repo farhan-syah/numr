@@ -82,9 +82,9 @@ impl<R: Runtime<DType = DType>> CscData<R> {
         let col_ptrs_data: Vec<i64> = vec![0; ncols + 1];
 
         Ok(Self {
-            col_ptrs: Tensor::try_from_slice(&col_ptrs_data, &[ncols + 1], device)?,
-            row_indices: Tensor::try_empty(&[0], DType::I64, device)?,
-            values: Tensor::try_empty(&[0], dtype, device)?,
+            col_ptrs: Tensor::from_slice(&col_ptrs_data, &[ncols + 1], device)?,
+            row_indices: Tensor::empty(&[0], DType::I64, device)?,
+            values: Tensor::empty(&[0], dtype, device)?,
             shape,
         })
     }
@@ -157,7 +157,7 @@ impl<R: Runtime<DType = DType>> CscData<R> {
         let device = self.values.device();
 
         if n == 0 {
-            return Tensor::try_empty(&[0], self.dtype(), device);
+            return Tensor::empty(&[0], self.dtype(), device);
         }
 
         // Validate dtype matches T
@@ -190,7 +190,7 @@ impl<R: Runtime<DType = DType>> CscData<R> {
         }
 
         // Create result tensor on original device
-        Tensor::try_from_slice(&diag_values, &[n], device)
+        Tensor::from_slice(&diag_values, &[n], device)
     }
 
     /// Check if the matrix has a structural nonzero on every diagonal position.
@@ -295,9 +295,9 @@ impl<R: Runtime<DType = DType>> CscData<R> {
             }
         }
 
-        let col_ptrs_tensor = Tensor::try_from_slice(col_ptrs, &[col_ptrs.len()], device)?;
-        let row_indices_tensor = Tensor::try_from_slice(row_indices, &[row_indices.len()], device)?;
-        let values_tensor = Tensor::try_from_slice(values, &[values.len()], device)?;
+        let col_ptrs_tensor = Tensor::from_slice(col_ptrs, &[col_ptrs.len()], device)?;
+        let row_indices_tensor = Tensor::from_slice(row_indices, &[row_indices.len()], device)?;
+        let values_tensor = Tensor::from_slice(values, &[values.len()], device)?;
 
         Self::new(col_ptrs_tensor, row_indices_tensor, values_tensor, shape)
     }
@@ -367,9 +367,9 @@ impl<R: Runtime<DType = DType>> SparseScaling<R> for CscData<R> {
         match T::DTYPE {
             DType::F32 => {
                 let norms_f32: Vec<f32> = norms.iter().map(|&x| x as f32).collect();
-                Tensor::try_from_slice(&norms_f32, &[nrows], device)
+                Tensor::from_slice(&norms_f32, &[nrows], device)
             }
-            DType::F64 => Tensor::try_from_slice(&norms, &[nrows], device),
+            DType::F64 => Tensor::from_slice(&norms, &[nrows], device),
             _ => Err(Error::UnsupportedDType {
                 dtype: T::DTYPE,
                 op: "row_norms",
@@ -434,9 +434,9 @@ impl<R: Runtime<DType = DType>> SparseScaling<R> for CscData<R> {
         match T::DTYPE {
             DType::F32 => {
                 let norms_f32: Vec<f32> = norms.iter().map(|&x| x as f32).collect();
-                Tensor::try_from_slice(&norms_f32, &[ncols], device)
+                Tensor::from_slice(&norms_f32, &[ncols], device)
             }
-            DType::F64 => Tensor::try_from_slice(&norms, &[ncols], device),
+            DType::F64 => Tensor::from_slice(&norms, &[ncols], device),
             _ => Err(Error::UnsupportedDType {
                 dtype: T::DTYPE,
                 op: "col_norms",
@@ -622,7 +622,7 @@ mod tests {
 
         // Update values - double them
         let new_values = vec![2.0f32, 8.0, 10.0, 4.0, 6.0];
-        let new_values_tensor = Tensor::try_from_slice(&new_values, &[5], &device).unwrap();
+        let new_values_tensor = Tensor::from_slice(&new_values, &[5], &device).unwrap();
         csc.update_values(new_values_tensor).unwrap();
 
         // Verify values changed but structure unchanged
@@ -649,7 +649,7 @@ mod tests {
                 .unwrap();
 
         // Try to update with wrong size
-        let wrong_size = Tensor::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let wrong_size = Tensor::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         assert!(csc.update_values(wrong_size).is_err());
     }
 
@@ -666,8 +666,7 @@ mod tests {
                 .unwrap();
 
         // Try to update with wrong dtype (f64 instead of f32)
-        let wrong_dtype =
-            Tensor::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap();
+        let wrong_dtype = Tensor::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap();
         assert!(csc.update_values(wrong_dtype).is_err());
     }
 

@@ -188,7 +188,7 @@ impl WgpuClient {
         validate_wgpu_dtype(dtype, "csr_merge")?;
 
         // Step 1: Count output nnz per row
-        let row_counts = Tensor::<WgpuRuntime>::try_zeros(&[nrows], DType::I32, &self.device_id)?;
+        let row_counts = Tensor::<WgpuRuntime>::zeros(&[nrows], DType::I32, &self.device_id)?;
         let count_params = CountParams {
             n: nrows as u32,
             _pad0: 0,
@@ -242,8 +242,7 @@ impl WgpuClient {
         }
 
         // Step 2: Exclusive scan to get output row_ptrs
-        let out_row_ptrs =
-            Tensor::<WgpuRuntime>::try_zeros(&[nrows + 1], DType::I32, &self.device_id)?;
+        let out_row_ptrs = Tensor::<WgpuRuntime>::zeros(&[nrows + 1], DType::I32, &self.device_id)?;
         let scan_params = ScanParams {
             n: nrows as u32,
             _pad0: 0,
@@ -286,8 +285,8 @@ impl WgpuClient {
 
         // Allocate output arrays (may have unused space at end)
         let out_col_indices =
-            Tensor::<WgpuRuntime>::try_zeros(&[max_nnz], DType::I32, &self.device_id)?;
-        let out_values = Tensor::<WgpuRuntime>::try_zeros(&[max_nnz], dtype, &self.device_id)?;
+            Tensor::<WgpuRuntime>::zeros(&[max_nnz], DType::I32, &self.device_id)?;
+        let out_values = Tensor::<WgpuRuntime>::zeros(&[max_nnz], dtype, &self.device_id)?;
 
         let out_col_indices_buf = get_tensor_buffer(&out_col_indices)?;
         let out_values_buf = get_tensor_buffer(&out_values)?;
@@ -524,7 +523,7 @@ impl WgpuClient {
         validate_wgpu_dtype(dtype, "csc_merge")?;
 
         // Step 1: Count output nnz per column
-        let col_counts = Tensor::<WgpuRuntime>::try_zeros(&[ncols], DType::I32, &self.device_id)?;
+        let col_counts = Tensor::<WgpuRuntime>::zeros(&[ncols], DType::I32, &self.device_id)?;
         let count_params = CountParams {
             n: ncols as u32,
             _pad0: 0,
@@ -575,8 +574,7 @@ impl WgpuClient {
         }
 
         // Step 2: Exclusive scan
-        let out_col_ptrs =
-            Tensor::<WgpuRuntime>::try_zeros(&[ncols + 1], DType::I32, &self.device_id)?;
+        let out_col_ptrs = Tensor::<WgpuRuntime>::zeros(&[ncols + 1], DType::I32, &self.device_id)?;
         let scan_params = ScanParams {
             n: ncols as u32,
             _pad0: 0,
@@ -614,8 +612,8 @@ impl WgpuClient {
         };
 
         let out_row_indices =
-            Tensor::<WgpuRuntime>::try_zeros(&[max_nnz], DType::I32, &self.device_id)?;
-        let out_values = Tensor::<WgpuRuntime>::try_zeros(&[max_nnz], dtype, &self.device_id)?;
+            Tensor::<WgpuRuntime>::zeros(&[max_nnz], DType::I32, &self.device_id)?;
+        let out_values = Tensor::<WgpuRuntime>::zeros(&[max_nnz], dtype, &self.device_id)?;
 
         let out_row_indices_buf = get_tensor_buffer(&out_row_indices)?;
         let out_values_buf = get_tensor_buffer(&out_values)?;

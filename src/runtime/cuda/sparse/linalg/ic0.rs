@@ -35,7 +35,7 @@ pub fn ic0_cuda(
 
     let device = &client.device;
     let values_gpu = a.values().clone();
-    let diag_indices_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, device)?;
+    let diag_indices_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, device)?;
 
     // Find diagonal indices
     unsafe {
@@ -124,11 +124,10 @@ mod tests {
         let device = &client.device;
 
         // Create a symmetric positive definite 3x3 sparse matrix
-        let row_ptrs =
-            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
+        let row_ptrs = Tensor::<CudaRuntime>::from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
-        let values = Tensor::<CudaRuntime>::try_from_slice(
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
+        let values = Tensor::<CudaRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[7],
             device,

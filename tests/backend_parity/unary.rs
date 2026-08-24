@@ -437,13 +437,13 @@ fn test_isnan_parity() {
     let data = vec![0.0f32, f32::NAN, 1.0, f32::NAN];
     let shape = vec![4];
     let (cpu_client, cpu_device) = create_cpu_client();
-    let cpu_tensor = Tensor::try_from_slice(&data, &shape, &cpu_device).unwrap();
+    let cpu_tensor = Tensor::from_slice(&data, &shape, &cpu_device).unwrap();
     let cpu_result = cpu_client.isnan(&cpu_tensor).unwrap().to_vec::<u8>();
     let cpu_result_u32: Vec<u32> = cpu_result.iter().map(|&x| x as u32).collect();
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let cuda_tensor = Tensor::try_from_slice(&data, &shape, &cuda_device).unwrap();
+        let cuda_tensor = Tensor::from_slice(&data, &shape, &cuda_device).unwrap();
         let cuda_result = cuda_client.isnan(&cuda_tensor).unwrap().to_vec::<u8>();
         assert_parity_u32(
             &cpu_result_u32,
@@ -454,7 +454,7 @@ fn test_isnan_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let wgpu_tensor = Tensor::try_from_slice(&data, &shape, &wgpu_device).unwrap();
+        let wgpu_tensor = Tensor::from_slice(&data, &shape, &wgpu_device).unwrap();
         let wgpu_result = wgpu_client.isnan(&wgpu_tensor).unwrap().to_vec::<u32>();
         assert_parity_u32(&cpu_result_u32, &wgpu_result, "isnan_wgpu");
     });
@@ -465,13 +465,13 @@ fn test_isinf_parity() {
     let data = vec![0.0f32, f32::INFINITY, 1.0, f32::NEG_INFINITY];
     let shape = vec![4];
     let (cpu_client, cpu_device) = create_cpu_client();
-    let cpu_tensor = Tensor::try_from_slice(&data, &shape, &cpu_device).unwrap();
+    let cpu_tensor = Tensor::from_slice(&data, &shape, &cpu_device).unwrap();
     let cpu_result = cpu_client.isinf(&cpu_tensor).unwrap().to_vec::<u8>();
     let cpu_result_u32: Vec<u32> = cpu_result.iter().map(|&x| x as u32).collect();
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let cuda_tensor = Tensor::try_from_slice(&data, &shape, &cuda_device).unwrap();
+        let cuda_tensor = Tensor::from_slice(&data, &shape, &cuda_device).unwrap();
         let cuda_result = cuda_client.isinf(&cuda_tensor).unwrap().to_vec::<u8>();
         assert_parity_u32(
             &cpu_result_u32,
@@ -482,7 +482,7 @@ fn test_isinf_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let wgpu_tensor = Tensor::try_from_slice(&data, &shape, &wgpu_device).unwrap();
+        let wgpu_tensor = Tensor::from_slice(&data, &shape, &wgpu_device).unwrap();
         let wgpu_result = wgpu_client.isinf(&wgpu_tensor).unwrap().to_vec::<u32>();
         assert_parity_u32(&cpu_result_u32, &wgpu_result, "isinf_wgpu");
     });

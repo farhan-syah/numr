@@ -237,9 +237,9 @@ fn test_wgpu_global_f32_orders_nans_and_stabilizes_signed_zero() {
     data[41] = 0.0;
 
     let (cpu_client, cpu_device) = create_cpu_client();
-    let cpu_tensor = Tensor::try_from_slice(&data, &[data.len()], &cpu_device).unwrap();
+    let cpu_tensor = Tensor::from_slice(&data, &[data.len()], &cpu_device).unwrap();
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let wgpu_tensor = Tensor::try_from_slice(&data, &[data.len()], &wgpu_device).unwrap();
+        let wgpu_tensor = Tensor::from_slice(&data, &[data.len()], &wgpu_device).unwrap();
         for descending in [false, true] {
             let expected: Vec<i64> = cpu_client
                 .argsort(&cpu_tensor, 0, descending)
@@ -267,7 +267,7 @@ fn test_wgpu_global_sort_family_handles_empty_outer_dimension() {
     use numr::tensor::Tensor;
 
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let input = Tensor::try_zeros(&[0, 1024], DType::U32, &wgpu_device).unwrap();
+        let input = Tensor::zeros(&[0, 1024], DType::U32, &wgpu_device).unwrap();
         let sorted = wgpu_client
             .sort(&input, 1, false)
             .expect("sort empty tensor");
@@ -294,7 +294,7 @@ fn test_wgpu_global_sort_one_million_elements() {
     const LEN: usize = 1_000_003;
     let data: Vec<u32> = (0..LEN as u32).rev().collect();
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let tensor = Tensor::try_from_slice(&data, &[LEN], &wgpu_device).unwrap();
+        let tensor = Tensor::from_slice(&data, &[LEN], &wgpu_device).unwrap();
         let sorted: Vec<u32> = wgpu_client
             .sort(&tensor, 0, false)
             .expect("one-million-element WGPU global sort")

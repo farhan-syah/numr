@@ -37,8 +37,8 @@ use crate::tensor::Tensor;
 /// # use numr::autograd::DualTensor;
 /// # let device = CpuDevice::new();
 /// // Create a dual tensor with primal x=3.0 and tangent v=1.0
-/// let primal = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[], &device).unwrap();
-/// let tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[], &device).unwrap();
+/// let primal = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[], &device).unwrap();
+/// let tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[], &device).unwrap();
 /// let x = DualTensor::new(primal, Some(tangent));
 ///
 /// // Access primal and tangent components
@@ -97,7 +97,7 @@ impl<R: Runtime> DualTensor<R> {
     where
         R: Runtime<DType = DType>,
     {
-        let tangent = Tensor::try_ones(primal.shape(), primal.dtype(), device)?;
+        let tangent = Tensor::ones(primal.shape(), primal.dtype(), device)?;
         Ok(Self {
             primal,
             tangent: Some(tangent),
@@ -189,7 +189,7 @@ impl<R: Runtime> DualTensor<R> {
     where
         R: Runtime<DType = DType>,
     {
-        Tensor::try_zeros(self.primal.shape(), self.primal.dtype(), device)
+        Tensor::zeros(self.primal.shape(), self.primal.dtype(), device)
     }
 }
 
@@ -201,10 +201,8 @@ mod tests {
     #[test]
     fn test_dual_tensor_new() {
         let device = CpuDevice::new();
-        let primal =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
-        let tangent =
-            Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2, 0.3], &[3], &device).unwrap();
+        let primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let tangent = Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2, 0.3], &[3], &device).unwrap();
 
         let dual = DualTensor::new(primal.clone(), Some(tangent.clone()));
 
@@ -217,8 +215,7 @@ mod tests {
     #[test]
     fn test_dual_tensor_constant() {
         let device = CpuDevice::new();
-        let primal =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         let dual = DualTensor::constant(primal);
 
@@ -229,8 +226,7 @@ mod tests {
     #[test]
     fn test_dual_tensor_with_unit_tangent() {
         let device = CpuDevice::new();
-        let primal =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         let dual = DualTensor::with_unit_tangent(primal, &device).unwrap();
 
@@ -241,8 +237,8 @@ mod tests {
     #[test]
     fn test_dual_tensor_into_parts() {
         let device = CpuDevice::new();
-        let primal = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
-        let tangent = Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, 0.5], &[2], &device).unwrap();
+        let primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let tangent = Tensor::<CpuRuntime>::from_slice(&[0.5f32, 0.5], &[2], &device).unwrap();
 
         let dual = DualTensor::new(primal, Some(tangent));
         let (p, t) = dual.into_parts();
@@ -255,9 +251,8 @@ mod tests {
     #[should_panic(expected = "Tangent shape")]
     fn test_dual_tensor_shape_mismatch() {
         let device = CpuDevice::new();
-        let primal =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
-        let tangent = Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2], &[2], &device).unwrap();
+        let primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let tangent = Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2], &[2], &device).unwrap();
 
         // Should panic because shapes don't match
         DualTensor::new(primal, Some(tangent));

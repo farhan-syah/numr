@@ -173,7 +173,7 @@ pub fn sparse_sum(a: &SparseTensor<CpuRuntime>) -> Result<Tensor<CpuRuntime>> {
     crate::dispatch_dtype!(dtype, T => {
         let values_vec: Vec<T> = values_ref(a).to_vec();
         let sum: f64 = values_vec.iter().map(|v| v.to_f64()).sum();
-        Tensor::try_from_slice(&[T::from_f64(sum)], &[1], device)
+        Tensor::from_slice(&[T::from_f64(sum)], &[1], device)
     }, "sparse_sum")
 }
 
@@ -194,7 +194,7 @@ pub fn sparse_sum_rows(a: &SparseTensor<CpuRuntime>) -> Result<Tensor<CpuRuntime
             let sum: f64 = values[start..end].iter().map(|v| v.to_f64()).sum();
             row_sums.push(T::from_f64(sum));
         }
-        Tensor::try_from_slice(&row_sums, &[nrows], device)
+        Tensor::from_slice(&row_sums, &[nrows], device)
     }, "sparse_sum_rows")
 }
 
@@ -215,7 +215,7 @@ pub fn sparse_sum_cols(a: &SparseTensor<CpuRuntime>) -> Result<Tensor<CpuRuntime
             let sum: f64 = values[start..end].iter().map(|v| v.to_f64()).sum();
             col_sums.push(T::from_f64(sum));
         }
-        Tensor::try_from_slice(&col_sums, &[ncols], device)
+        Tensor::from_slice(&col_sums, &[ncols], device)
     }, "sparse_sum_cols")
 }
 
@@ -231,7 +231,7 @@ pub fn sparse_nnz_per_row(a: &SparseTensor<CpuRuntime>) -> Result<Tensor<CpuRunt
         nnz_counts.push(row_ptrs[row + 1] - row_ptrs[row]);
     }
 
-    Tensor::try_from_slice(&nnz_counts, &[nrows], device)
+    Tensor::from_slice(&nnz_counts, &[nrows], device)
 }
 
 /// Non-zeros per column
@@ -246,7 +246,7 @@ pub fn sparse_nnz_per_col(a: &SparseTensor<CpuRuntime>) -> Result<Tensor<CpuRunt
         nnz_counts.push(col_ptrs[col + 1] - col_ptrs[col]);
     }
 
-    Tensor::try_from_slice(&nnz_counts, &[ncols], device)
+    Tensor::from_slice(&nnz_counts, &[ncols], device)
 }
 
 /// Convert sparse to dense
@@ -269,7 +269,7 @@ pub fn sparse_to_dense(a: &SparseTensor<CpuRuntime>) -> Result<Tensor<CpuRuntime
                 dense[row * ncols + col] = values[idx];
             }
         }
-        Tensor::try_from_slice(&dense, &[nrows, ncols], device)
+        Tensor::from_slice(&dense, &[nrows, ncols], device)
     }, "sparse_to_dense")
 }
 

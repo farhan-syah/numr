@@ -16,7 +16,7 @@ pub fn cat_impl(
 ) -> Result<Tensor<CpuRuntime>> {
     let params = shape_ops::validate_cat(tensors, dim)?;
 
-    let out = Tensor::<CpuRuntime>::try_empty(&params.out_shape, params.dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(&params.out_shape, params.dtype, &client.device)?;
     let out_ptr = out.ptr();
     let elem_size = params.dtype.size_in_bytes();
 
@@ -116,7 +116,7 @@ pub fn repeat_impl(
 
     let dtype = tensor.dtype();
     let in_shape = tensor.shape();
-    let out = Tensor::<CpuRuntime>::try_empty(&params.out_shape, dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(&params.out_shape, dtype, &client.device)?;
 
     // Make input contiguous
     let tensor_contig = ensure_contiguous(tensor)?;
@@ -197,8 +197,7 @@ pub fn pad_impl(
     let in_shape = tensor.shape();
 
     // Create output filled with padding value
-    let out =
-        Tensor::<CpuRuntime>::try_full_scalar(&params.out_shape, dtype, value, &client.device)?;
+    let out = Tensor::<CpuRuntime>::full_scalar(&params.out_shape, dtype, value, &client.device)?;
 
     // Make input contiguous
     let tensor_contig = ensure_contiguous(tensor)?;
@@ -276,7 +275,7 @@ pub fn roll_impl(
 
     let dtype = tensor.dtype();
     let shape = tensor.shape();
-    let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device)?;
 
     // Make input contiguous
     let tensor_contig = ensure_contiguous(tensor)?;

@@ -74,18 +74,13 @@ mod tests {
 
         // Input: 2x3 matrix
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(
-                &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-                &[2, 3],
-                &device,
-            )
-            .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap(),
             true,
         );
 
         // Gather along dim=1 with indices [[0, 2], [1, 0]]
-        let index =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 1, 0], &[2, 2], &device).unwrap();
+        let index = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 1, 0], &[2, 2], &device).unwrap();
         let z = var_gather(&x, 1, &index, &client).unwrap();
 
         // z = [[1, 3], [5, 4]]
@@ -107,7 +102,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(
+            Tensor::<CpuRuntime>::from_slice(
                 &[
                     0.5f32, -1.0, 2.0, 3.5, 4.0, -2.5, 1.25, 0.75, -0.5, 2.25, 5.0, -3.0,
                 ],
@@ -117,7 +112,7 @@ mod tests {
             .unwrap(),
             true,
         );
-        let indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 1], &[3], &device).unwrap();
+        let indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 1], &[3], &device).unwrap();
 
         let out = var_embedding_lookup(&weight, &indices, &client).unwrap();
         let loss = crate::autograd::var_ops::var_sum(&out, &[0, 1], false, &client).unwrap();
@@ -134,15 +129,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let single_weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(
-                &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-                &[3, 2],
-                &device,
-            )
-            .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap(),
             true,
         );
-        let single_indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64], &[1], &device).unwrap();
+        let single_indices = Tensor::<CpuRuntime>::from_slice(&[0i64], &[1], &device).unwrap();
         let single_out = var_embedding_lookup(&single_weight, &single_indices, &client).unwrap();
         let single_loss =
             crate::autograd::var_ops::var_sum(&single_out, &[0, 1], false, &client).unwrap();
@@ -155,16 +146,11 @@ mod tests {
             .to_vec::<f32>();
 
         let repeated_weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(
-                &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-                &[3, 2],
-                &device,
-            )
-            .unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap(),
             true,
         );
-        let repeated_indices =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 0], &[2], &device).unwrap();
+        let repeated_indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 0], &[2], &device).unwrap();
         let repeated_out =
             var_embedding_lookup(&repeated_weight, &repeated_indices, &client).unwrap();
         let repeated_loss =
@@ -187,7 +173,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let weight = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(
+            Tensor::<CpuRuntime>::from_slice(
                 &[1.0f32, -2.0, 3.0, 4.0, -5.0, 6.0],
                 &[3, 2],
                 &device,
@@ -195,7 +181,7 @@ mod tests {
             .unwrap(),
             true,
         );
-        let indices = Tensor::<CpuRuntime>::try_from_slice(&[1i64], &[1], &device).unwrap();
+        let indices = Tensor::<CpuRuntime>::from_slice(&[1i64], &[1], &device).unwrap();
 
         let out = var_embedding_lookup(&weight, &indices, &client).unwrap();
         let loss = crate::autograd::var_ops::var_sum(&out, &[0, 1], false, &client).unwrap();

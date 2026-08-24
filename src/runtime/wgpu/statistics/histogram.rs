@@ -43,7 +43,7 @@ pub fn histogram_impl(
 
     if numel == 0 {
         let (min_val, max_val) = range.unwrap_or((0.0, 1.0));
-        let hist = Tensor::<WgpuRuntime>::try_zeros(&[bins], DType::I64, client.device())?;
+        let hist = Tensor::<WgpuRuntime>::zeros(&[bins], DType::I64, client.device())?;
         let edges = create_bin_edges(client, min_val, max_val, bins, dtype)?;
         return Ok((hist, edges));
     }

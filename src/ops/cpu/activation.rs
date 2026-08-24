@@ -135,8 +135,8 @@ impl ActivationOps<CpuRuntime> for CpuClient {
         let relu_a = self.relu(a)?;
         let d_b = self.mul(grad, &relu_a)?;
         // relu'(x) = 1 if x > 0, else 0
-        let zeros = Tensor::<CpuRuntime>::try_zeros(a.shape(), a.dtype(), a.device())?;
-        let ones = Tensor::<CpuRuntime>::try_ones(a.shape(), a.dtype(), a.device())?;
+        let zeros = Tensor::<CpuRuntime>::zeros(a.shape(), a.dtype(), a.device())?;
+        let ones = Tensor::<CpuRuntime>::ones(a.shape(), a.dtype(), a.device())?;
         let mask = self.gt(a, &zeros)?;
         let relu_deriv = self.where_cond(&mask, &ones, &zeros)?;
         let grad_times_b = self.mul(grad, b)?;
@@ -182,7 +182,7 @@ impl ActivationOps<CpuRuntime> for CpuClient {
             normalize_softmax_dim(ndim, dim).ok_or(Error::InvalidDimension { dim, ndim })?;
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         let shape = a.shape();
 
@@ -247,7 +247,7 @@ impl ActivationOps<CpuRuntime> for CpuClient {
 
         let grad_contig = ensure_contiguous(grad)?;
         let output_contig = ensure_contiguous(output)?;
-        let d_input = Tensor::<CpuRuntime>::try_empty(grad.shape(), dtype, &self.device)?;
+        let d_input = Tensor::<CpuRuntime>::empty(grad.shape(), dtype, &self.device)?;
 
         let shape = grad.shape();
         let outer_size: usize = shape[..dim_idx].iter().product();
@@ -332,8 +332,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuClient::new(device.clone());
 
-        let input =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let result = client.log_softmax(&input, -1).unwrap();
         let data: Vec<f32> = result.to_vec();
 
@@ -353,12 +352,9 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuClient::new(device.clone());
 
-        let input = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
+        let input =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap();
         let result = client.log_softmax(&input, -1).unwrap();
         let data: Vec<f32> = result.to_vec();
 
@@ -374,8 +370,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuClient::new(device.clone());
 
-        let input =
-            Tensor::<CpuRuntime>::try_ones(&[1000], crate::dtype::DType::F32, &device).unwrap();
+        let input = Tensor::<CpuRuntime>::ones(&[1000], crate::dtype::DType::F32, &device).unwrap();
         let result = client.dropout(&input, 0.5, true).unwrap();
         let data: Vec<f32> = result.to_vec();
 
@@ -394,8 +389,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuClient::new(device.clone());
 
-        let input =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let result = client.dropout(&input, 0.5, false).unwrap();
         let data: Vec<f32> = result.to_vec();
 
@@ -410,8 +404,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuClient::new(device.clone());
 
-        let input =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let result = client.dropout(&input, 0.0, true).unwrap();
         let data: Vec<f32> = result.to_vec();
 
@@ -426,8 +419,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuClient::new(device.clone());
 
-        let input =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let result = client.dropout(&input, 1.0, true).unwrap();
         let data: Vec<f32> = result.to_vec();
 

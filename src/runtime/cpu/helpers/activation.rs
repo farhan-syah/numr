@@ -34,7 +34,7 @@ pub fn activation_op_impl(
 ) -> Result<Tensor<CpuRuntime>> {
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device)?;
 
     let len = a.numel();
     let a_ptr = a_contig.ptr();
@@ -104,7 +104,7 @@ pub fn fused_activation_mul_impl(
 
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
-    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device)?;
 
     let len = a.numel();
     let a_ptr = a_contig.ptr();
@@ -145,7 +145,7 @@ pub fn parametric_activation_impl(
 ) -> Result<Tensor<CpuRuntime>> {
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device)?;
 
     let len = a.numel();
     let a_ptr = a_contig.ptr();

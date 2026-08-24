@@ -59,10 +59,10 @@ fn rsf2csf_typed<T: Element + LinalgElement>(
     // Handle trivial cases
     if n == 0 {
         return Ok(ComplexSchurDecomposition {
-            z_real: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
-            z_imag: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
-            t_real: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
-            t_imag: Tensor::<CpuRuntime>::try_from_slice(&[] as &[T], &[0, 0], device)?,
+            z_real: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device)?,
+            z_imag: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device)?,
+            t_real: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device)?,
+            t_imag: Tensor::<CpuRuntime>::from_slice(&[] as &[T], &[0, 0], device)?,
         });
     }
 
@@ -88,10 +88,10 @@ fn rsf2csf_typed<T: Element + LinalgElement>(
     }
 
     Ok(ComplexSchurDecomposition {
-        z_real: Tensor::<CpuRuntime>::try_from_slice(&z_real, &[n, n], device)?,
-        z_imag: Tensor::<CpuRuntime>::try_from_slice(&z_imag, &[n, n], device)?,
-        t_real: Tensor::<CpuRuntime>::try_from_slice(&t_real, &[n, n], device)?,
-        t_imag: Tensor::<CpuRuntime>::try_from_slice(&t_imag, &[n, n], device)?,
+        z_real: Tensor::<CpuRuntime>::from_slice(&z_real, &[n, n], device)?,
+        z_imag: Tensor::<CpuRuntime>::from_slice(&z_imag, &[n, n], device)?,
+        t_real: Tensor::<CpuRuntime>::from_slice(&t_real, &[n, n], device)?,
+        t_imag: Tensor::<CpuRuntime>::from_slice(&t_imag, &[n, n], device)?,
     })
 }
 

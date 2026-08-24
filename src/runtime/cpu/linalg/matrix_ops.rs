@@ -41,7 +41,7 @@ fn inverse_typed<T: Element + LinalgElement>(
     for i in 0..n {
         identity[i * n + i] = T::one();
     }
-    let identity_tensor = Tensor::<CpuRuntime>::try_from_slice(&identity, &[n, n], device)?;
+    let identity_tensor = Tensor::<CpuRuntime>::from_slice(&identity, &[n, n], device)?;
 
     // Solve A @ X = I
     solve_impl(client, a, &identity_tensor)
@@ -71,7 +71,7 @@ fn det_typed<T: Element + LinalgElement>(
 
     // Handle special case n=0
     if n == 0 {
-        return Tensor::<CpuRuntime>::try_from_slice(&[T::one()], &[], device);
+        return Tensor::<CpuRuntime>::from_slice(&[T::one()], &[], device);
     }
 
     // Compute LU decomposition
@@ -89,7 +89,7 @@ fn det_typed<T: Element + LinalgElement>(
         det = det * lu_data[i * n + i];
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&[det], &[], device)
+    Tensor::<CpuRuntime>::from_slice(&[det], &[], device)
 }
 
 /// Trace: sum of diagonal elements
@@ -122,7 +122,7 @@ fn trace_typed<T: Element + LinalgElement>(
         trace = trace + a_data[i * n + i];
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&[trace], &[], device)
+    Tensor::<CpuRuntime>::from_slice(&[trace], &[], device)
 }
 
 /// Extract diagonal
@@ -155,7 +155,7 @@ fn diag_typed<T: Element + LinalgElement>(
         diag[i] = a_data[i * n + i];
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&diag, &[k], device)
+    Tensor::<CpuRuntime>::from_slice(&diag, &[k], device)
 }
 
 /// Create diagonal matrix from 1D tensor
@@ -191,7 +191,7 @@ fn diagflat_typed<T: Element + LinalgElement>(
         mat[i * n + i] = a_data[i];
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&mat, &[n, n], device)
+    Tensor::<CpuRuntime>::from_slice(&mat, &[n, n], device)
 }
 
 /// Kronecker product: A ⊗ B
@@ -258,7 +258,7 @@ fn kron_typed<T: Element + LinalgElement>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&out, &[m_out, n_out], device)
+    Tensor::<CpuRuntime>::from_slice(&out, &[m_out, n_out], device)
 }
 
 /// Khatri-Rao product (column-wise Kronecker): A ⊙ B
@@ -330,7 +330,7 @@ fn khatri_rao_typed<T: Element + LinalgElement>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&out, &[m_out, k], device)
+    Tensor::<CpuRuntime>::from_slice(&out, &[m_out, k], device)
 }
 
 /// Upper triangular part of a matrix
@@ -370,7 +370,7 @@ fn triu_typed<T: Element>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&data, &[m, n], device)
+    Tensor::<CpuRuntime>::from_slice(&data, &[m, n], device)
 }
 
 /// Lower triangular part of a matrix
@@ -410,7 +410,7 @@ fn tril_typed<T: Element>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&data, &[m, n], device)
+    Tensor::<CpuRuntime>::from_slice(&data, &[m, n], device)
 }
 
 /// Sign and log-absolute-determinant via LU decomposition
@@ -444,8 +444,8 @@ fn slogdet_typed<T: Element + LinalgElement>(
     // Handle special case n=0: det of empty matrix is 1 by convention
     if n == 0 {
         return Ok(crate::algorithm::linalg::SlogdetResult {
-            sign: Tensor::<CpuRuntime>::try_from_slice(&[T::one()], &[], device)?,
-            logabsdet: Tensor::<CpuRuntime>::try_from_slice(&[T::zero()], &[], device)?,
+            sign: Tensor::<CpuRuntime>::from_slice(&[T::one()], &[], device)?,
+            logabsdet: Tensor::<CpuRuntime>::from_slice(&[T::zero()], &[], device)?,
         });
     }
 
@@ -481,12 +481,8 @@ fn slogdet_typed<T: Element + LinalgElement>(
     }
 
     Ok(crate::algorithm::linalg::SlogdetResult {
-        sign: Tensor::<CpuRuntime>::try_from_slice(&[T::from_f64(sign_val)], &[], device)?,
-        logabsdet: Tensor::<CpuRuntime>::try_from_slice(
-            &[T::from_f64(logabsdet_val)],
-            &[],
-            device,
-        )?,
+        sign: Tensor::<CpuRuntime>::from_slice(&[T::from_f64(sign_val)], &[], device)?,
+        logabsdet: Tensor::<CpuRuntime>::from_slice(&[T::from_f64(logabsdet_val)], &[], device)?,
     })
 }
 
@@ -549,7 +545,7 @@ fn matrix_rank_typed<T: Element + LinalgElement>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&[rank], &[], device)
+    Tensor::<CpuRuntime>::from_slice(&[rank], &[], device)
 }
 
 /// Matrix norm implementation
@@ -598,7 +594,7 @@ fn frobenius_norm_typed<T: Element + LinalgElement>(
     }
 
     let norm = sum_sq.sqrt_val();
-    Tensor::<CpuRuntime>::try_from_slice(&[norm], &[], device)
+    Tensor::<CpuRuntime>::from_slice(&[norm], &[], device)
 }
 
 /// Spectral norm: ||A||_2 = max(singular_values(A))
@@ -620,7 +616,7 @@ fn spectral_norm_typed<T: Element + LinalgElement>(
         }
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&[max_sv], &[], device)
+    Tensor::<CpuRuntime>::from_slice(&[max_sv], &[], device)
 }
 
 /// Nuclear norm: ||A||_* = sum(singular_values(A))
@@ -640,5 +636,5 @@ fn nuclear_norm_typed<T: Element + LinalgElement>(
         sum_sv = sum_sv + val;
     }
 
-    Tensor::<CpuRuntime>::try_from_slice(&[sum_sv], &[], device)
+    Tensor::<CpuRuntime>::from_slice(&[sum_sv], &[], device)
 }

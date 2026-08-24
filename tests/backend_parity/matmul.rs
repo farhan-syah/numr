@@ -563,8 +563,8 @@ fn test_cpu_matmul_parallelism_config_matches_default() {
         .map(|i| (i as f32 * 0.011).cos() - (i as f32 * 0.005).sin())
         .collect();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &a_shape, &device).unwrap();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &b_shape, &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &a_shape, &device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &b_shape, &device).unwrap();
 
     let base: Vec<f32> = default_client.matmul(&a, &b).unwrap().to_vec();
     let cfg: Vec<f32> = configured_client.matmul(&a, &b).unwrap().to_vec();

@@ -70,7 +70,7 @@ impl SemiringMatmulOps<CpuRuntime> for CpuClient {
             crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
 
         // Create output tensor
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();
@@ -175,10 +175,10 @@ mod tests {
     #[test]
     fn test_semiring_min_plus_2x2() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 3.0, 7.0, 1.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 2.0, 5.0, 0.0], &[2, 2], &device)
-            .unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 3.0, 7.0, 1.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 2.0, 5.0, 0.0], &[2, 2], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::MinPlus).unwrap();
         assert_eq!(c.to_vec::<f32>(), vec![0.0, 2.0, 6.0, 1.0]);
     }
@@ -186,10 +186,10 @@ mod tests {
     #[test]
     fn test_semiring_max_plus_2x2() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 3.0, 7.0, 1.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 2.0, 5.0, 0.0], &[2, 2], &device)
-            .unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 3.0, 7.0, 1.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 2.0, 5.0, 0.0], &[2, 2], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::MaxPlus).unwrap();
         assert_eq!(c.to_vec::<f32>(), vec![8.0, 3.0, 7.0, 9.0]);
     }
@@ -197,10 +197,10 @@ mod tests {
     #[test]
     fn test_semiring_max_min_2x2() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 3.0, 2.0, 8.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 1.0, 6.0, 7.0], &[2, 2], &device)
-            .unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32, 3.0, 2.0, 8.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[4.0f32, 1.0, 6.0, 7.0], &[2, 2], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::MaxMin).unwrap();
         assert_eq!(c.to_vec::<f32>(), vec![4.0, 3.0, 6.0, 7.0]);
     }
@@ -213,8 +213,8 @@ mod tests {
         // C[0,1] = (T&T)|(F&F) = T|F = T
         // C[1,0] = (F&F)|(T&T) = F|T = T
         // C[1,1] = (F&T)|(T&F) = F|F = F
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1u8, 0, 0, 1], &[2, 2], &device).unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 1, 1, 0], &[2, 2], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[1u8, 0, 0, 1], &[2, 2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[0u8, 1, 1, 0], &[2, 2], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::OrAnd).unwrap();
         assert_eq!(c.to_vec::<u8>(), vec![0, 1, 1, 0]);
     }
@@ -223,13 +223,13 @@ mod tests {
     fn test_semiring_batched() {
         let (client, device) = make_client();
         // Batch of 2, each 2x2
-        let a = Tensor::<CpuRuntime>::try_from_slice(
+        let a = Tensor::<CpuRuntime>::from_slice(
             &[0.0f32, 3.0, 7.0, 1.0, 1.0, 2.0, 3.0, 4.0],
             &[2, 2, 2],
             &device,
         )
         .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
+        let b = Tensor::<CpuRuntime>::from_slice(
             &[0.0f32, 2.0, 5.0, 0.0, 1.0, 0.0, 0.0, 1.0],
             &[2, 2, 2],
             &device,
@@ -249,13 +249,10 @@ mod tests {
     #[test]
     fn test_semiring_non_square() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+                .unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(
             &[7.0f32, 8.0, 9.0, 10.0, 11.0, 12.0],
             &[3, 2],
             &device,
@@ -268,26 +265,26 @@ mod tests {
     #[test]
     fn test_semiring_dtype_mismatch() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1, 1], &device).unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64], &[1, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1, 1], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64], &[1, 1], &device).unwrap();
         assert!(client.semiring_matmul(&a, &b, SemiringOp::MinPlus).is_err());
     }
 
     #[test]
     fn test_semiring_invalid_dtype_for_or_and() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[1, 2], &device).unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0], &[2, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[1, 2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0], &[2, 1], &device).unwrap();
         assert!(client.semiring_matmul(&a, &b, SemiringOp::OrAnd).is_err());
     }
 
     #[test]
     fn test_semiring_f64() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f64, 3.0, 7.0, 1.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[0.0f64, 2.0, 5.0, 0.0], &[2, 2], &device)
-            .unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[0.0f64, 3.0, 7.0, 1.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[0.0f64, 2.0, 5.0, 0.0], &[2, 2], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::MinPlus).unwrap();
         assert_eq!(c.to_vec::<f64>(), vec![0.0, 2.0, 6.0, 1.0]);
     }
@@ -295,8 +292,8 @@ mod tests {
     #[test]
     fn test_semiring_i32() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[0i32, 3, 7, 1], &[2, 2], &device).unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[0i32, 2, 5, 0], &[2, 2], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[0i32, 3, 7, 1], &[2, 2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[0i32, 2, 5, 0], &[2, 2], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::MinPlus).unwrap();
         assert_eq!(c.to_vec::<i32>(), vec![0, 2, 6, 1]);
     }
@@ -304,8 +301,8 @@ mod tests {
     #[test]
     fn test_semiring_1x1() {
         let (client, device) = make_client();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32], &[1, 1], &device).unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[5.0f32], &[1, 1], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1, 1], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::MinPlus).unwrap();
         assert_eq!(c.to_vec::<f32>(), vec![8.0]);
     }
@@ -319,10 +316,10 @@ mod tests {
         // C[0,1] = max(1,2) + max(3,6) = 2 + 6 = 8
         // C[1,0] = max(2,5) + max(4,1) = 5 + 4 = 9
         // C[1,1] = max(2,2) + max(4,6) = 2 + 6 = 8
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 3.0, 2.0, 4.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 2.0, 1.0, 6.0], &[2, 2], &device)
-            .unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 3.0, 2.0, 4.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32, 2.0, 1.0, 6.0], &[2, 2], &device).unwrap();
         let c = client.semiring_matmul(&a, &b, SemiringOp::PlusMax).unwrap();
         assert_eq!(c.to_vec::<f32>(), vec![8.0, 8.0, 9.0, 8.0]);
     }

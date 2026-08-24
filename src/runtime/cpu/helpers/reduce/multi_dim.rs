@@ -30,7 +30,7 @@ pub(super) fn reduce_multi_dim_fused(
     // `Native` and take exactly the same path as before.
     let precision = precision.resolve(a.dtype());
     let out_shape = reduce_output_shape(shape, dims, keepdim);
-    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, a.dtype(), &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(&out_shape, a.dtype(), &client.device)?;
 
     let mut reduce_mask = vec![false; shape.len()];
     for &d in dims {

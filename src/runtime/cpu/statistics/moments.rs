@@ -56,7 +56,7 @@ pub fn skew_impl(
         }, "skew");
 
         let out_shape = if keepdim { vec![1; ndim] } else { vec![] };
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
         let out_ptr = out.ptr();
 
         dispatch_dtype!(dtype, T => {
@@ -79,7 +79,7 @@ pub fn skew_impl(
     let std_cubed = client.pow_scalar(&std_val, 3.0)?;
 
     // skew = m3 / std^3 (with epsilon to avoid division by zero)
-    let epsilon = Tensor::<CpuRuntime>::try_full_scalar(
+    let epsilon = Tensor::<CpuRuntime>::full_scalar(
         std_cubed.shape(),
         dtype,
         DIVISION_EPSILON,
@@ -137,7 +137,7 @@ pub fn kurtosis_impl(
         }, "kurtosis");
 
         let out_shape = if keepdim { vec![1; ndim] } else { vec![] };
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
         let out_ptr = out.ptr();
 
         dispatch_dtype!(dtype, T => {
@@ -160,7 +160,7 @@ pub fn kurtosis_impl(
     let std_fourth = client.pow_scalar(&std_val, 4.0)?;
 
     // kurtosis = m4 / std^4 - 3 (with epsilon to avoid division by zero)
-    let epsilon = Tensor::<CpuRuntime>::try_full_scalar(
+    let epsilon = Tensor::<CpuRuntime>::full_scalar(
         std_fourth.shape(),
         dtype,
         DIVISION_EPSILON,
@@ -169,6 +169,6 @@ pub fn kurtosis_impl(
     let std_fourth_safe = client.add(&std_fourth, &epsilon)?;
 
     let ratio = client.div(&m4, &std_fourth_safe)?;
-    let three = Tensor::<CpuRuntime>::try_full_scalar(ratio.shape(), dtype, 3.0, &client.device)?;
+    let three = Tensor::<CpuRuntime>::full_scalar(ratio.shape(), dtype, 3.0, &client.device)?;
     client.sub(&ratio, &three)
 }

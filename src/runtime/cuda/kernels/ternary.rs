@@ -133,11 +133,10 @@ pub unsafe fn launch_where_broadcast_op(
     let shape_u32: Vec<u32> = out_shape.iter().map(|&x| x as u32).collect();
 
     // Allocate device memory for strides and shape using Tensor
-    let cond_strides_tensor =
-        Tensor::<CudaRuntime>::try_from_slice(&cond_strides, &[ndim], device)?;
-    let x_strides_tensor = Tensor::<CudaRuntime>::try_from_slice(&x_strides, &[ndim], device)?;
-    let y_strides_tensor = Tensor::<CudaRuntime>::try_from_slice(&y_strides, &[ndim], device)?;
-    let shape_tensor = Tensor::<CudaRuntime>::try_from_slice(&shape_u32, &[ndim], device)?;
+    let cond_strides_tensor = Tensor::<CudaRuntime>::from_slice(&cond_strides, &[ndim], device)?;
+    let x_strides_tensor = Tensor::<CudaRuntime>::from_slice(&x_strides, &[ndim], device)?;
+    let y_strides_tensor = Tensor::<CudaRuntime>::from_slice(&y_strides, &[ndim], device)?;
+    let shape_tensor = Tensor::<CudaRuntime>::from_slice(&shape_u32, &[ndim], device)?;
 
     // Get device pointers
     let cond_strides_ptr = cond_strides_tensor.ptr();
@@ -311,11 +310,10 @@ pub unsafe fn launch_where_broadcast_generic_op(
     let shape_u32: Vec<u32> = out_shape.iter().map(|&x| x as u32).collect();
 
     // Allocate device memory for strides and shape using Tensor
-    let cond_strides_tensor =
-        Tensor::<CudaRuntime>::try_from_slice(&cond_strides, &[ndim], device)?;
-    let x_strides_tensor = Tensor::<CudaRuntime>::try_from_slice(&x_strides, &[ndim], device)?;
-    let y_strides_tensor = Tensor::<CudaRuntime>::try_from_slice(&y_strides, &[ndim], device)?;
-    let shape_tensor = Tensor::<CudaRuntime>::try_from_slice(&shape_u32, &[ndim], device)?;
+    let cond_strides_tensor = Tensor::<CudaRuntime>::from_slice(&cond_strides, &[ndim], device)?;
+    let x_strides_tensor = Tensor::<CudaRuntime>::from_slice(&x_strides, &[ndim], device)?;
+    let y_strides_tensor = Tensor::<CudaRuntime>::from_slice(&y_strides, &[ndim], device)?;
+    let shape_tensor = Tensor::<CudaRuntime>::from_slice(&shape_u32, &[ndim], device)?;
 
     // Get device pointers
     let cond_strides_ptr = cond_strides_tensor.ptr();

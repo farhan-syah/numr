@@ -131,9 +131,9 @@ pub fn sparse_solve_triangular_cpu<R: Runtime<DType = DType>>(
     let result = match dtype {
         DType::F32 => {
             let f32_vals: Vec<f32> = x_flat.iter().map(|&x| x as f32).collect();
-            Tensor::<R>::try_from_slice(&f32_vals, &shape, device)?
+            Tensor::<R>::from_slice(&f32_vals, &shape, device)?
         }
-        DType::F64 => Tensor::<R>::try_from_slice(&x_flat, &shape, device)?,
+        DType::F64 => Tensor::<R>::from_slice(&x_flat, &shape, device)?,
         _ => unreachable!(),
     };
 

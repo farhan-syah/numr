@@ -282,13 +282,10 @@ mod tests {
         let device = CpuDevice::new();
         let _client = CpuRuntime::default_client(&device);
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 3.0, 2.0, 4.0, 2.0, 5.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 1], DType::F32, &device).unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 3.0, 2.0, 4.0, 2.0, 5.0], &[2, 3], &device)
+                .unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device).unwrap();
 
         let backward = MaxBackward::<CpuRuntime>::new(a.id(), a.clone(), &[1], true, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -305,13 +302,10 @@ mod tests {
         let device = CpuDevice::new();
         let _client = CpuRuntime::default_client(&device);
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(
-            &[3.0f32, 1.0, 2.0, 4.0, 2.0, 5.0],
-            &[2, 3],
-            &device,
-        )
-        .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 1], DType::F32, &device).unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32, 1.0, 2.0, 4.0, 2.0, 5.0], &[2, 3], &device)
+                .unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device).unwrap();
 
         let backward = MinBackward::<CpuRuntime>::new(a.id(), a.clone(), &[1], true, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -328,9 +322,8 @@ mod tests {
         let device = CpuDevice::new();
         let _client = CpuRuntime::default_client(&device);
 
-        let a =
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 3.0, 1.0], &[1, 3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1, 1], DType::F32, &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 3.0, 1.0], &[1, 3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1, 1], DType::F32, &device).unwrap();
 
         let backward = MaxBackward::<CpuRuntime>::new(a.id(), a.clone(), &[1], true, None);
         let grads = backward.backward_all(&grad_out).unwrap();

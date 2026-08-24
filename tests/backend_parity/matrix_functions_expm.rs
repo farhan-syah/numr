@@ -13,7 +13,7 @@ fn test_expm_identity() {
     // exp(0) = I
     let (client, device) = create_cpu_client();
 
-    let zeros = Tensor::<CpuRuntime>::try_zeros(&[3, 3], DType::F64, &device).unwrap();
+    let zeros = Tensor::<CpuRuntime>::zeros(&[3, 3], DType::F64, &device).unwrap();
     let result = client.expm(&zeros).expect("expm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -27,7 +27,7 @@ fn test_expm_diagonal() {
     // exp(diag([a, b, c])) = diag([exp(a), exp(b), exp(c)])
     let (client, device) = create_cpu_client();
 
-    let diag_matrix = Tensor::<CpuRuntime>::try_from_slice(
+    let diag_matrix = Tensor::<CpuRuntime>::from_slice(
         &[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0],
         &[3, 3],
         &device,
@@ -55,7 +55,7 @@ fn test_expm_diagonal() {
 fn test_expm_1x1() {
     let (client, device) = create_cpu_client();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[2.5], &[1, 1], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[2.5], &[1, 1], &device).unwrap();
     let result = client.expm(&a).expect("expm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -70,7 +70,7 @@ fn test_expm_2x2_nilpotent() {
     // exp(A) = I + A = [[1, 1], [0, 1]]
     let (client, device) = create_cpu_client();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0, 1.0, 0.0, 0.0], &[2, 2], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[0.0, 1.0, 0.0, 0.0], &[2, 2], &device).unwrap();
     let result = client.expm(&a).expect("expm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -83,7 +83,7 @@ fn test_expm_2x2_nilpotent() {
 fn test_expm_empty() {
     let (client, device) = create_cpu_client();
 
-    let empty = Tensor::<CpuRuntime>::try_zeros(&[0, 0], DType::F64, &device).unwrap();
+    let empty = Tensor::<CpuRuntime>::zeros(&[0, 0], DType::F64, &device).unwrap();
     let result = client.expm(&empty).expect("expm of empty should succeed");
 
     assert_eq!(result.shape(), &[0, 0]);
@@ -93,8 +93,7 @@ fn test_expm_empty() {
 fn test_expm_f32() {
     let (client, device) = create_cpu_client();
 
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0_f32, 0.0, 0.0, 2.0], &[2, 2], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0_f32, 0.0, 0.0, 2.0], &[2, 2], &device).unwrap();
     let result = client.expm(&a).expect("expm f32 should succeed");
 
     let result_data: Vec<f32> = result.to_vec();

@@ -25,8 +25,7 @@ fn test_trace() {
 
     // 2x2 matrix: [[1, 2], [3, 4]]
     // trace = 1 + 4 = 5
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let t = LinearAlgebraAlgorithms::trace(&client, &a).unwrap();
     let result: Vec<f32> = t.to_vec();
@@ -42,9 +41,8 @@ fn test_diag() {
     let device = client.device();
 
     // 2x3 matrix
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)
-            .unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)
+        .unwrap();
 
     let d = LinearAlgebraAlgorithms::diag(&client, &a).unwrap();
     let result: Vec<f32> = d.to_vec();
@@ -61,7 +59,7 @@ fn test_diagflat() {
     };
     let device = client.device();
 
-    let a = Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
 
     let m = LinearAlgebraAlgorithms::diagflat(&client, &a).unwrap();
     let result: Vec<f32> = m.to_vec();
@@ -82,8 +80,7 @@ fn test_lu_decomposition() {
     let device = client.device();
 
     // 2x2 matrix: [[4, 3], [6, 3]]
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device).unwrap();
 
     let lu = client.lu_decompose(&a).unwrap();
 
@@ -99,8 +96,7 @@ fn test_cholesky() {
     let device = client.device();
 
     // Symmetric positive definite: [[4, 2], [2, 5]]
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[4.0f32, 2.0, 2.0, 5.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[4.0f32, 2.0, 2.0, 5.0], &[2, 2], device).unwrap();
 
     let chol = client.cholesky_decompose(&a).unwrap();
 
@@ -120,8 +116,7 @@ fn test_det() {
 
     // 2x2 matrix: [[1, 2], [3, 4]]
     // det = 1*4 - 2*3 = -2
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let d = LinearAlgebraAlgorithms::det(&client, &a).unwrap();
     let result: Vec<f32> = d.to_vec();
@@ -138,9 +133,8 @@ fn test_solve() {
 
     // Solve [[2, 1], [1, 2]] @ x = [3, 3]
     // Solution: x = [1, 1]
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
-    let b = Tensor::<CudaRuntime>::try_from_slice(&[3.0f32, 3.0], &[2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CudaRuntime>::from_slice(&[3.0f32, 3.0], &[2], device).unwrap();
 
     let x = LinearAlgebraAlgorithms::solve(&client, &a, &b).unwrap();
     let result: Vec<f32> = x.to_vec();
@@ -158,8 +152,7 @@ fn test_inverse() {
 
     // Test 2x2 matrix: [[4, 7], [2, 6]]
     // Inverse: [[0.6, -0.7], [-0.2, 0.4]]
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device).unwrap();
 
     let inv = LinearAlgebraAlgorithms::inverse(&client, &a).unwrap();
     let result: Vec<f32> = inv.to_vec();
@@ -180,8 +173,7 @@ fn test_inverse_identity() {
     let device = client.device();
 
     // A @ A^-1 should equal I
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device).unwrap();
 
     let inv = LinearAlgebraAlgorithms::inverse(&client, &a).unwrap();
     let product = client.matmul(&a, &inv).unwrap();
@@ -202,8 +194,7 @@ fn test_matrix_rank_full() {
     let device = client.device();
 
     // Full rank 2x2 matrix
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let rank = LinearAlgebraAlgorithms::matrix_rank(&client, &a, None).unwrap();
     let result: Vec<i64> = rank.to_vec();
@@ -219,8 +210,7 @@ fn test_matrix_rank_deficient() {
     let device = client.device();
 
     // Rank-deficient 2x2 matrix (rows are linearly dependent)
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 4.0], &[2, 2], device).unwrap();
 
     let rank = LinearAlgebraAlgorithms::matrix_rank(&client, &a, None).unwrap();
     let result: Vec<i64> = rank.to_vec();
@@ -236,8 +226,7 @@ fn test_qr_decomposition() {
     let device = client.device();
 
     // Test QR: A = Q @ R
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let qr = client.qr_decompose(&a).unwrap();
 
@@ -267,10 +256,8 @@ fn test_solve_multi_rhs() {
     // Solve A @ X = B where B has multiple columns
     // A = [[2, 1], [1, 2]], B = [[3, 4], [3, 5]]
     // Solutions: X[:, 0] = [1, 1], X[:, 1] = [1, 2]
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
-    let b =
-        Tensor::<CudaRuntime>::try_from_slice(&[3.0f32, 4.0, 3.0, 5.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CudaRuntime>::from_slice(&[3.0f32, 4.0, 3.0, 5.0], &[2, 2], device).unwrap();
 
     let x = LinearAlgebraAlgorithms::solve(&client, &a, &b).unwrap();
     assert_eq!(x.shape(), &[2, 2]);
@@ -310,10 +297,9 @@ fn test_lstsq_overdetermined() {
     // Overdetermined system: A is 3x2, b is 3x1
     // A = [[1, 1], [1, 2], [1, 3]], b = [1, 2, 3]
     // Least squares solution minimizes ||Ax - b||^2
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 2.0, 1.0, 3.0], &[3, 2], device)
-            .unwrap();
-    let b = Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 2.0, 1.0, 3.0], &[3, 2], device)
+        .unwrap();
+    let b = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
 
     let x = LinearAlgebraAlgorithms::lstsq(&client, &a, &b).unwrap();
     assert_eq!(x.shape(), &[2]);
@@ -337,13 +323,11 @@ fn test_lstsq_multi_rhs() {
 
     // Overdetermined system with multiple RHS
     // A is 3x2, B is 3x2
-    let a =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 2.0, 1.0, 3.0], &[3, 2], device)
-            .unwrap();
+    let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 2.0, 1.0, 3.0], &[3, 2], device)
+        .unwrap();
     // B = [[1, 2], [2, 4], [3, 6]] (second column is 2x first)
-    let b =
-        Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2], device)
-            .unwrap();
+    let b = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2], device)
+        .unwrap();
 
     let x = LinearAlgebraAlgorithms::lstsq(&client, &a, &b).unwrap();
     assert_eq!(x.shape(), &[2, 2]);

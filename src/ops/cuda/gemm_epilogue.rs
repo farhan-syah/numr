@@ -71,7 +71,7 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         let b_contig = ensure_contiguous(b)?;
         let bias_contig = ensure_contiguous(bias)?;
 
-        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device)?;
 
         unsafe {
             if batch_size > 1 {
@@ -174,7 +174,7 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         let bias_contig = ensure_contiguous(bias)?;
         let res_contig = ensure_contiguous(residual)?;
 
-        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device)?;
 
         unsafe {
             if batch_size > 1 {
@@ -255,12 +255,12 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         let bias_contig = ensure_contiguous(bias)?;
         let grad_contig = ensure_contiguous(grad)?;
 
-        let d_a = Tensor::<CudaRuntime>::try_empty(a_shape, dtype, &self.device)?;
-        let d_b = Tensor::<CudaRuntime>::try_zeros(b_shape, dtype, &self.device)?;
-        let d_bias = Tensor::<CudaRuntime>::try_zeros(&[n], dtype, &self.device)?;
+        let d_a = Tensor::<CudaRuntime>::empty(a_shape, dtype, &self.device)?;
+        let d_b = Tensor::<CudaRuntime>::zeros(b_shape, dtype, &self.device)?;
+        let d_bias = Tensor::<CudaRuntime>::zeros(&[n], dtype, &self.device)?;
 
         // Temporary buffer for grad_pre (M * N elements, reused per batch)
-        let grad_pre = Tensor::<CudaRuntime>::try_empty(&[m, n], dtype, &self.device)?;
+        let grad_pre = Tensor::<CudaRuntime>::empty(&[m, n], dtype, &self.device)?;
 
         unsafe {
             if batch_size > 1 {

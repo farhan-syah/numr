@@ -10,7 +10,7 @@
 //! # use numr::autograd::{Var, backward, checkpoint, var_mul, var_sum};
 //! # let device = CpuDevice::new();
 //! # let client = CpuRuntime::default_client(&device);
-//! let x = Var::new(Tensor::try_from_slice(&[3.0f32], &[1], &device)?, true);
+//! let x = Var::new(Tensor::from_slice(&[3.0f32], &[1], &device)?, true);
 //!
 //! // Wrap computation in checkpoint — intermediates are dropped and recomputed
 //! let y = checkpoint(|inputs, c| {
@@ -173,7 +173,7 @@ mod tests {
         let (device, client) = device_and_client();
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -205,11 +205,11 @@ mod tests {
         let (device, client) = device_and_client();
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             true,
         );
         let y = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[5.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -234,7 +234,7 @@ mod tests {
         let (device, client) = device_and_client();
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -256,7 +256,7 @@ mod tests {
         let (device, client) = device_and_client();
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -297,7 +297,7 @@ mod tests {
         let (device, client) = device_and_client();
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -326,7 +326,7 @@ mod tests {
         let (device, client) = device_and_client();
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device).unwrap(),
             true,
         );
 

@@ -53,7 +53,7 @@ pub fn quantile_impl(
         let numel = a.numel();
         if numel == 0 {
             let out_shape = if keepdim { vec![1; a.ndim()] } else { vec![] };
-            return Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device);
+            return Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
         }
 
         let flat = a.reshape(&[numel])?;
@@ -73,7 +73,7 @@ pub fn quantile_impl(
 
     if dim_size == 0 {
         let out_shape = reduce_dim_output_shape(shape, dim_idx, keepdim);
-        return Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device);
+        return Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
     }
 
     // Sort along the dimension
@@ -81,7 +81,7 @@ pub fn quantile_impl(
 
     // Compute output shape and strides
     let out_shape = reduce_dim_output_shape(shape, dim_idx, keepdim);
-    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
     let (outer_size, reduce_size, inner_size) = compute_reduce_strides(shape, dim_idx);
 
     let sorted_contig = ensure_contiguous(&sorted)?;

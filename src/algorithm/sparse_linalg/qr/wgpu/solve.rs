@@ -206,14 +206,11 @@ pub fn sparse_qr_solve_wgpu(
     let r_col_ptrs_i32: Vec<i32> = r_col_ptrs.iter().map(|&x| x as i32).collect();
     let r_row_indices_i32: Vec<i32> = r_row_indices.iter().map(|&x| x as i32).collect();
     let r_col_ptrs_gpu =
-        Tensor::<WgpuRuntime>::try_from_slice(&r_col_ptrs_i32, &[r_col_ptrs_i32.len()], &device)?;
-    let r_row_indices_gpu = Tensor::<WgpuRuntime>::try_from_slice(
-        &r_row_indices_i32,
-        &[r_row_indices_i32.len()],
-        &device,
-    )?;
+        Tensor::<WgpuRuntime>::from_slice(&r_col_ptrs_i32, &[r_col_ptrs_i32.len()], &device)?;
+    let r_row_indices_gpu =
+        Tensor::<WgpuRuntime>::from_slice(&r_row_indices_i32, &[r_row_indices_i32.len()], &device)?;
     let u_level_cols_gpu =
-        Tensor::<WgpuRuntime>::try_from_slice(&u_level_cols, &[u_level_cols.len()], &device)?;
+        Tensor::<WgpuRuntime>::from_slice(&u_level_cols, &[u_level_cols.len()], &device)?;
 
     let r_col_ptrs_buf = get_buffer(r_col_ptrs_gpu.ptr())
         .ok_or_else(|| Error::Internal("Invalid r_col_ptrs buffer".to_string()))?;
@@ -225,7 +222,7 @@ pub fn sparse_qr_solve_wgpu(
         .ok_or_else(|| Error::Internal("Invalid r_values buffer".to_string()))?;
 
     // Find diagonal indices
-    let u_diag_gpu = Tensor::<WgpuRuntime>::try_zeros(&[n], DType::I32, &device)?;
+    let u_diag_gpu = Tensor::<WgpuRuntime>::zeros(&[n], DType::I32, &device)?;
     let u_diag_buf = get_buffer(u_diag_gpu.ptr())
         .ok_or_else(|| Error::Internal("Invalid u_diag buffer".to_string()))?;
 
@@ -403,11 +400,11 @@ pub fn sparse_qr_solve_wgpu(
     for (k, &orig_col) in factors.col_perm.iter().enumerate() {
         inv_perm[orig_col] = k as i32;
     }
-    let inv_perm_gpu = Tensor::<WgpuRuntime>::try_from_slice(&inv_perm, &[n], &device)?;
+    let inv_perm_gpu = Tensor::<WgpuRuntime>::from_slice(&inv_perm, &[n], &device)?;
     let inv_perm_buf = get_buffer(inv_perm_gpu.ptr())
         .ok_or_else(|| Error::Internal("Invalid inv_perm buffer".to_string()))?;
 
-    let result = Tensor::<WgpuRuntime>::try_zeros(&[n], dtype, &device)?;
+    let result = Tensor::<WgpuRuntime>::zeros(&[n], dtype, &device)?;
     let result_buf = get_buffer(result.ptr())
         .ok_or_else(|| Error::Internal("Invalid result buffer".to_string()))?;
 

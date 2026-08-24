@@ -163,7 +163,7 @@ impl<R: Runtime<DType = DType>> SparseTensor<R> {
     /// # use numr::sparse::SparseTensor;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let dense = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 0.0, 2.0, 0.0], &[2, 2], &device)?;
+    /// let dense = Tensor::<CpuRuntime>::from_slice(&[1.0, 0.0, 2.0, 0.0], &[2, 2], &device)?;
     /// let sparse = SparseTensor::from_dense(&client, &dense, 1e-10)?;
     /// assert_eq!(sparse.nnz(), 2);  // Only non-zero elements
     /// # }
@@ -459,7 +459,7 @@ mod tests {
         // [0, 0, 3]
         // [4, 5, 0]
         let data = vec![1.0f32, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0, 0.0];
-        let dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[3, 3], &device).unwrap();
+        let dense = Tensor::<CpuRuntime>::from_slice(&data, &[3, 3], &device).unwrap();
 
         let sparse = SparseTensor::from_dense(&client, &dense, 1e-10).unwrap();
 
@@ -486,7 +486,7 @@ mod tests {
 
         // All zeros
         let data = vec![0.0f32; 9];
-        let dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[3, 3], &device).unwrap();
+        let dense = Tensor::<CpuRuntime>::from_slice(&data, &[3, 3], &device).unwrap();
 
         let sparse = SparseTensor::from_dense(&client, &dense, 1e-10).unwrap();
 
@@ -503,7 +503,7 @@ mod tests {
         // [1.0, 0.001, 2.0]
         // [0.0, 0.0,   0.002]
         let data = vec![1.0f32, 0.001, 2.0, 0.0, 0.0, 0.002];
-        let dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
+        let dense = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device).unwrap();
 
         // With threshold 0.01, values below should be treated as zero
         let sparse = SparseTensor::from_dense(&client, &dense, 0.01).unwrap();
@@ -521,7 +521,7 @@ mod tests {
         let client = CpuClient::new(device.clone());
 
         let data = vec![0.0f32, 0.0, 0.0, 42.0];
-        let dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 2], &device).unwrap();
+        let dense = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device).unwrap();
 
         let sparse = SparseTensor::from_dense(&client, &dense, 1e-10).unwrap();
 
@@ -543,7 +543,7 @@ mod tests {
         let client = CpuClient::new(device.clone());
 
         let data = vec![1.0f64, 0.0, 2.0, 3.0];
-        let dense = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 2], &device).unwrap();
+        let dense = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device).unwrap();
 
         let sparse = SparseTensor::from_dense(&client, &dense, 1e-10).unwrap();
 

@@ -169,7 +169,7 @@ pub(crate) fn create_bin_edges(
     let edges_data = compute_bin_edges_f64(min_val, max_val, bins);
 
     // Create tensor and copy data based on dtype
-    let edges = Tensor::<CpuRuntime>::try_empty(&[bins + 1], dtype, &client.device)?;
+    let edges = Tensor::<CpuRuntime>::empty(&[bins + 1], dtype, &client.device)?;
     let edges_ptr = edges.ptr();
 
     dispatch_dtype!(dtype, T => {

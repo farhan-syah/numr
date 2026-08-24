@@ -27,11 +27,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let a = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap(),
             true,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2, 1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0], &[2, 1], &device).unwrap(),
             true,
         );
 

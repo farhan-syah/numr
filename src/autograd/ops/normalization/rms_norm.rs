@@ -176,15 +176,13 @@ mod tests {
         let device = CpuDevice::new();
 
         let input =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[1, 4], &device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[1, 4], &device).unwrap();
         let weight =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
         let eps = 1e-5f32;
 
         let grad_out =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 0.0], &[1, 4], &device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 0.0], &[1, 4], &device).unwrap();
 
         let backward = RmsNormBackward::<CpuRuntime>::new(
             input.id(),
@@ -212,10 +210,9 @@ mod tests {
         let device = CpuDevice::new();
 
         let input =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
-        let weight =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1, 3], DType::F32, &device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
+        let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1, 3], DType::F32, &device).unwrap();
 
         let backward = RmsNormBackward::<CpuRuntime>::new(
             input.id(),

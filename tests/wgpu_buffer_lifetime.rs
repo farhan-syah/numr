@@ -34,8 +34,8 @@ fn test_basic_binary_op_separate_client() {
         return;
     };
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[4.0f32, 5.0, 6.0], &[3], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[4.0f32, 5.0, 6.0], &[3], &device).unwrap();
     let c = client.sub(&b, &a).unwrap();
 
     let result: Vec<f32> = c.to_vec();
@@ -52,7 +52,7 @@ fn test_narrow_contiguous_binary_op_separate_client() {
 
     let n = 101;
     let data: Vec<f32> = (0..n).map(|i| i as f32 / (n - 1) as f32).collect();
-    let x = Tensor::<WgpuRuntime>::try_from_slice(&data, &[n], &device).unwrap();
+    let x = Tensor::<WgpuRuntime>::from_slice(&data, &[n], &device).unwrap();
 
     let x_left = x.narrow(0, 0, n - 1).unwrap().contiguous().unwrap();
     let x_right = x.narrow(0, 1, n - 1).unwrap().contiguous().unwrap();
@@ -78,8 +78,8 @@ fn test_trapezoid_chain_separate_client() {
     let x_data: Vec<f32> = (0..n).map(|i| i as f32 / (n - 1) as f32).collect();
     let y_data: Vec<f32> = x_data.iter().map(|&xi| xi * xi).collect();
 
-    let x = Tensor::<WgpuRuntime>::try_from_slice(&x_data, &[n], &device).unwrap();
-    let y = Tensor::<WgpuRuntime>::try_from_slice(&y_data, &[n], &device).unwrap();
+    let x = Tensor::<WgpuRuntime>::from_slice(&x_data, &[n], &device).unwrap();
+    let y = Tensor::<WgpuRuntime>::from_slice(&y_data, &[n], &device).unwrap();
 
     let x_left = x.narrow(0, 0, n - 1).unwrap().contiguous().unwrap();
     let x_right = x.narrow(0, 1, n - 1).unwrap().contiguous().unwrap();
@@ -114,7 +114,7 @@ fn test_narrow_contiguous_source_dropped_separate_client() {
     let data: Vec<f32> = (0..n).map(|i| i as f32).collect();
 
     let (left, right) = {
-        let x = Tensor::<WgpuRuntime>::try_from_slice(&data, &[n], &device).unwrap();
+        let x = Tensor::<WgpuRuntime>::from_slice(&data, &[n], &device).unwrap();
         let l = x.narrow(0, 0, n - 1).unwrap().contiguous().unwrap();
         let r = x.narrow(0, 1, n - 1).unwrap().contiguous().unwrap();
         (l, r)

@@ -150,15 +150,13 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let pre_norm =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device).unwrap();
         let weight =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
         let eps = 1e-5f32;
 
         let grad_out =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 0.0], &[1, 4], &device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 0.0], &[1, 4], &device).unwrap();
 
         let (d_input_residual, d_weight) = client
             .fused_add_rms_norm_bwd(&grad_out, &pre_norm, &weight, eps)
@@ -180,12 +178,11 @@ mod tests {
         let device = CpuDevice::new();
 
         let pre_norm =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
-        let weight =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
+        let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap();
 
         let grad_out =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[1, 3], &device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[1, 3], &device).unwrap();
 
         let backward = FusedAddRmsNormBackward::<CpuRuntime>::new(
             TensorId::new(),

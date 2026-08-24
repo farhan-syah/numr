@@ -25,7 +25,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         // Allocate output
@@ -76,7 +76,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -114,7 +114,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         // Allocate output
@@ -191,7 +191,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         // Allocate output
@@ -410,7 +410,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -465,7 +465,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -520,7 +520,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -563,7 +563,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -606,7 +606,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -661,7 +661,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -710,7 +710,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -753,7 +753,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -796,7 +796,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;
@@ -855,7 +855,7 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
 
         let numel: usize = shape.iter().product();
         if numel == 0 {
-            return Tensor::try_empty(shape, dtype, self.device());
+            return Tensor::empty(shape, dtype, self.device());
         }
 
         let out = alloc_output(self, shape, dtype)?;

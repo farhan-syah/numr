@@ -38,10 +38,10 @@ pub fn rsf2csf(
     // Handle trivial cases
     if n == 0 {
         return Ok(ComplexSchurDecomposition {
-            z_real: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            z_imag: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            t_real: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            t_imag: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
+            z_real: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            z_imag: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            t_real: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            t_imag: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
         });
     }
 
@@ -58,11 +58,11 @@ pub fn rsf2csf(
             z_real: unsafe {
                 WgpuClient::tensor_from_raw(z_real_guard.release(), &[1, 1], dtype, device)
             },
-            z_imag: Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32], &[1, 1], device)?,
+            z_imag: Tensor::<WgpuRuntime>::from_slice(&[0.0f32], &[1, 1], device)?,
             t_real: unsafe {
                 WgpuClient::tensor_from_raw(t_real_guard.release(), &[1, 1], dtype, device)
             },
-            t_imag: Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32], &[1, 1], device)?,
+            t_imag: Tensor::<WgpuRuntime>::from_slice(&[0.0f32], &[1, 1], device)?,
         });
     }
 
@@ -165,12 +165,12 @@ pub fn qz_decompose(
     // Handle trivial cases
     if n == 0 {
         return Ok(GeneralizedSchurDecomposition {
-            q: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            z: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            s: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            t: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            eigenvalues_real: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0], device)?,
-            eigenvalues_imag: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0], device)?,
+            q: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            z: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            s: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            t: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            eigenvalues_real: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0], device)?,
+            eigenvalues_imag: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0], device)?,
         });
     }
 
@@ -197,12 +197,12 @@ pub fn qz_decompose(
         let t_out = t_tensor.reshape(&[1, 1])?;
 
         return Ok(GeneralizedSchurDecomposition {
-            q: Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32], &[1, 1], device)?,
-            z: Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32], &[1, 1], device)?,
+            q: Tensor::<WgpuRuntime>::from_slice(&[1.0f32], &[1, 1], device)?,
+            z: Tensor::<WgpuRuntime>::from_slice(&[1.0f32], &[1, 1], device)?,
             s: s_out,
             t: t_out,
             eigenvalues_real,
-            eigenvalues_imag: Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32], &[1], device)?,
+            eigenvalues_imag: Tensor::<WgpuRuntime>::from_slice(&[0.0f32], &[1], device)?,
         });
     }
 
@@ -315,8 +315,8 @@ pub fn polar_decompose(
     // Handle trivial cases
     if n == 0 {
         return Ok(PolarDecomposition {
-            u: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            p: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
+            u: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            p: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
         });
     }
 

@@ -45,7 +45,7 @@ use super::{CscData, CsrData, SparseTensor};
 /// # let client = CpuRuntime::default_client(&device);
 /// // High-level API
 /// # let sparse_a = SparseTensor::<CpuRuntime>::from_coo_slices(&[0, 1], &[1, 0], &[1.0f32, 2.0], [2, 2], &device)?;
-/// # let dense_x = Tensor::try_from_slice(&[1.0, 2.0], &[2], &device)?;
+/// # let dense_x = Tensor::from_slice(&[1.0, 2.0], &[2], &device)?;
 /// let y = client.spmv(&sparse_a, &dense_x)?;  // y = A * x
 ///
 /// // Low-level API (format-specific)
@@ -515,8 +515,8 @@ pub trait SparseOps<R: Runtime<DType = DType>>: Sized {
     /// # use numr::sparse::{SparseOps, SparseStorage};
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// # let dense_matrix = Tensor::try_from_slice(&[1.0, 0.0, 2.0f32], &[1, 3], &device)?;
-    /// # let vector = Tensor::try_from_slice(&[1.0, 2.0, 3.0f32], &[3], &device)?;
+    /// # let dense_matrix = Tensor::from_slice(&[1.0, 0.0, 2.0f32], &[1, 3], &device)?;
+    /// # let vector = Tensor::from_slice(&[1.0, 2.0, 3.0f32], &[3], &device)?;
     /// let csr = client.dense_to_csr(&dense_matrix, 1e-15)?;
     /// let result = client.spmv_csr::<f32>(
     ///     csr.row_ptrs(), csr.col_indices(), csr.values(),

@@ -58,10 +58,10 @@ impl<R: Runtime<DType = DType>> CooData<R> {
             let values: Vec<T> = self.values.to_vec();
             let sorted_values: Vec<T> = perm.iter().map(|&i| values[i]).collect();
 
-            let row_ptrs_tensor = Tensor::try_from_slice(&row_ptrs, &[row_ptrs.len()], device)?;
+            let row_ptrs_tensor = Tensor::from_slice(&row_ptrs, &[row_ptrs.len()], device)?;
             let col_indices_tensor =
-                Tensor::try_from_slice(&sorted_cols, &[sorted_cols.len()], device)?;
-            let values_tensor = Tensor::try_from_slice(&sorted_values, &[sorted_values.len()], device)?;
+                Tensor::from_slice(&sorted_cols, &[sorted_cols.len()], device)?;
+            let values_tensor = Tensor::from_slice(&sorted_values, &[sorted_values.len()], device)?;
 
             return CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, self.shape);
         }, "COO to CSR conversion");
@@ -117,10 +117,10 @@ impl<R: Runtime<DType = DType>> CooData<R> {
             let values: Vec<T> = self.values.to_vec();
             let sorted_values: Vec<T> = perm.iter().map(|&i| values[i]).collect();
 
-            let col_ptrs_tensor = Tensor::try_from_slice(&col_ptrs, &[col_ptrs.len()], device)?;
+            let col_ptrs_tensor = Tensor::from_slice(&col_ptrs, &[col_ptrs.len()], device)?;
             let row_indices_tensor =
-                Tensor::try_from_slice(&sorted_rows, &[sorted_rows.len()], device)?;
-            let values_tensor = Tensor::try_from_slice(&sorted_values, &[sorted_values.len()], device)?;
+                Tensor::from_slice(&sorted_rows, &[sorted_rows.len()], device)?;
+            let values_tensor = Tensor::from_slice(&sorted_values, &[sorted_values.len()], device)?;
 
             return CscData::new(col_ptrs_tensor, row_indices_tensor, values_tensor, self.shape);
         }, "COO to CSC conversion");

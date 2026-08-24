@@ -41,8 +41,8 @@ pub fn mode_impl(
         let numel = a.numel();
         if numel == 0 {
             let out_shape = if keepdim { vec![1; a.ndim()] } else { vec![] };
-            let values = Tensor::<WgpuRuntime>::try_empty(&out_shape, dtype, client.device())?;
-            let counts = Tensor::<WgpuRuntime>::try_empty(&out_shape, DType::I32, client.device())?;
+            let values = Tensor::<WgpuRuntime>::empty(&out_shape, dtype, client.device())?;
+            let counts = Tensor::<WgpuRuntime>::empty(&out_shape, DType::I32, client.device())?;
             return Ok((values, counts));
         }
 
@@ -56,7 +56,7 @@ pub fn mode_impl(
 
     if ndim == 0 {
         // Scalar input: mode is itself with count 1
-        let counts = Tensor::<WgpuRuntime>::try_full_scalar(&[], DType::I32, 1.0, client.device())?;
+        let counts = Tensor::<WgpuRuntime>::full_scalar(&[], DType::I32, 1.0, client.device())?;
         return Ok((a.clone(), counts));
     }
 
@@ -65,8 +65,8 @@ pub fn mode_impl(
 
     if dim_size == 0 {
         let out_shape = reduce_dim_output_shape(shape, dim_idx, keepdim);
-        let values = Tensor::<WgpuRuntime>::try_empty(&out_shape, dtype, client.device())?;
-        let counts = Tensor::<WgpuRuntime>::try_empty(&out_shape, DType::I32, client.device())?;
+        let values = Tensor::<WgpuRuntime>::empty(&out_shape, dtype, client.device())?;
+        let counts = Tensor::<WgpuRuntime>::empty(&out_shape, DType::I32, client.device())?;
         return Ok((values, counts));
     }
 
@@ -83,8 +83,8 @@ pub fn mode_impl(
 
     // Allocate output tensors on GPU
     // Note: WGSL shader uses i32 for counts (WebGPU doesn't support i64 in storage buffers)
-    let mode_values = Tensor::<WgpuRuntime>::try_empty(&out_shape, dtype, client.device())?;
-    let mode_counts = Tensor::<WgpuRuntime>::try_empty(&out_shape, DType::I32, client.device())?;
+    let mode_values = Tensor::<WgpuRuntime>::empty(&out_shape, dtype, client.device())?;
+    let mode_counts = Tensor::<WgpuRuntime>::empty(&out_shape, DType::I32, client.device())?;
 
     // Get wgpu buffers
     let sorted_buf = get_buffer(sorted_contig.ptr())

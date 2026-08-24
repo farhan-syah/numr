@@ -69,7 +69,7 @@ impl DistanceOps<WgpuRuntime> for WgpuClient {
 
         // Handle empty tensors
         if n == 0 || m == 0 {
-            return Ok(Tensor::<WgpuRuntime>::try_empty(
+            return Ok(Tensor::<WgpuRuntime>::empty(
                 &[n, m],
                 dtype,
                 &self.device_id,
@@ -80,7 +80,7 @@ impl DistanceOps<WgpuRuntime> for WgpuClient {
         let x = x.contiguous()?;
         let y = y.contiguous()?;
 
-        let out = Tensor::<WgpuRuntime>::try_empty(&[n, m], dtype, &self.device_id)?;
+        let out = Tensor::<WgpuRuntime>::empty(&[n, m], dtype, &self.device_id)?;
 
         // Create params buffer
         let params = CdistParams {
@@ -141,7 +141,7 @@ impl DistanceOps<WgpuRuntime> for WgpuClient {
         // Ensure contiguous
         let x = x.contiguous()?;
 
-        let out = Tensor::<WgpuRuntime>::try_empty(&[out_size], dtype, &self.device_id)?;
+        let out = Tensor::<WgpuRuntime>::empty(&[out_size], dtype, &self.device_id)?;
 
         // Create params buffer
         let params = PdistParams {
@@ -187,14 +187,14 @@ impl DistanceOps<WgpuRuntime> for WgpuClient {
 
         // Handle edge cases
         if n == 0 {
-            return Ok(Tensor::<WgpuRuntime>::try_empty(
+            return Ok(Tensor::<WgpuRuntime>::empty(
                 &[0, 0],
                 dtype,
                 &self.device_id,
             )?);
         }
         if n == 1 {
-            return Ok(Tensor::<WgpuRuntime>::try_zeros(
+            return Ok(Tensor::<WgpuRuntime>::zeros(
                 &[1, 1],
                 dtype,
                 &self.device_id,
@@ -204,7 +204,7 @@ impl DistanceOps<WgpuRuntime> for WgpuClient {
         // Ensure contiguous
         let condensed = condensed.contiguous()?;
 
-        let out = Tensor::<WgpuRuntime>::try_empty(&[n, n], dtype, &self.device_id)?;
+        let out = Tensor::<WgpuRuntime>::empty(&[n, n], dtype, &self.device_id)?;
 
         // Create params buffer
         let params = SquareformParams { n: n as u32 };
@@ -246,18 +246,14 @@ impl DistanceOps<WgpuRuntime> for WgpuClient {
 
         // Handle edge cases
         if n == 0 || n == 1 {
-            return Ok(Tensor::<WgpuRuntime>::try_empty(
-                &[0],
-                dtype,
-                &self.device_id,
-            )?);
+            return Ok(Tensor::<WgpuRuntime>::empty(&[0], dtype, &self.device_id)?);
         }
 
         // Ensure contiguous
         let square = square.contiguous()?;
 
         let out_size = n * (n - 1) / 2;
-        let out = Tensor::<WgpuRuntime>::try_empty(&[out_size], dtype, &self.device_id)?;
+        let out = Tensor::<WgpuRuntime>::empty(&[out_size], dtype, &self.device_id)?;
 
         // Create params buffer
         let params = SquareformParams { n: n as u32 };

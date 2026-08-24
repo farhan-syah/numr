@@ -101,7 +101,7 @@ pub(super) fn esc_spgemm_csr(
     // ========================================================================
 
     // Allocate row_nnz array [M]
-    let row_nnz = Tensor::<WgpuRuntime>::try_zeros(&[m], DType::I32, device)?;
+    let row_nnz = Tensor::<WgpuRuntime>::zeros(&[m], DType::I32, device)?;
 
     // Allocate bitmap: M rows × ((N+31)/32) u32 words per row
     let words_per_row = (n + 31) / 32;
@@ -161,7 +161,7 @@ pub(super) fn esc_spgemm_csr(
     )?;
 
     // Build row_ptrs via exclusive scan
-    let c_row_ptrs_i32 = Tensor::<WgpuRuntime>::try_zeros(&[m + 1], DType::I32, device)?;
+    let c_row_ptrs_i32 = Tensor::<WgpuRuntime>::zeros(&[m + 1], DType::I32, device)?;
     let scan_params = ScanParams {
         n: m as u32,
         _pad0: 0,
@@ -209,9 +209,9 @@ pub(super) fn esc_spgemm_csr(
 
     // Handle empty result
     if total_nnz == 0 {
-        let c_row_ptrs = Tensor::<WgpuRuntime>::try_zeros(&[m + 1], DType::I64, device)?;
-        let c_col_indices = Tensor::<WgpuRuntime>::try_zeros(&[0], DType::I64, device)?;
-        let c_values = Tensor::<WgpuRuntime>::try_zeros(&[0], dtype, device)?;
+        let c_row_ptrs = Tensor::<WgpuRuntime>::zeros(&[m + 1], DType::I64, device)?;
+        let c_col_indices = Tensor::<WgpuRuntime>::zeros(&[0], DType::I64, device)?;
+        let c_values = Tensor::<WgpuRuntime>::zeros(&[0], dtype, device)?;
         return CsrData::new(c_row_ptrs, c_col_indices, c_values, [m, n]);
     }
 
@@ -220,9 +220,8 @@ pub(super) fn esc_spgemm_csr(
     // ========================================================================
 
     // Allocate output arrays
-    let c_col_indices =
-        Tensor::<WgpuRuntime>::try_zeros(&[total_nnz as usize], DType::I32, device)?;
-    let c_values = Tensor::<WgpuRuntime>::try_zeros(&[total_nnz as usize], dtype, device)?;
+    let c_col_indices = Tensor::<WgpuRuntime>::zeros(&[total_nnz as usize], DType::I32, device)?;
+    let c_values = Tensor::<WgpuRuntime>::zeros(&[total_nnz as usize], dtype, device)?;
 
     // Allocate dense accumulator and flags arrays [M * N]
     let elem_size = match dtype {

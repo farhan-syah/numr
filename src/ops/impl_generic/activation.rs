@@ -88,16 +88,12 @@ where
         return Ok(a.clone());
     }
     if p >= 1.0 {
-        return Ok(Tensor::<R>::try_zeros(
-            a.shape(),
-            a.dtype(),
-            client.device(),
-        )?);
+        return Ok(Tensor::<R>::zeros(a.shape(), a.dtype(), client.device())?);
     }
 
     // Generate random mask: rand > p means "keep"
     let rand_tensor = client.rand(a.shape(), a.dtype())?;
-    let threshold = Tensor::<R>::try_full_scalar(a.shape(), a.dtype(), p, client.device())?;
+    let threshold = Tensor::<R>::full_scalar(a.shape(), a.dtype(), p, client.device())?;
     let mask = client.gt(&rand_tensor, &threshold)?;
 
     // Scale kept values by 1/(1-p)
@@ -105,6 +101,6 @@ where
     let scaled = client.mul_scalar(a, scale)?;
 
     // Zero out dropped elements
-    let zeros = Tensor::<R>::try_zeros(a.shape(), a.dtype(), client.device())?;
+    let zeros = Tensor::<R>::zeros(a.shape(), a.dtype(), client.device())?;
     client.where_cond(&mask, &scaled, &zeros)
 }

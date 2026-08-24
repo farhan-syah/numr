@@ -55,14 +55,14 @@ where
         // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let zeros =
-            Tensor::<R>::try_zeros(&self.input_shape, grad_output.dtype(), grad_output.device())?;
+            Tensor::<R>::zeros(&self.input_shape, grad_output.dtype(), grad_output.device())?;
         let grad_input = client.scatter(&zeros, self.dim, &self.index, grad_output)?;
         Ok(vec![Some(grad_input)])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
         let client = R::default_client(grad_output.tensor().device());
-        let zeros = Tensor::<R>::try_zeros(
+        let zeros = Tensor::<R>::zeros(
             &self.input_shape,
             grad_output.tensor().dtype(),
             grad_output.tensor().device(),
@@ -138,7 +138,7 @@ impl<R: Runtime<DType = DType>> EmbeddingLookupBackward<R> {
         }
 
         let client = R::default_client(grad_output.device());
-        let zeros = Tensor::<R>::try_zeros(
+        let zeros = Tensor::<R>::zeros(
             &self.weight_shape,
             grad_output.dtype(),
             grad_output.device(),

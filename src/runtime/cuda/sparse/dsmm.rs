@@ -41,7 +41,7 @@ pub(super) fn column_parallel_dsmm(
     let a_contig = dense_a.contiguous()?;
 
     // Allocate output C [M, N]
-    let output = Tensor::<CudaRuntime>::try_zeros(&[m, n], dtype, device)?;
+    let output = Tensor::<CudaRuntime>::zeros(&[m, n], dtype, device)?;
 
     // Get raw pointers
     let a_ptr = a_contig.ptr();

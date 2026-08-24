@@ -268,7 +268,7 @@ where
     let std_cubed = client.mul(&std_sq, &std_val)?;
 
     // skew = m3 / std^3 (with epsilon to avoid division by zero)
-    let epsilon = crate::tensor::Tensor::<R>::try_full_scalar(
+    let epsilon = crate::tensor::Tensor::<R>::full_scalar(
         std_cubed.shape(),
         dtype,
         DIVISION_EPSILON,
@@ -317,7 +317,7 @@ where
     let std_fourth = client.mul(&std_sq, &std_sq)?;
 
     // kurtosis = m4 / std^4 - 3 (with epsilon to avoid division by zero)
-    let epsilon = crate::tensor::Tensor::<R>::try_full_scalar(
+    let epsilon = crate::tensor::Tensor::<R>::full_scalar(
         std_fourth.shape(),
         dtype,
         DIVISION_EPSILON,
@@ -327,7 +327,7 @@ where
 
     let ratio = client.div(&m4, &std_fourth_safe)?;
     let three =
-        crate::tensor::Tensor::<R>::try_full_scalar(ratio.shape(), dtype, 3.0, client.device())?;
+        crate::tensor::Tensor::<R>::full_scalar(ratio.shape(), dtype, 3.0, client.device())?;
     client.sub(&ratio, &three)
 }
 

@@ -53,7 +53,7 @@ macro_rules! unary_reaches_leaf_after_upstream_op_test {
             let device = CpuDevice::new();
             let client = CpuRuntime::default_client(&device);
             let x = Var::new(
-                Tensor::<CpuRuntime>::try_from_slice(&INPUTS, &[INPUTS.len()], &device).unwrap(),
+                Tensor::<CpuRuntime>::from_slice(&INPUTS, &[INPUTS.len()], &device).unwrap(),
                 true,
             );
 
@@ -140,7 +140,7 @@ fn cast_backward_reaches_leaf_after_upstream_op() -> Result<()> {
     let client = CpuRuntime::default_client(&device);
     let inputs = INPUTS.map(|x| x as f32);
     let x = Var::new(
-        Tensor::<CpuRuntime>::try_from_slice(&inputs, &[inputs.len()], &device).unwrap(),
+        Tensor::<CpuRuntime>::from_slice(&inputs, &[inputs.len()], &device).unwrap(),
         true,
     );
 

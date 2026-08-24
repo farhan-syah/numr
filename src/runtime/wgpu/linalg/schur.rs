@@ -29,8 +29,8 @@ pub fn schur_decompose(
     // Handle trivial cases
     if n == 0 {
         return Ok(SchurDecomposition {
-            z: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            t: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
+            z: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            t: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
         });
     }
 
@@ -41,7 +41,7 @@ pub fn schur_decompose(
         let t_ptr = t_guard.ptr();
         WgpuRuntime::copy_within_device(a.ptr(), t_ptr, elem, device)?;
         let t = unsafe { WgpuClient::tensor_from_raw(t_guard.release(), &[1, 1], dtype, device) };
-        let z = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32], &[1, 1], device)?;
+        let z = Tensor::<WgpuRuntime>::from_slice(&[1.0f32], &[1, 1], device)?;
         return Ok(SchurDecomposition { z, t });
     }
 

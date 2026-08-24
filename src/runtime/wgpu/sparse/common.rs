@@ -225,16 +225,16 @@ pub fn split_lu_wgpu(
     let col_indices_i32: Vec<i32> = col_indices.iter().map(|&x| x as i32).collect();
 
     let row_ptrs_gpu =
-        Tensor::<WgpuRuntime>::try_from_slice(&row_ptrs_i32, &[n + 1], &client.device_id)?;
-    let col_indices_gpu = Tensor::<WgpuRuntime>::try_from_slice(
+        Tensor::<WgpuRuntime>::from_slice(&row_ptrs_i32, &[n + 1], &client.device_id)?;
+    let col_indices_gpu = Tensor::<WgpuRuntime>::from_slice(
         &col_indices_i32,
         &[col_indices.len()],
         &client.device_id,
     )?;
 
     // Step 1: Count L and U non-zeros per row on GPU
-    let l_counts_gpu = Tensor::<WgpuRuntime>::try_zeros(&[n], DType::I32, device)?;
-    let u_counts_gpu = Tensor::<WgpuRuntime>::try_zeros(&[n], DType::I32, device)?;
+    let l_counts_gpu = Tensor::<WgpuRuntime>::zeros(&[n], DType::I32, device)?;
+    let u_counts_gpu = Tensor::<WgpuRuntime>::zeros(&[n], DType::I32, device)?;
 
     let row_ptrs_buf = get_tensor_buffer(&row_ptrs_gpu)?;
     let col_indices_buf = get_tensor_buffer(&col_indices_gpu)?;
@@ -259,7 +259,7 @@ pub fn split_lu_wgpu(
 
     // Step 2: Compute prefix sum to get row_ptrs
     // Prepend zero on GPU using concat
-    let zero_i32 = Tensor::<WgpuRuntime>::try_zeros(&[1], DType::I32, device)?;
+    let zero_i32 = Tensor::<WgpuRuntime>::zeros(&[1], DType::I32, device)?;
     let l_counts_with_zero = client.cat(&[&zero_i32, &l_counts_gpu], 0)?;
     let u_counts_with_zero = client.cat(&[&zero_i32, &u_counts_gpu], 0)?;
 
@@ -278,10 +278,10 @@ pub fn split_lu_wgpu(
     };
 
     // Step 3: Allocate output buffers
-    let l_col_indices_gpu = Tensor::<WgpuRuntime>::try_zeros(&[l_nnz], DType::I32, device)?;
-    let l_values_gpu = Tensor::<WgpuRuntime>::try_zeros(&[l_nnz], dtype, device)?;
-    let u_col_indices_gpu = Tensor::<WgpuRuntime>::try_zeros(&[u_nnz], DType::I32, device)?;
-    let u_values_gpu = Tensor::<WgpuRuntime>::try_zeros(&[u_nnz], dtype, device)?;
+    let l_col_indices_gpu = Tensor::<WgpuRuntime>::zeros(&[l_nnz], DType::I32, device)?;
+    let l_values_gpu = Tensor::<WgpuRuntime>::zeros(&[l_nnz], dtype, device)?;
+    let u_col_indices_gpu = Tensor::<WgpuRuntime>::zeros(&[u_nnz], DType::I32, device)?;
+    let u_values_gpu = Tensor::<WgpuRuntime>::zeros(&[u_nnz], dtype, device)?;
 
     // Step 4: Scatter values into L and U on GPU
     let values_buf = get_tensor_buffer(values_gpu)?;
@@ -339,12 +339,10 @@ pub fn split_lu_wgpu(
     let l_col_indices_i64: Vec<i64> = l_col_indices_i32_vec.iter().map(|&x| x as i64).collect();
     let u_col_indices_i64: Vec<i64> = u_col_indices_i32_vec.iter().map(|&x| x as i64).collect();
 
-    let l_row_ptrs_t = Tensor::<WgpuRuntime>::try_from_slice(&l_row_ptrs_i64, &[n + 1], device)?;
-    let l_col_indices_t =
-        Tensor::<WgpuRuntime>::try_from_slice(&l_col_indices_i64, &[l_nnz], device)?;
-    let u_row_ptrs_t = Tensor::<WgpuRuntime>::try_from_slice(&u_row_ptrs_i64, &[n + 1], device)?;
-    let u_col_indices_t =
-        Tensor::<WgpuRuntime>::try_from_slice(&u_col_indices_i64, &[u_nnz], device)?;
+    let l_row_ptrs_t = Tensor::<WgpuRuntime>::from_slice(&l_row_ptrs_i64, &[n + 1], device)?;
+    let l_col_indices_t = Tensor::<WgpuRuntime>::from_slice(&l_col_indices_i64, &[l_nnz], device)?;
+    let u_row_ptrs_t = Tensor::<WgpuRuntime>::from_slice(&u_row_ptrs_i64, &[n + 1], device)?;
+    let u_col_indices_t = Tensor::<WgpuRuntime>::from_slice(&u_col_indices_i64, &[u_nnz], device)?;
 
     let l = CsrData::new(l_row_ptrs_t, l_col_indices_t, l_values_gpu, [n, n])?;
     let u = CsrData::new(u_row_ptrs_t, u_col_indices_t, u_values_gpu, [n, n])?;
@@ -380,15 +378,15 @@ pub fn extract_lower_wgpu(
     let col_indices_i32: Vec<i32> = col_indices.iter().map(|&x| x as i32).collect();
 
     let row_ptrs_gpu =
-        Tensor::<WgpuRuntime>::try_from_slice(&row_ptrs_i32, &[n + 1], &client.device_id)?;
-    let col_indices_gpu = Tensor::<WgpuRuntime>::try_from_slice(
+        Tensor::<WgpuRuntime>::from_slice(&row_ptrs_i32, &[n + 1], &client.device_id)?;
+    let col_indices_gpu = Tensor::<WgpuRuntime>::from_slice(
         &col_indices_i32,
         &[col_indices.len()],
         &client.device_id,
     )?;
 
     // Step 1: Count lower triangle non-zeros per row on GPU
-    let l_counts_gpu = Tensor::<WgpuRuntime>::try_zeros(&[n], DType::I32, device)?;
+    let l_counts_gpu = Tensor::<WgpuRuntime>::zeros(&[n], DType::I32, device)?;
 
     let row_ptrs_buf = get_tensor_buffer(&row_ptrs_gpu)?;
     let col_indices_buf = get_tensor_buffer(&col_indices_gpu)?;
@@ -411,7 +409,7 @@ pub fn extract_lower_wgpu(
 
     // Step 2: Compute prefix sum to get row_ptrs
     // Prepend zero on GPU using concat
-    let zero_i32 = Tensor::<WgpuRuntime>::try_zeros(&[1], DType::I32, device)?;
+    let zero_i32 = Tensor::<WgpuRuntime>::zeros(&[1], DType::I32, device)?;
     let l_counts_with_zero = client.cat(&[&zero_i32, &l_counts_gpu], 0)?;
 
     let l_row_ptrs_i32 = client.cumsum(&l_counts_with_zero, 0)?;
@@ -424,8 +422,8 @@ pub fn extract_lower_wgpu(
     };
 
     // Step 3: Allocate output buffers
-    let l_col_indices_gpu = Tensor::<WgpuRuntime>::try_zeros(&[l_nnz], DType::I32, device)?;
-    let l_values_gpu = Tensor::<WgpuRuntime>::try_zeros(&[l_nnz], dtype, device)?;
+    let l_col_indices_gpu = Tensor::<WgpuRuntime>::zeros(&[l_nnz], DType::I32, device)?;
+    let l_values_gpu = Tensor::<WgpuRuntime>::zeros(&[l_nnz], dtype, device)?;
 
     // Step 4: Scatter values into L on GPU
     let values_buf = get_tensor_buffer(values_gpu)?;
@@ -462,9 +460,8 @@ pub fn extract_lower_wgpu(
     let l_row_ptrs_i64: Vec<i64> = l_row_ptrs_i32_vec.iter().map(|&x| x as i64).collect();
     let l_col_indices_i64: Vec<i64> = l_col_indices_i32_vec.iter().map(|&x| x as i64).collect();
 
-    let l_row_ptrs_t = Tensor::<WgpuRuntime>::try_from_slice(&l_row_ptrs_i64, &[n + 1], device)?;
-    let l_col_indices_t =
-        Tensor::<WgpuRuntime>::try_from_slice(&l_col_indices_i64, &[l_nnz], device)?;
+    let l_row_ptrs_t = Tensor::<WgpuRuntime>::from_slice(&l_row_ptrs_i64, &[n + 1], device)?;
+    let l_col_indices_t = Tensor::<WgpuRuntime>::from_slice(&l_col_indices_i64, &[l_nnz], device)?;
 
     let l = CsrData::new(l_row_ptrs_t, l_col_indices_t, l_values_gpu, [n, n])?;
 
@@ -492,7 +489,7 @@ pub fn cast_i64_to_i32_gpu(
     let device = client.device();
 
     // Allocate output i32 tensor
-    let tensor_i32 = Tensor::<WgpuRuntime>::try_zeros(&[n], DType::I32, device)?;
+    let tensor_i32 = Tensor::<WgpuRuntime>::zeros(&[n], DType::I32, device)?;
 
     // Launch GPU-native cast kernel
     let input_buf = get_tensor_buffer(tensor_i64)?;

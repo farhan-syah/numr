@@ -45,14 +45,11 @@ mod tests {
     fn test_dual_matmul() {
         let (device, client) = setup();
 
-        let a_primal =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
-        let a_tangent =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[1, 2], &device).unwrap();
+        let a_primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
+        let a_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[1, 2], &device).unwrap();
         let a = DualTensor::with_tangent(a_primal, a_tangent);
 
-        let b_primal =
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2, 1], &device).unwrap();
+        let b_primal = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0], &[2, 1], &device).unwrap();
         let b = DualTensor::constant(b_primal);
 
         let c = dual_matmul(&a, &b, &client).unwrap();

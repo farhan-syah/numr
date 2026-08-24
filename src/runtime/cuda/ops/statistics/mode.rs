@@ -44,8 +44,8 @@ pub fn mode_impl(
         let numel = a.numel();
         if numel == 0 {
             let out_shape = if keepdim { vec![1; a.ndim()] } else { vec![] };
-            let values = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
-            let counts = Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
+            let values = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+            let counts = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device)?;
             return Ok((values, counts));
         }
 
@@ -59,7 +59,7 @@ pub fn mode_impl(
 
     if ndim == 0 {
         // Scalar input: mode is itself with count 1
-        let counts = Tensor::<CudaRuntime>::try_full_scalar(&[], DType::I64, 1.0, &client.device)?;
+        let counts = Tensor::<CudaRuntime>::full_scalar(&[], DType::I64, 1.0, &client.device)?;
         return Ok((a.clone(), counts));
     }
 
@@ -68,8 +68,8 @@ pub fn mode_impl(
 
     if dim_size == 0 {
         let out_shape = reduce_dim_output_shape(shape, dim_idx, keepdim);
-        let values = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
-        let counts = Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
+        let values = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+        let counts = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device)?;
         return Ok((values, counts));
     }
 
@@ -84,8 +84,8 @@ pub fn mode_impl(
     let sorted_contig = ensure_contiguous(&sorted)?;
 
     // Allocate output tensors on GPU
-    let mode_values = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
-    let mode_counts = Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
+    let mode_values = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+    let mode_counts = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device)?;
 
     // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
     // would still make the kernel write one element past the empty allocations.

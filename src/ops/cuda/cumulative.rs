@@ -30,7 +30,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
 
         // Handle empty tensor
         if a.numel() == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(
+            return Ok(Tensor::<CudaRuntime>::empty(
                 shape,
                 a.dtype(),
                 &self.device,
@@ -46,7 +46,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         let inner_size: usize = shape[dim + 1..].iter().product();
 
         // Allocate output
-        let out = Tensor::<CudaRuntime>::try_empty(shape, a.dtype(), &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(shape, a.dtype(), &self.device)?;
 
         // Choose kernel based on dimension position
         if inner_size == 1 {
@@ -104,7 +104,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
 
         // Handle empty tensor
         if a.numel() == 0 {
-            return Ok(Tensor::<CudaRuntime>::try_empty(
+            return Ok(Tensor::<CudaRuntime>::empty(
                 shape,
                 a.dtype(),
                 &self.device,
@@ -120,7 +120,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         let inner_size: usize = shape[dim + 1..].iter().product();
 
         // Allocate output
-        let out = Tensor::<CudaRuntime>::try_empty(shape, a.dtype(), &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(shape, a.dtype(), &self.device)?;
 
         // Choose kernel based on dimension position
         if inner_size == 1 {
@@ -206,8 +206,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         // Handle empty tensor
         if a_compute.numel() == 0 {
             let out_shape = reduce_output_shape(shape, &actual_dims, keepdim);
-            let out =
-                Tensor::<CudaRuntime>::try_empty(&out_shape, a_compute.dtype(), &self.device)?;
+            let out = Tensor::<CudaRuntime>::empty(&out_shape, a_compute.dtype(), &self.device)?;
             // Cast back to original dtype if needed
             return if needs_cast {
                 Ok(self.cast(&out, input_dtype)?)
@@ -253,7 +252,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
 
         // Allocate output (in F32 if upcast, else in original dtype)
         let compute_dtype = a_compute.dtype();
-        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, compute_dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&out_shape, compute_dtype, &self.device)?;
 
         // Choose kernel based on dimension position
         if inner_size == 1 {

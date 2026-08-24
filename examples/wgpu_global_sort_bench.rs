@@ -21,7 +21,7 @@ fn main() -> numr::error::Result<()> {
         let data: Vec<u32> = (0..size as u32)
             .map(|index| index.wrapping_mul(747_796_405).wrapping_add(2_891_336_453))
             .collect();
-        let input = Tensor::try_from_slice(&data, &[size], &device)?;
+        let input = Tensor::from_slice(&data, &[size], &device)?;
 
         let validation: Vec<u32> = client.sort(&input, 0, false)?.to_vec();
         assert!(validation.windows(2).all(|pair| pair[0] <= pair[1]));

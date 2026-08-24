@@ -38,7 +38,7 @@ fn test_var_embedding_lookup_backward_parity() {
             .expect("CPU tensor_from_f64 failed"),
         true,
     );
-    let cpu_idx = Tensor::try_from_slice(&TOKEN_IDS, &[4], &cpu_device).unwrap();
+    let cpu_idx = Tensor::from_slice(&TOKEN_IDS, &[4], &cpu_device).unwrap();
     let cpu_out =
         var_embedding_lookup(&cpu_weight, &cpu_idx, &cpu_client).expect("CPU forward failed");
     let cpu_loss = var_sum(&cpu_out, &[0, 1], false, &cpu_client).expect("CPU sum failed");
@@ -62,7 +62,7 @@ fn test_var_embedding_lookup_backward_parity() {
                 tensor_from_f64(&data, &[4, 3], dtype, &device, &client).unwrap(),
                 true,
             );
-            let idx = Tensor::try_from_slice(&TOKEN_IDS, &[4], &device).unwrap();
+            let idx = Tensor::from_slice(&TOKEN_IDS, &[4], &device).unwrap();
             let out = var_embedding_lookup(&weight, &idx, &client).expect("CUDA forward failed");
             let loss = var_sum(&out, &[0, 1], false, &client).expect("CUDA sum failed");
             let grads = backward(&loss, &client).expect("CUDA backward failed");
@@ -87,7 +87,7 @@ fn test_var_embedding_lookup_backward_parity() {
                 tensor_from_f64(&data, &[4, 3], dtype, &device, &client).unwrap(),
                 true,
             );
-            let idx = Tensor::try_from_slice(&TOKEN_IDS, &[4], &device).unwrap();
+            let idx = Tensor::from_slice(&TOKEN_IDS, &[4], &device).unwrap();
             let out = var_embedding_lookup(&weight, &idx, &client).expect("WGPU forward failed");
             let loss = var_sum(&out, &[0, 1], false, &client).expect("WGPU sum failed");
             let grads = backward(&loss, &client).expect("WGPU backward failed");

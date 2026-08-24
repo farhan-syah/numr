@@ -92,8 +92,7 @@ fn test_svd_2x2() {
     let (client, device) = create_client();
 
     // Simple 2x2 matrix
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 1.0, 1.0, 3.0], &[2, 2], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 1.0, 1.0, 3.0], &[2, 2], &device).unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -140,9 +139,8 @@ fn test_svd_3x2_tall() {
     let (client, device) = create_client();
 
     // 3x2 matrix (m > n)
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
-            .unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+        .unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -179,9 +177,8 @@ fn test_svd_2x3_wide() {
     let (client, device) = create_client();
 
     // 2x3 matrix (m < n)
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
-            .unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+        .unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -215,7 +212,7 @@ fn test_svd_identity() {
     let (client, device) = create_client();
 
     // 3x3 identity matrix
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         &[3, 3],
         &device,
@@ -255,7 +252,7 @@ fn test_svd_diagonal() {
     let (client, device) = create_client();
 
     // Diagonal matrix with known singular values
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[5.0f32, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0],
         &[3, 3],
         &device,
@@ -279,9 +276,8 @@ fn test_svd_rank_deficient() {
 
     // Rank-1 matrix: outer product of [1, 2, 3] and [1, 2]
     // A = [[1, 2], [2, 4], [3, 6]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2], &device)
-            .unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 4.0, 3.0, 6.0], &[3, 2], &device)
+        .unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -312,8 +308,7 @@ fn test_svd_f64() {
     let (client, device) = create_client();
 
     // 2x2 matrix with F64
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[3.0f64, 1.0, 1.0, 3.0], &[2, 2], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[3.0f64, 1.0, 1.0, 3.0], &[2, 2], &device).unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -356,7 +351,7 @@ fn test_svd_single_element() {
     let (client, device) = create_client();
 
     // 1x1 matrix
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32], &[1, 1], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[5.0f32], &[1, 1], &device).unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -373,7 +368,7 @@ fn test_svd_single_row() {
     let (client, device) = create_client();
 
     // 1x3 matrix (single row)
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -398,7 +393,7 @@ fn test_svd_single_column() {
     let (client, device) = create_client();
 
     // 3x1 matrix (single column)
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -424,7 +419,7 @@ fn test_svd_larger_matrix() {
 
     // 5x4 matrix with random-ish values
     let data: Vec<f32> = (0..20).map(|i| (i as f32 + 1.0) * 0.1).collect();
-    let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[5, 4], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&data, &[5, 4], &device).unwrap();
 
     let svd = client.svd_decompose(&a).unwrap();
 
@@ -460,7 +455,7 @@ fn test_svd_u_orthogonality() {
     let (client, device) = create_client();
 
     // 4x3 matrix
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[
             1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
         ],
@@ -485,7 +480,7 @@ fn test_svd_v_orthogonality() {
     let (client, device) = create_client();
 
     // 3x4 matrix
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[
             1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
         ],

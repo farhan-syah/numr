@@ -26,7 +26,7 @@ pub fn sort_impl(
     let dim_idx = normalize_dim(dim, ndim)?;
     let (outer_size, sort_size, inner_size) = compute_reduce_strides(shape, dim_idx);
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let out_ptr = out.ptr();
@@ -59,15 +59,15 @@ pub fn sort_with_indices_impl(
     let ndim = shape.len();
 
     if ndim == 0 {
-        let indices = Tensor::<CpuRuntime>::try_zeros(shape, DType::I64, &client.device)?;
+        let indices = Tensor::<CpuRuntime>::zeros(shape, DType::I64, &client.device)?;
         return Ok((a.clone(), indices));
     }
 
     let dim_idx = normalize_dim(dim, ndim)?;
     let (outer_size, sort_size, inner_size) = compute_reduce_strides(shape, dim_idx);
     let a_contig = ensure_contiguous(a)?;
-    let out_values = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
-    let out_indices = Tensor::<CpuRuntime>::try_empty(shape, DType::I64, &client.device)?;
+    let out_values = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device)?;
+    let out_indices = Tensor::<CpuRuntime>::empty(shape, DType::I64, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let values_ptr = out_values.ptr();
@@ -102,13 +102,13 @@ pub fn argsort_impl(
     let ndim = shape.len();
 
     if ndim == 0 {
-        return Tensor::<CpuRuntime>::try_zeros(shape, DType::I64, &client.device);
+        return Tensor::<CpuRuntime>::zeros(shape, DType::I64, &client.device);
     }
 
     let dim_idx = normalize_dim(dim, ndim)?;
     let (outer_size, sort_size, inner_size) = compute_reduce_strides(shape, dim_idx);
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CpuRuntime>::try_empty(shape, DType::I64, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(shape, DType::I64, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let out_ptr = out.ptr();
@@ -149,7 +149,7 @@ pub fn topk_impl(
                 reason: "k cannot be greater than 1 for scalar tensors".to_string(),
             });
         }
-        let indices = Tensor::<CpuRuntime>::try_zeros(shape, DType::I64, &client.device)?;
+        let indices = Tensor::<CpuRuntime>::zeros(shape, DType::I64, &client.device)?;
         return Ok((a.clone(), indices));
     }
 
@@ -168,8 +168,8 @@ pub fn topk_impl(
     if k == 0 {
         let mut out_shape = shape.to_vec();
         out_shape[dim_idx] = 0;
-        let out_values = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
-        let out_indices = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
+        let out_values = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
+        let out_indices = Tensor::<CpuRuntime>::empty(&out_shape, DType::I64, &client.device)?;
         return Ok((out_values, out_indices));
     }
 
@@ -179,8 +179,8 @@ pub fn topk_impl(
     let mut out_shape = shape.to_vec();
     out_shape[dim_idx] = k;
 
-    let out_values = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
-    let out_indices = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
+    let out_values = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
+    let out_indices = Tensor::<CpuRuntime>::empty(&out_shape, DType::I64, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let values_ptr = out_values.ptr();
@@ -215,7 +215,7 @@ pub fn unique_impl(
     let numel = a.numel();
 
     if numel == 0 {
-        return Tensor::<CpuRuntime>::try_empty(&[0], dtype, &client.device);
+        return Tensor::<CpuRuntime>::empty(&[0], dtype, &client.device);
     }
 
     let a_flat = a.reshape(&[numel])?;
@@ -231,7 +231,7 @@ pub fn unique_impl(
     }, "unique_count");
 
     // Extract unique
-    let out = Tensor::<CpuRuntime>::try_empty(&[unique_count], dtype, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(&[unique_count], dtype, &client.device)?;
     let out_ptr = out.ptr();
 
     dispatch_dtype!(dtype, T => {
@@ -257,9 +257,9 @@ pub fn unique_with_counts_impl(
     let numel = a.numel();
 
     if numel == 0 {
-        let unique = Tensor::<CpuRuntime>::try_empty(&[0], dtype, &client.device)?;
-        let inverse = Tensor::<CpuRuntime>::try_empty(&[0], DType::I64, &client.device)?;
-        let counts = Tensor::<CpuRuntime>::try_empty(&[0], DType::I64, &client.device)?;
+        let unique = Tensor::<CpuRuntime>::empty(&[0], dtype, &client.device)?;
+        let inverse = Tensor::<CpuRuntime>::empty(&[0], DType::I64, &client.device)?;
+        let counts = Tensor::<CpuRuntime>::empty(&[0], DType::I64, &client.device)?;
         return Ok((unique, inverse, counts));
     }
 
@@ -279,9 +279,9 @@ pub fn unique_with_counts_impl(
     }, "unique_count");
 
     // Extract all
-    let out_unique = Tensor::<CpuRuntime>::try_empty(&[unique_count], dtype, &client.device)?;
-    let out_inverse = Tensor::<CpuRuntime>::try_empty(&[numel], DType::I64, &client.device)?;
-    let out_counts = Tensor::<CpuRuntime>::try_empty(&[unique_count], DType::I64, &client.device)?;
+    let out_unique = Tensor::<CpuRuntime>::empty(&[unique_count], dtype, &client.device)?;
+    let out_inverse = Tensor::<CpuRuntime>::empty(&[numel], DType::I64, &client.device)?;
+    let out_counts = Tensor::<CpuRuntime>::empty(&[unique_count], DType::I64, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let sort_indices_ptr = sort_indices.ptr();
@@ -315,7 +315,7 @@ pub fn nonzero_impl(client: &CpuClient, a: &Tensor<CpuRuntime>) -> Result<Tensor
     let numel = a.numel();
 
     if numel == 0 {
-        return Tensor::<CpuRuntime>::try_empty(&[0, ndim], DType::I64, &client.device);
+        return Tensor::<CpuRuntime>::empty(&[0, ndim], DType::I64, &client.device);
     }
 
     let a_contig = ensure_contiguous(a)?;
@@ -327,15 +327,15 @@ pub fn nonzero_impl(client: &CpuClient, a: &Tensor<CpuRuntime>) -> Result<Tensor
     }, "nonzero_count");
 
     if nnz == 0 {
-        return Tensor::<CpuRuntime>::try_empty(&[0, ndim], DType::I64, &client.device);
+        return Tensor::<CpuRuntime>::empty(&[0, ndim], DType::I64, &client.device);
     }
 
     if ndim == 0 {
-        return Tensor::<CpuRuntime>::try_empty(&[1, 0], DType::I64, &client.device);
+        return Tensor::<CpuRuntime>::empty(&[1, 0], DType::I64, &client.device);
     }
 
     // Get flat indices
-    let flat_indices = Tensor::<CpuRuntime>::try_empty(&[nnz], DType::I64, &client.device)?;
+    let flat_indices = Tensor::<CpuRuntime>::empty(&[nnz], DType::I64, &client.device)?;
     let flat_ptr = flat_indices.ptr() as *mut i64;
 
     dispatch_dtype!(dtype, T => {
@@ -343,7 +343,7 @@ pub fn nonzero_impl(client: &CpuClient, a: &Tensor<CpuRuntime>) -> Result<Tensor
     }, "nonzero_flat");
 
     // Convert to multi-index
-    let out = Tensor::<CpuRuntime>::try_empty(&[nnz, ndim], DType::I64, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(&[nnz, ndim], DType::I64, &client.device)?;
     let out_ptr = out.ptr() as *mut i64;
 
     unsafe {
@@ -379,12 +379,12 @@ pub fn searchsorted_impl(
     let num_values = values.numel();
 
     if num_values == 0 {
-        return Tensor::<CpuRuntime>::try_empty(values.shape(), DType::I64, &client.device);
+        return Tensor::<CpuRuntime>::empty(values.shape(), DType::I64, &client.device);
     }
 
     let seq_contig = ensure_contiguous(sorted_sequence)?;
     let values_contig = ensure_contiguous(values)?;
-    let out = Tensor::<CpuRuntime>::try_empty(values.shape(), DType::I64, &client.device)?;
+    let out = Tensor::<CpuRuntime>::empty(values.shape(), DType::I64, &client.device)?;
 
     let seq_ptr = seq_contig.ptr();
     let values_ptr = values_contig.ptr();

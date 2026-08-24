@@ -35,9 +35,9 @@ impl Sparse24Ops<CudaRuntime> for CudaClient {
         let half_k = k / 2;
         let mc = meta_cols_for_k(k);
 
-        let compressed = Tensor::<CudaRuntime>::try_empty(&[m, half_k], dtype, &self.device)?;
+        let compressed = Tensor::<CudaRuntime>::empty(&[m, half_k], dtype, &self.device)?;
         // Metadata must be zeroed before kernel's atomic OR operations
-        let metadata = Tensor::<CudaRuntime>::try_zeros(&[m, mc], DType::U32, &self.device)?;
+        let metadata = Tensor::<CudaRuntime>::zeros(&[m, mc], DType::U32, &self.device)?;
 
         unsafe {
             launch_sparse_24_prune(
@@ -63,7 +63,7 @@ impl Sparse24Ops<CudaRuntime> for CudaClient {
         let [m, k] = sparse.shape();
         let dtype = sparse.dtype();
 
-        let dense = Tensor::<CudaRuntime>::try_empty(&[m, k], dtype, &self.device)?;
+        let dense = Tensor::<CudaRuntime>::empty(&[m, k], dtype, &self.device)?;
 
         let vals = ensure_contiguous(sparse.compressed_values())?;
         let meta = ensure_contiguous(sparse.metadata())?;
@@ -113,7 +113,7 @@ impl Sparse24Ops<CudaRuntime> for CudaClient {
         let vals = ensure_contiguous(weight.compressed_values())?;
         let meta = ensure_contiguous(weight.metadata())?;
 
-        let output = Tensor::<CudaRuntime>::try_empty(&[n, m], dtype, &self.device)?;
+        let output = Tensor::<CudaRuntime>::empty(&[n, m], dtype, &self.device)?;
 
         unsafe {
             launch_sparse_24_matmul(

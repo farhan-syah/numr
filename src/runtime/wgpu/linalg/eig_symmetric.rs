@@ -28,8 +28,8 @@ pub fn eig_decompose_symmetric(
 
     // Edge cases
     if n == 0 {
-        let eigenvalues = Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0], device)?;
-        let eigenvectors = Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?;
+        let eigenvalues = Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0], device)?;
+        let eigenvectors = Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?;
         return Ok(EigenDecomposition {
             eigenvalues,
             eigenvectors,
@@ -44,7 +44,7 @@ pub fn eig_decompose_symmetric(
         WgpuRuntime::copy_within_device(a.ptr(), eval_ptr, elem, device)?;
         let eigenvalues =
             unsafe { WgpuClient::tensor_from_raw(eval_guard.release(), &[1], dtype, device) };
-        let eigenvectors = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32], &[1, 1], device)?;
+        let eigenvectors = Tensor::<WgpuRuntime>::from_slice(&[1.0f32], &[1, 1], device)?;
         return Ok(EigenDecomposition {
             eigenvalues,
             eigenvectors,

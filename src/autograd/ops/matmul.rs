@@ -185,13 +185,13 @@ mod tests {
         let device = CpuDevice::new();
 
         // A: [2, 3], B: [3, 4], C: [2, 4]
-        let a = Tensor::<CpuRuntime>::try_from_slice(
+        let a = Tensor::<CpuRuntime>::from_slice(
             &[1.5f32, -2.25, 0.75, 3.0, -0.5, 4.25],
             &[2, 3],
             &device,
         )
         .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
+        let b = Tensor::<CpuRuntime>::from_slice(
             &[
                 0.5f32, 1.25, -2.0, 3.5, -1.75, 0.25, 2.75, -0.125, 4.0, -3.25, 1.0, 0.625,
             ],
@@ -199,7 +199,7 @@ mod tests {
             &device,
         )
         .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_from_slice(
+        let grad_out = Tensor::<CpuRuntime>::from_slice(
             &[1.0f32, -2.0, 0.5, 3.25, -1.5, 2.5, -0.75, 0.125],
             &[2, 4],
             &device,
@@ -228,11 +228,11 @@ mod tests {
     fn test_matmul_backward_skips_unneeded_activation() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device)
-            .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 2], DType::F32, &device).unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F32, &device).unwrap();
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
@@ -252,11 +252,11 @@ mod tests {
     fn test_matmul_backward_all_false_produces_nothing() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device)
-            .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 2], DType::F32, &device).unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F32, &device).unwrap();
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
@@ -273,13 +273,13 @@ mod tests {
         // A = [[1, 2], [3, 4]] (2x2)
         // B = [[5, 6], [7, 8]] (2x2)
         // C = A @ B = [[19, 22], [43, 50]]
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
-            .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device)
-            .unwrap();
+        let a =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device).unwrap();
 
         // Assume dL/dC = [[1, 1], [1, 1]] (ones)
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 2], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F32, &device).unwrap();
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
@@ -305,13 +305,11 @@ mod tests {
         // A = [[1, 2, 3]] (1x3)
         // B = [[4], [5], [6]] (3x1)
         // C = A @ B = [[32]] (1x1)
-        let a =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
-        let b =
-            Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 5.0, 6.0], &[3, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 5.0, 6.0], &[3, 1], &device).unwrap();
 
         // dL/dC = [[1]]
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1, 1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1, 1], DType::F32, &device).unwrap();
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
@@ -337,9 +335,9 @@ mod tests {
     fn test_matmul_backward_broadcast_middle_batch_dim_shapes() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::try_ones(&[2, 3, 4, 5], DType::F32, &device).unwrap();
-        let b = Tensor::<CpuRuntime>::try_ones(&[2, 1, 5, 6], DType::F32, &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 3, 4, 6], DType::F32, &device).unwrap();
+        let a = Tensor::<CpuRuntime>::ones(&[2, 3, 4, 5], DType::F32, &device).unwrap();
+        let b = Tensor::<CpuRuntime>::ones(&[2, 1, 5, 6], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 3, 4, 6], DType::F32, &device).unwrap();
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
@@ -373,19 +371,16 @@ mod tests {
     fn test_matmul_backward_broadcast_middle_batch_dim_values() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(
+        let a = Tensor::<CpuRuntime>::from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
             &[2, 2, 1, 2],
             &device,
         )
         .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[10.0f32, 20.0, 30.0, 40.0],
-            &[2, 1, 2, 1],
-            &device,
-        )
-        .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 2, 1, 1], DType::F32, &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 1, 2, 1], &device)
+                .unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device).unwrap();
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
@@ -410,20 +405,17 @@ mod tests {
     fn test_matmul_backward_var_broadcast_middle_batch_dim() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(
+        let a = Tensor::<CpuRuntime>::from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
             &[2, 2, 1, 2],
             &device,
         )
         .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[10.0f32, 20.0, 30.0, 40.0],
-            &[2, 1, 2, 1],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 1, 2, 1], &device)
+                .unwrap();
         let grad_out = Var::new(
-            Tensor::<CpuRuntime>::try_ones(&[2, 2, 1, 1], DType::F32, &device).unwrap(),
+            Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device).unwrap(),
             true,
         );
 
@@ -450,19 +442,19 @@ mod tests {
     fn test_matmul_backward_broadcast_leading_batch_dim() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(
+        let a = Tensor::<CpuRuntime>::from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[2, 1, 3],
             &device,
         )
         .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
+        let b = Tensor::<CpuRuntime>::from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[1, 3, 2],
             &device,
         )
         .unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 1, 2], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1, 2], DType::F32, &device).unwrap();
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);

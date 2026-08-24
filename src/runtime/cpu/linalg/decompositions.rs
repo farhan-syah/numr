@@ -94,8 +94,8 @@ fn lu_decompose_typed<T: Element + LinalgElement>(
     }
 
     // Create output tensors
-    let lu_tensor = Tensor::<CpuRuntime>::try_from_slice(&lu, &[m, n], device)?;
-    let pivots_tensor = Tensor::<CpuRuntime>::try_from_slice(&pivots, &[k], device)?;
+    let lu_tensor = Tensor::<CpuRuntime>::from_slice(&lu, &[m, n], device)?;
+    let pivots_tensor = Tensor::<CpuRuntime>::from_slice(&pivots, &[k], device)?;
 
     Ok(LuDecomposition {
         lu: lu_tensor,
@@ -158,7 +158,7 @@ fn cholesky_decompose_typed<T: Element + LinalgElement>(
         }
     }
 
-    let l_tensor = Tensor::<CpuRuntime>::try_from_slice(&l, &[n, n], device)?;
+    let l_tensor = Tensor::<CpuRuntime>::from_slice(&l, &[n, n], device)?;
     Ok(CholeskyDecomposition { l: l_tensor })
 }
 
@@ -292,7 +292,7 @@ fn qr_decompose_typed<T: Element + LinalgElement>(
     }
 
     // Create output tensors
-    let q_tensor = Tensor::<CpuRuntime>::try_from_slice(&q, &[m, q_cols], device)?;
+    let q_tensor = Tensor::<CpuRuntime>::from_slice(&q, &[m, q_cols], device)?;
 
     // R is m x n, but for thin QR we only need k x n
     let r_rows = if thin { k } else { m };
@@ -302,7 +302,7 @@ fn qr_decompose_typed<T: Element + LinalgElement>(
             r_out[i * n + j] = r[i * n + j];
         }
     }
-    let r_tensor = Tensor::<CpuRuntime>::try_from_slice(&r_out, &[r_rows, n], device)?;
+    let r_tensor = Tensor::<CpuRuntime>::from_slice(&r_out, &[r_rows, n], device)?;
 
     Ok(QrDecomposition {
         q: q_tensor,

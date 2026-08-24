@@ -32,7 +32,7 @@ where
 {
     if p == 0.0 {
         // No dropout — return input unchanged with a ones mask
-        let mask = crate::tensor::Tensor::<R>::try_ones(
+        let mask = crate::tensor::Tensor::<R>::ones(
             a.tensor().shape(),
             a.tensor().dtype(),
             a.tensor().device(),
@@ -50,7 +50,7 @@ where
 
     if p >= 1.0 {
         // Drop everything — return zeros
-        let zeros = crate::tensor::Tensor::<R>::try_zeros(
+        let zeros = crate::tensor::Tensor::<R>::zeros(
             a.tensor().shape(),
             a.tensor().dtype(),
             a.tensor().device(),
@@ -157,7 +157,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)
+            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)
                 .unwrap(),
             false,
         );
@@ -179,12 +179,8 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let w = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(
-                &[1.5f32, -2.0, 3.0],
-                &[3],
-                &device,
-            )
-            .unwrap(),
+            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.5f32, -2.0, 3.0], &[3], &device)
+                .unwrap(),
             true,
         );
         // An upstream op so the dropout input carries a grad_fn.
@@ -208,7 +204,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)
+            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)
                 .unwrap(),
             false,
         );
@@ -228,7 +224,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(&[1.0f32; 1000], &[1000], &device)
+            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.0f32; 1000], &[1000], &device)
                 .unwrap(),
             false,
         );
@@ -251,7 +247,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(
+            crate::tensor::Tensor::<CpuRuntime>::from_slice(
                 &[1.0f32, 2.0, 3.0, 4.0],
                 &[4],
                 &device,

@@ -42,7 +42,7 @@ macro_rules! impl_simd_special_fn {
                         unsafe {
                             simd_special::$simd_f32(input_ptr, result.as_mut_ptr(), len);
                         }
-                        return Tensor::try_from_slice(&result, x.shape(), device);
+                        return Tensor::from_slice(&result, x.shape(), device);
                     }
 
                     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -57,7 +57,7 @@ macro_rules! impl_simd_special_fn {
                         unsafe {
                             simd_special::$simd_f64(input_ptr, result.as_mut_ptr(), len);
                         }
-                        return Tensor::try_from_slice(&result, x.shape(), device);
+                        return Tensor::from_slice(&result, x.shape(), device);
                     }
 
                     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -73,7 +73,7 @@ macro_rules! impl_simd_special_fn {
                         unsafe {
                             simd_special::$simd_f16(input_ptr, result.as_mut_ptr(), len);
                         }
-                        return Tensor::try_from_slice(&result, x.shape(), device);
+                        return Tensor::from_slice(&result, x.shape(), device);
                     }
 
                     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -89,7 +89,7 @@ macro_rules! impl_simd_special_fn {
                         unsafe {
                             simd_special::$simd_bf16(input_ptr, result.as_mut_ptr(), len);
                         }
-                        return Tensor::try_from_slice(&result, x.shape(), device);
+                        return Tensor::from_slice(&result, x.shape(), device);
                     }
 
                     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]

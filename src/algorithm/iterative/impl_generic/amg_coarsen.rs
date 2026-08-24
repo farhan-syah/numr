@@ -222,9 +222,9 @@ pub fn build_interpolation<R: Runtime<DType = DType>>(
         p_row_ptrs.push(p_col_indices.len() as i64);
     }
 
-    let rp = Tensor::<R>::try_from_slice(&p_row_ptrs, &[p_row_ptrs.len()], device)?;
-    let ci = Tensor::<R>::try_from_slice(&p_col_indices, &[p_col_indices.len()], device)?;
-    let vv = Tensor::<R>::try_from_slice(&p_values, &[p_values.len()], device)?;
+    let rp = Tensor::<R>::from_slice(&p_row_ptrs, &[p_row_ptrs.len()], device)?;
+    let ci = Tensor::<R>::from_slice(&p_col_indices, &[p_col_indices.len()], device)?;
+    let vv = Tensor::<R>::from_slice(&p_values, &[p_values.len()], device)?;
 
     CsrData::new(rp, ci, vv, [n, n_coarse])
 }
@@ -317,9 +317,9 @@ pub fn galerkin_coarse_operator<R: Runtime<DType = DType>>(
         rp.push(ci_vec.len() as i64);
     }
 
-    let rp_t = Tensor::<R>::try_from_slice(&rp, &[rp.len()], device)?;
-    let ci_t = Tensor::<R>::try_from_slice(&ci_vec, &[ci_vec.len()], device)?;
-    let vv_t = Tensor::<R>::try_from_slice(&vv, &[vv.len()], device)?;
+    let rp_t = Tensor::<R>::from_slice(&rp, &[rp.len()], device)?;
+    let ci_t = Tensor::<R>::from_slice(&ci_vec, &[ci_vec.len()], device)?;
+    let vv_t = Tensor::<R>::from_slice(&vv, &[vv.len()], device)?;
 
     CsrData::new(rp_t, ci_t, vv_t, [n_coarse, n_coarse])
 }

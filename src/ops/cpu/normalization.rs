@@ -43,7 +43,7 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
 
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
-        let out = Tensor::<CpuRuntime>::try_empty(input_shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(input_shape, dtype, &self.device)?;
 
         let input_ptr = input_contig.ptr();
         let weight_ptr = weight_contig.ptr();
@@ -109,7 +109,7 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
-        let out = Tensor::<CpuRuntime>::try_empty(input_shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(input_shape, dtype, &self.device)?;
 
         let input_ptr = input_contig.ptr();
         let weight_ptr = weight_contig.ptr();
@@ -187,7 +187,7 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
-        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device)?;
 
         dispatch_dtype!(dtype, T => {
             unsafe {
@@ -251,8 +251,8 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
         let x_contig = ensure_contiguous(x)?;
         let res_contig = ensure_contiguous(residual)?;
         let weight_contig = ensure_contiguous(weight)?;
-        let out = Tensor::<CpuRuntime>::try_empty(input_shape, dtype, &self.device)?;
-        let pre_norm = Tensor::<CpuRuntime>::try_empty(input_shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(input_shape, dtype, &self.device)?;
+        let pre_norm = Tensor::<CpuRuntime>::empty(input_shape, dtype, &self.device)?;
 
         dispatch_dtype!(dtype, T => {
             unsafe {
@@ -314,8 +314,8 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
         let grad_contig = ensure_contiguous(grad)?;
         let pre_norm_contig = ensure_contiguous(pre_norm)?;
         let weight_contig = ensure_contiguous(weight)?;
-        let d_input_residual = Tensor::<CpuRuntime>::try_empty(grad_shape, dtype, &self.device)?;
-        let d_weight = Tensor::<CpuRuntime>::try_zeros(&[hidden_size], dtype, &self.device)?;
+        let d_input_residual = Tensor::<CpuRuntime>::empty(grad_shape, dtype, &self.device)?;
+        let d_weight = Tensor::<CpuRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
 
         dispatch_dtype!(dtype, T => {
             unsafe {
@@ -387,8 +387,8 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
         let res_contig = ensure_contiguous(residual)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
-        let out = Tensor::<CpuRuntime>::try_empty(input_shape, dtype, &self.device)?;
-        let pre_norm = Tensor::<CpuRuntime>::try_empty(input_shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(input_shape, dtype, &self.device)?;
+        let pre_norm = Tensor::<CpuRuntime>::empty(input_shape, dtype, &self.device)?;
 
         dispatch_dtype!(dtype, T => {
             unsafe {
@@ -461,9 +461,9 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
         let pre_norm_contig = ensure_contiguous(pre_norm)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
-        let d_input_residual = Tensor::<CpuRuntime>::try_empty(grad_shape, dtype, &self.device)?;
-        let d_weight = Tensor::<CpuRuntime>::try_zeros(&[hidden_size], dtype, &self.device)?;
-        let d_bias = Tensor::<CpuRuntime>::try_zeros(&[hidden_size], dtype, &self.device)?;
+        let d_input_residual = Tensor::<CpuRuntime>::empty(grad_shape, dtype, &self.device)?;
+        let d_weight = Tensor::<CpuRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
+        let d_bias = Tensor::<CpuRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
 
         dispatch_dtype!(dtype, T => {
             unsafe {

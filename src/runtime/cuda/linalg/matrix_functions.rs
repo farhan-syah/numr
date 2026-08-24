@@ -79,7 +79,7 @@ pub fn expm_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor<
 
     // Handle trivial cases
     if n == 0 {
-        return Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -91,7 +91,7 @@ pub fn expm_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor<
     let schur = client.schur_decompose(a)?;
 
     // Allocate output for f(T) on GPU
-    let f_t = Tensor::<CudaRuntime>::try_zeros(&[n, n], dtype, device)?;
+    let f_t = Tensor::<CudaRuntime>::zeros(&[n, n], dtype, device)?;
 
     // Compute exp(T) entirely on GPU
     let t_ptr = get_tensor_ptr(&schur.t);
@@ -125,7 +125,7 @@ pub fn logm_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor<
 
     // Handle trivial cases
     if n == 0 {
-        return Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -205,7 +205,7 @@ pub fn logm_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor<
     }
 
     // Allocate output for f(T) on GPU
-    let f_t = Tensor::<CudaRuntime>::try_zeros(&[n, n], dtype, device)?;
+    let f_t = Tensor::<CudaRuntime>::zeros(&[n, n], dtype, device)?;
 
     // Compute log(T) entirely on GPU
     unsafe {
@@ -236,7 +236,7 @@ pub fn sqrtm_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor
 
     // Handle trivial cases
     if n == 0 {
-        return Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -388,7 +388,7 @@ pub fn signm_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor
 
     // Handle trivial cases
     if n == 0 {
-        return Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -468,7 +468,7 @@ pub fn fractional_matrix_power_impl(
 
     // Handle trivial cases
     if n == 0 {
-        return Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     // p = 0: Return identity
@@ -565,7 +565,7 @@ where
 
     // Handle trivial cases
     if n == 0 {
-        return Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -579,7 +579,7 @@ where
                 reason: "function returned NaN or Inf for eigenvalue".to_string(),
             });
         }
-        return Tensor::<CudaRuntime>::try_full_scalar(&[1, 1], dtype, result, device);
+        return Tensor::<CudaRuntime>::full_scalar(&[1, 1], dtype, result, device);
     }
 
     // Compute Schur decomposition: A = Z @ T @ Z^T
@@ -592,8 +592,8 @@ where
     let f_t = matrix_functions_core::funm_quasi_triangular_f64(&t_data, n, &f)?;
 
     // Reconstruct: f(A) = Z @ f(T) @ Z^T on GPU
-    let f_t_tensor = Tensor::<CudaRuntime>::try_from_slice(&f_t, &[n, n], device)?;
-    let z_tensor = Tensor::<CudaRuntime>::try_from_slice(&z_data, &[n, n], device)?;
+    let f_t_tensor = Tensor::<CudaRuntime>::from_slice(&f_t, &[n, n], device)?;
+    let z_tensor = Tensor::<CudaRuntime>::from_slice(&z_data, &[n, n], device)?;
 
     let temp = client.matmul(&z_tensor, &f_t_tensor)?;
     let z_t = z_tensor.transpose(0, 1)?;

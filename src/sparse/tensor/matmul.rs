@@ -39,7 +39,7 @@ impl<R: Runtime<DType = DType>> SparseTensor<R> {
     /// # use numr::sparse::SparseTensor;
     /// # let device = CpuDevice::new();
     /// # let sparse = SparseTensor::<CpuRuntime>::from_coo_slices(&[0, 1], &[0, 1], &[1.0f32, 2.0], [2, 3], &device)?;
-    /// let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)?;
+    /// let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)?;
     /// let y = sparse.spmv(&x)?;  // y = A * x
     /// # }
     /// # Ok::<(), numr::error::Error>(())
@@ -89,7 +89,7 @@ impl<R: Runtime<DType = DType>> SparseTensor<R> {
     /// # let device = CpuDevice::new();
     /// // A: [3, 4] sparse, B: [4, 2] dense -> C: [3, 2] dense
     /// # let sparse = SparseTensor::<CpuRuntime>::from_coo_slices(&[0, 1], &[0, 1], &[1.0f32, 2.0], [3, 4], &device)?;
-    /// # let b = Tensor::try_from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0f32], &[4, 2], &device)?;
+    /// # let b = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0f32], &[4, 2], &device)?;
     /// let c = sparse.spmm(&b)?;
     /// # }
     /// # Ok::<(), numr::error::Error>(())
@@ -180,7 +180,7 @@ mod tests {
         )
         .unwrap();
 
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let y = sparse.spmv(&x).unwrap();
 
         // y[0] = 1*1 + 2*3 = 7
@@ -204,7 +204,7 @@ mod tests {
         )
         .unwrap();
 
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let y = sparse.spmv(&x).unwrap();
 
         let y_data: Vec<f32> = y.to_vec();
@@ -225,7 +225,7 @@ mod tests {
         )
         .unwrap();
 
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let y = sparse.spmv(&x).unwrap();
 
         let y_data: Vec<f32> = y.to_vec();
@@ -239,10 +239,10 @@ mod tests {
 
         // Create sparse from dense
         let dense_data = vec![1.0f32, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0, 0.0];
-        let dense = Tensor::<CpuRuntime>::try_from_slice(&dense_data, &[3, 3], &device).unwrap();
+        let dense = Tensor::<CpuRuntime>::from_slice(&dense_data, &[3, 3], &device).unwrap();
         let sparse = SparseTensor::from_dense(&client, &dense, 1e-10).unwrap();
 
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let y = sparse.spmv(&x).unwrap();
 
         // Compare with manual dense matmul result
@@ -271,12 +271,9 @@ mod tests {
         .unwrap();
 
         // Dense B [3, 2]
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         let c = sparse.spmm(&b).unwrap();
 
@@ -299,12 +296,9 @@ mod tests {
         )
         .unwrap();
 
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         let c = sparse.spmm(&b).unwrap();
 
@@ -332,12 +326,9 @@ mod tests {
         )
         .unwrap();
 
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         let c = sparse.spmm(&b).unwrap();
 
@@ -352,15 +343,12 @@ mod tests {
 
         // Create sparse from dense
         let dense_a = vec![1.0f32, 0.0, 2.0, 0.0, 3.0, 0.0];
-        let dense = Tensor::<CpuRuntime>::try_from_slice(&dense_a, &[2, 3], &device).unwrap();
+        let dense = Tensor::<CpuRuntime>::from_slice(&dense_a, &[2, 3], &device).unwrap();
         let sparse = SparseTensor::from_dense(&client, &dense, 1e-10).unwrap();
 
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         let c = sparse.spmm(&b).unwrap();
 
@@ -545,7 +533,7 @@ mod tests {
         let a_t = a.transpose();
 
         // x = [1, 2]
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
 
         // y = A^T * x = [1*1 + 0*2, 0*1 + 3*2, 2*1 + 0*2] = [1, 6, 2]
         let y = a_t.spmv(&x).unwrap();

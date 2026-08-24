@@ -52,7 +52,7 @@ pub(crate) fn create_bin_edges(
 
     // WebGPU primarily supports F32, so create as F32 first
     let edges_f32: Vec<f32> = edges_data.iter().map(|&v| v as f32).collect();
-    let edges = Tensor::<WgpuRuntime>::try_from_slice(&edges_f32, &[bins + 1], client.device())?;
+    let edges = Tensor::<WgpuRuntime>::from_slice(&edges_f32, &[bins + 1], client.device())?;
 
     if dtype == DType::F32 {
         Ok(edges)

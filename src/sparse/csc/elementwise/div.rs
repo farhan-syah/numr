@@ -135,10 +135,10 @@ impl<R: Runtime<DType = DType>> CscData<R> {
             }
 
             let col_ptrs_tensor =
-                Tensor::try_from_slice(&result_col_ptrs, &[result_col_ptrs.len()], device)?;
+                Tensor::from_slice(&result_col_ptrs, &[result_col_ptrs.len()], device)?;
             let row_indices_tensor =
-                Tensor::try_from_slice(&result_rows, &[result_rows.len()], device)?;
-            let values_tensor = Tensor::try_from_slice(&result_vals, &[result_vals.len()], device)?;
+                Tensor::from_slice(&result_rows, &[result_rows.len()], device)?;
+            let values_tensor = Tensor::from_slice(&result_vals, &[result_vals.len()], device)?;
 
             return Self::new(col_ptrs_tensor, row_indices_tensor, values_tensor, self.shape);
         }, "CSC element-wise div");

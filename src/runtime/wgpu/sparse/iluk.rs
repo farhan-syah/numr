@@ -54,12 +54,12 @@ pub fn iluk_numeric_wgpu(
 
     // Convert all indices to i32 on GPU (eliminates manual CPU conversion)
     let level_rows_i32: Vec<i32> = level_rows.iter().map(|&x| x as i32).collect();
-    let row_ptrs_i64_gpu = Tensor::<WgpuRuntime>::try_from_slice(
+    let row_ptrs_i64_gpu = Tensor::<WgpuRuntime>::from_slice(
         &combined_row_ptrs,
         &[combined_row_ptrs.len()],
         &client.device_id,
     )?;
-    let col_indices_i64_gpu = Tensor::<WgpuRuntime>::try_from_slice(
+    let col_indices_i64_gpu = Tensor::<WgpuRuntime>::from_slice(
         &combined_col_indices,
         &[combined_col_indices.len()],
         &client.device_id,
@@ -70,7 +70,7 @@ pub fn iluk_numeric_wgpu(
     let col_indices_gpu = super::common::cast_i64_to_i32_gpu(client, &col_indices_i64_gpu)?;
 
     // Create GPU buffer for level rows
-    let level_rows_gpu = Tensor::<WgpuRuntime>::try_from_slice(
+    let level_rows_gpu = Tensor::<WgpuRuntime>::from_slice(
         &level_rows_i32,
         &[level_rows_i32.len()],
         &client.device_id,
@@ -88,7 +88,7 @@ pub fn iluk_numeric_wgpu(
     )?;
 
     // Allocate diagonal indices buffer
-    let diag_indices_gpu = Tensor::<WgpuRuntime>::try_zeros(&[n], DType::I32, &client.device_id)?;
+    let diag_indices_gpu = Tensor::<WgpuRuntime>::zeros(&[n], DType::I32, &client.device_id)?;
 
     // Find diagonal indices on GPU
     launch_find_diag_indices(
@@ -297,7 +297,7 @@ fn initialize_combined_values_wgpu(
         })
         .collect();
 
-    Tensor::<WgpuRuntime>::try_from_slice(&combined_values_cpu, &[combined_nnz], &client.device_id)
+    Tensor::<WgpuRuntime>::from_slice(&combined_values_cpu, &[combined_nnz], &client.device_id)
 }
 
 #[cfg(test)]
@@ -317,14 +317,11 @@ mod tests {
         let device = &client.device_id;
 
         let row_ptrs =
-            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
-        let col_indices = Tensor::<WgpuRuntime>::try_from_slice(
-            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
-            &[10],
-            device,
-        )
-        .unwrap();
-        let values = Tensor::<WgpuRuntime>::try_from_slice(
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices =
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device)
+                .unwrap();
+        let values = Tensor::<WgpuRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,
@@ -347,14 +344,11 @@ mod tests {
         let device = &client.device_id;
 
         let row_ptrs =
-            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
-        let col_indices = Tensor::<WgpuRuntime>::try_from_slice(
-            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
-            &[10],
-            device,
-        )
-        .unwrap();
-        let values = Tensor::<WgpuRuntime>::try_from_slice(
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices =
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device)
+                .unwrap();
+        let values = Tensor::<WgpuRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,
@@ -378,14 +372,11 @@ mod tests {
         let device = &client.device_id;
 
         let row_ptrs =
-            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
-        let col_indices = Tensor::<WgpuRuntime>::try_from_slice(
-            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
-            &[10],
-            device,
-        )
-        .unwrap();
-        let values = Tensor::<WgpuRuntime>::try_from_slice(
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices =
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device)
+                .unwrap();
+        let values = Tensor::<WgpuRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,

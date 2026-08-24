@@ -48,7 +48,7 @@ where
 
     let mut x = match x0 {
         Some(x0) => x0.clone(),
-        None => Tensor::<R>::try_zeros(&[n], dtype, device)?,
+        None => Tensor::<R>::zeros(&[n], dtype, device)?,
     };
 
     let precond = match options.preconditioner {
@@ -102,16 +102,16 @@ where
     let mut v = client.mul_scalar(&v_tilde, 1.0 / rho)?;
     let mut w = client.mul_scalar(&w_tilde, 1.0 / xi)?;
 
-    let mut d = Tensor::<R>::try_zeros(&[n], dtype, device)?;
-    let mut s = Tensor::<R>::try_zeros(&[n], dtype, device)?;
+    let mut d = Tensor::<R>::zeros(&[n], dtype, device)?;
+    let mut s = Tensor::<R>::zeros(&[n], dtype, device)?;
 
     let mut p;
     let mut q;
     let mut epsilon_prev = 0.0_f64;
 
     // Track p_prev and q_prev for the recurrence
-    let mut p_prev = Tensor::<R>::try_zeros(&[n], dtype, device)?;
-    let mut q_prev = Tensor::<R>::try_zeros(&[n], dtype, device)?;
+    let mut p_prev = Tensor::<R>::zeros(&[n], dtype, device)?;
+    let mut q_prev = Tensor::<R>::zeros(&[n], dtype, device)?;
 
     let mut residual = r;
 

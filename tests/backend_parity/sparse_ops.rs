@@ -27,9 +27,9 @@ mod edge_cases {
         let col_indices: Vec<i64> = vec![];
         let values: Vec<f32> = vec![];
 
-        let row_ptrs_tensor = Tensor::try_from_slice(&row_ptrs, &[4], &device).unwrap();
-        let col_indices_tensor = Tensor::try_from_slice(&col_indices, &[0], &device).unwrap();
-        let values_tensor = Tensor::try_from_slice(&values, &[0], &device).unwrap();
+        let row_ptrs_tensor = Tensor::from_slice(&row_ptrs, &[4], &device).unwrap();
+        let col_indices_tensor = Tensor::from_slice(&col_indices, &[0], &device).unwrap();
+        let values_tensor = Tensor::from_slice(&values, &[0], &device).unwrap();
 
         let csr_a = CsrData::new(
             row_ptrs_tensor.clone(),
@@ -66,9 +66,9 @@ mod edge_cases {
         let col_indices = vec![0i64];
         let values = vec![5.0f32];
 
-        let row_ptrs_tensor = Tensor::try_from_slice(&row_ptrs, &[2], &device).unwrap();
-        let col_indices_tensor = Tensor::try_from_slice(&col_indices, &[1], &device).unwrap();
-        let values_tensor = Tensor::try_from_slice(&values, &[1], &device).unwrap();
+        let row_ptrs_tensor = Tensor::from_slice(&row_ptrs, &[2], &device).unwrap();
+        let col_indices_tensor = Tensor::from_slice(&col_indices, &[1], &device).unwrap();
+        let values_tensor = Tensor::from_slice(&values, &[1], &device).unwrap();
 
         let csr_a = CsrData::new(
             row_ptrs_tensor.clone(),
@@ -133,10 +133,10 @@ mod edge_cases {
         let a_coo = CooData::from_slices(&[0, 1], &[0, 1], &a_data_f32, [2, 2], &device)?;
 
         let b_data_f64 = vec![1.0f64, 2.0];
-        let b_tensor = Tensor::try_from_slice(&b_data_f64, &[2], &device).unwrap();
+        let b_tensor = Tensor::from_slice(&b_data_f64, &[2], &device).unwrap();
         let b_coo_f64 = CooData::new(
-            Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap(),
-            Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap(),
+            Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap(),
+            Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap(),
             b_tensor,
             [2, 2],
         )?;

@@ -47,7 +47,7 @@ pub fn reduce_impl(
         let outer_size = outer_size.max(1);
 
         let out_shape = reduce_output_shape(shape, dims, keepdim);
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
 
         let a_ptr = a.ptr();
         let out_ptr = out.ptr();
@@ -108,7 +108,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data: Vec<f32> = (1..=24).map(|v| v as f32).collect();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3, 4], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3, 4], &device).unwrap();
 
         let out = client.sum(&a, &[1, 2], false).unwrap();
         let got: Vec<f32> = out.to_vec();
@@ -120,7 +120,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data: Vec<f32> = (1..=24).map(|v| v as f32).collect();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3, 4], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3, 4], &device).unwrap();
 
         let out = client.mean(&a, &[0, 2], true).unwrap();
         assert_eq!(out.shape(), &[1, 3, 1]);
@@ -140,7 +140,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data = vec![0.1f32; 512];
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[512, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[512, 1], &device).unwrap();
 
         let sum: Vec<f32> = client.sum(&a, &[0, 1], false).unwrap().to_vec();
         assert_eq!(sum[0].to_bits(), 0x424c_cc96, "got {}", sum[0]);
@@ -167,7 +167,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data = vec![bf16::from_f32(11.761_783_5); 512];
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[512, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[512, 1], &device).unwrap();
 
         let sum: Vec<bf16> = client.sum(&a, &[0, 1], false).unwrap().to_vec();
         assert_eq!(sum[0], bf16::from_f32(6016.0), "sum saturated: {}", sum[0]);
@@ -195,7 +195,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data = vec![bf16::from_f32(0.7); 512];
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[512, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[512, 1], &device).unwrap();
 
         let sum: Vec<bf16> = client.sum(&a, &[0, 1], false).unwrap().to_vec();
         assert_eq!(sum[0], bf16::from_f32(358.0), "sum saturated: {}", sum[0]);
@@ -222,7 +222,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data = vec![f16::from_f32(1.0); 4096];
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[4096, 1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[4096, 1], &device).unwrap();
 
         let sum: Vec<f16> = client.sum(&a, &[0, 1], false).unwrap().to_vec();
         assert_eq!(sum[0], f16::from_f32(4096.0), "sum saturated: {}", sum[0]);
@@ -245,7 +245,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data = vec![bf16::from_f32(11.761_783_5); 512 * 3];
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[512, 3], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[512, 3], &device).unwrap();
 
         let sum: Vec<bf16> = client.sum(&a, &[0], false).unwrap().to_vec();
         assert_eq!(sum.len(), 3);
@@ -259,7 +259,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
         let data: Vec<f32> = (1..=24).map(|v| v as f32).collect();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3, 4], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3, 4], &device).unwrap();
 
         let max_out = client.max(&a, &[0, 1], false).unwrap();
         let max_vals: Vec<f32> = max_out.to_vec();

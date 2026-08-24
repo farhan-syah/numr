@@ -44,7 +44,7 @@ pub fn embedding_lookup(
 
     let emb_contig = ensure_contiguous(embeddings)?;
     let idx_contig = ensure_contiguous(&indices_i64)?;
-    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_embedding_lookup(
@@ -142,7 +142,7 @@ pub fn scatter_reduce(
     let src_contig = ensure_contiguous(src)?;
 
     // Allocate output and initialize with dst values if include_self
-    let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(shape, dtype, &client.device)?;
 
     if include_self {
         // Copy dst to output
@@ -213,7 +213,7 @@ pub fn scatter_reduce(
         }
 
         // Allocate count buffer (same shape as output, zero-initialized)
-        let count = Tensor::<CudaRuntime>::try_empty(shape, dtype, &client.device)?;
+        let count = Tensor::<CudaRuntime>::empty(shape, dtype, &client.device)?;
         unsafe {
             launch_fill_with_f64(
                 &client.context,
@@ -259,7 +259,7 @@ pub fn scatter_reduce(
         }
 
         // Divide sum by count
-        let result = Tensor::<CudaRuntime>::try_empty(shape, dtype, &client.device)?;
+        let result = Tensor::<CudaRuntime>::empty(shape, dtype, &client.device)?;
         unsafe {
             launch_scatter_reduce_mean_div(
                 &client.context,
@@ -329,7 +329,7 @@ pub fn gather_nd(
 
     let input_contig = ensure_contiguous(input)?;
     let indices_contig = ensure_contiguous(&indices_i64)?;
-    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
     // Prepare shape and stride arrays as host Vecs (passed as scalar args, no device alloc needed)
     let input_shape_u32: Vec<u32> = input_shape.iter().map(|&s| s as u32).collect();
@@ -417,7 +417,7 @@ pub fn bincount(
     let output_len = ((max_val as usize) + 1).max(minlength);
 
     // Allocate output and zero-initialize
-    let out = Tensor::<CudaRuntime>::try_empty(&[output_len], out_dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&[output_len], out_dtype, &client.device)?;
 
     // Zero the output buffer
     unsafe {

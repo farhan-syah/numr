@@ -111,11 +111,10 @@ mod tests {
         //     [-1  4 -1]
         //     [ 0 -1  4]
         // This is a tridiagonal matrix (positive definite)
-        let row_ptrs =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
+        let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
-        let values = Tensor::<CpuRuntime>::try_from_slice(
+            Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
+        let values = Tensor::<CpuRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[7],
             device,
@@ -173,11 +172,10 @@ mod tests {
         // A = [ 4 -1  0]
         //     [-1  4 -1]
         //     [ 0 -1  4]
-        let row_ptrs =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
+        let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
-        let values = Tensor::<CpuRuntime>::try_from_slice(
+            Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
+        let values = Tensor::<CpuRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[7],
             device,
@@ -231,13 +229,11 @@ mod tests {
         // L = [2 0 0]
         //     [1 3 0]
         //     [0 2 4]
-        let row_ptrs =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 3, 5], &[4], device).unwrap();
+        let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 3, 5], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 0, 1, 1, 2], &[5], device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[0i64, 0, 1, 1, 2], &[5], device).unwrap();
         let values =
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device).unwrap();
 
         let l = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");
@@ -246,7 +242,7 @@ mod tests {
         // x[0] = 2/2 = 1
         // x[1] = (4 - 1*1)/3 = 1
         // x[2] = (8 - 2*1)/4 = 1.5
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 4.0, 8.0], &[3], device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 4.0, 8.0], &[3], device).unwrap();
 
         let x = client
             .sparse_solve_triangular(&l, &b, true, false)
@@ -267,13 +263,11 @@ mod tests {
         // U = [2 1 0]
         //     [0 3 2]
         //     [0 0 4]
-        let row_ptrs =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 4, 5], &[4], device).unwrap();
+        let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 4, 5], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 1, 2, 2], &[5], device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 1, 2, 2], &[5], device).unwrap();
         let values =
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device).unwrap();
 
         let u = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");
@@ -282,7 +276,7 @@ mod tests {
         // x[2] = 8/4 = 2
         // x[1] = (7 - 2*2)/3 = 1
         // x[0] = (5 - 1*1)/2 = 2
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 7.0, 8.0], &[3], device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 7.0, 8.0], &[3], device).unwrap();
 
         let x = client
             .sparse_solve_triangular(&u, &b, false, false)
@@ -304,10 +298,9 @@ mod tests {
         //     [2 1 0]
         //     [0 3 1]
         // We only store: (1,0)=2, (2,1)=3
-        let row_ptrs =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 0, 1, 2], &[4], device).unwrap();
-        let col_indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1], &[2], device).unwrap();
-        let values = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], device).unwrap();
+        let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 0, 1, 2], &[4], device).unwrap();
+        let col_indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 1], &[2], device).unwrap();
+        let values = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], device).unwrap();
 
         let l = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");
@@ -316,7 +309,7 @@ mod tests {
         // x[0] = 1
         // x[1] = 4 - 2*1 = 2
         // x[2] = 6 - 3*2 = 0
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 4.0, 6.0], &[3], device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 4.0, 6.0], &[3], device).unwrap();
 
         let x = client
             .sparse_solve_triangular(&l, &b, true, true)
@@ -337,11 +330,10 @@ mod tests {
         // A = [ 0.001 -1    0  ]
         //     [-1     0.001 -1 ]
         //     [ 0    -1     0.001]
-        let row_ptrs =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
+        let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
-        let values = Tensor::<CpuRuntime>::try_from_slice(
+            Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
+        let values = Tensor::<CpuRuntime>::from_slice(
             &[0.001f32, -1.0, -1.0, 0.001, -1.0, -1.0, 0.001],
             &[7],
             device,

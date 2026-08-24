@@ -25,8 +25,8 @@ fn test_i32_add() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10i32, 20, 30, 40], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10i32, 20, 30, 40], &[4], &device).unwrap();
 
     let result = client.add(&a, &b).unwrap();
 
@@ -44,8 +44,8 @@ fn test_i32_sub() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[10i32, 20, 30, 40], &[4], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[10i32, 20, 30, 40], &[4], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
 
     let result = client.sub(&a, &b).unwrap();
 
@@ -63,8 +63,8 @@ fn test_i32_mul() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[2i32, 3, 4, 5], &[4], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10i32, 10, 10, 10], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[2i32, 3, 4, 5], &[4], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10i32, 10, 10, 10], &[4], &device).unwrap();
 
     let result = client.mul(&a, &b).unwrap();
 
@@ -86,8 +86,8 @@ fn test_u32_add() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1u32, 2, 3, 4], &[4], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10u32, 20, 30, 40], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1u32, 2, 3, 4], &[4], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10u32, 20, 30, 40], &[4], &device).unwrap();
 
     let result = client.add(&a, &b).unwrap();
 
@@ -105,8 +105,8 @@ fn test_u32_mul() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[2u32, 3, 4, 5], &[4], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10u32, 10, 10, 10], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[2u32, 3, 4, 5], &[4], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10u32, 10, 10, 10], &[4], &device).unwrap();
 
     let result = client.mul(&a, &b).unwrap();
 
@@ -128,8 +128,7 @@ fn test_f32_neg() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, -2.0, 3.0, -4.0], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, -2.0, 3.0, -4.0], &[4], &device).unwrap();
 
     let result = client.neg(&a).unwrap();
 
@@ -147,8 +146,7 @@ fn test_f32_abs() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, -2.0, 3.0, -4.0], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, -2.0, 3.0, -4.0], &[4], &device).unwrap();
 
     let result = client.abs(&a).unwrap();
 
@@ -170,7 +168,7 @@ fn test_i32_sqrt_should_fail() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1i32, 4, 9, 16], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1i32, 4, 9, 16], &[4], &device).unwrap();
 
     // sqrt is float-only - should return UnsupportedDType error
     let result = client.sqrt(&a);
@@ -196,7 +194,7 @@ fn test_i32_exp_should_fail() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
 
     // exp is float-only - should return UnsupportedDType error
     let result = client.exp(&a);
@@ -226,8 +224,8 @@ fn test_f32_eq() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 0.0, 3.0, 0.0], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 0.0, 3.0, 0.0], &[4], &device).unwrap();
 
     let result = client.eq(&a, &b).unwrap();
 
@@ -249,7 +247,7 @@ fn test_f32_sum() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.sum(&a, &[], false).unwrap();
 
@@ -267,8 +265,8 @@ fn test_f32_max() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 20.0, 3.0, 40.0, 5.0], &[5], &device)
-        .unwrap();
+    let a =
+        Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 20.0, 3.0, 40.0, 5.0], &[5], &device).unwrap();
 
     let result = client.max(&a, &[], false).unwrap();
 
@@ -286,8 +284,8 @@ fn test_f32_min() {
     let device = WgpuDevice::new(0);
     let client = WgpuRuntime::default_client(&device);
 
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[10.0f32, 2.0, 30.0, 4.0, 50.0], &[5], &device)
-        .unwrap();
+    let a =
+        Tensor::<WgpuRuntime>::from_slice(&[10.0f32, 2.0, 30.0, 4.0, 50.0], &[5], &device).unwrap();
 
     let result = client.min(&a, &[], false).unwrap();
 
@@ -310,8 +308,8 @@ fn test_broadcast_scalar_to_vector() {
     let client = WgpuRuntime::default_client(&device);
 
     // [4] + [1] -> [4]
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10.0f32], &[1], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10.0f32], &[1], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -331,10 +329,9 @@ fn test_broadcast_vector_to_matrix_row() {
     let client = WgpuRuntime::default_client(&device);
 
     // [2, 3] + [3] -> [2, 3] (broadcast along rows)
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
-            .unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0], &[3], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+        .unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0], &[3], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -354,10 +351,9 @@ fn test_broadcast_vector_to_matrix_col() {
     let client = WgpuRuntime::default_client(&device);
 
     // [2, 3] + [2, 1] -> [2, 3] (broadcast along columns)
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
-            .unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10.0f32, 100.0], &[2, 1], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+        .unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10.0f32, 100.0], &[2, 1], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -377,9 +373,9 @@ fn test_broadcast_both_directions() {
     let client = WgpuRuntime::default_client(&device);
 
     // [3, 1] + [1, 4] -> [3, 4]
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[1, 4], &device)
-        .unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
+    let b =
+        Tensor::<WgpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[1, 4], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -407,14 +403,10 @@ fn test_broadcast_3d() {
     let client = WgpuRuntime::default_client(&device);
 
     // [2, 3, 1] + [4] -> [2, 3, 4]
-    let a = Tensor::<WgpuRuntime>::try_from_slice(
-        &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3, 1],
-        &device,
-    )
-    .unwrap();
-    let b =
-        Tensor::<WgpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let a =
+        Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3, 1], &device)
+            .unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -444,10 +436,9 @@ fn test_broadcast_mul() {
     let client = WgpuRuntime::default_client(&device);
 
     // [2, 3] * [3] -> [2, 3]
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
-            .unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 3.0, 4.0], &[3], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+        .unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 3.0, 4.0], &[3], &device).unwrap();
 
     let c = client.mul(&a, &b).unwrap();
 
@@ -467,13 +458,13 @@ fn test_broadcast_sub() {
     let client = WgpuRuntime::default_client(&device);
 
     // [2, 3] - [2, 1] -> [2, 3]
-    let a = Tensor::<WgpuRuntime>::try_from_slice(
+    let a = Tensor::<WgpuRuntime>::from_slice(
         &[10.0f32, 20.0, 30.0, 40.0, 50.0, 60.0],
         &[2, 3],
         &device,
     )
     .unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 10.0], &[2, 1], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 10.0], &[2, 1], &device).unwrap();
 
     let c = client.sub(&a, &b).unwrap();
 
@@ -493,13 +484,13 @@ fn test_broadcast_div() {
     let client = WgpuRuntime::default_client(&device);
 
     // [2, 3] / [3] -> [2, 3]
-    let a = Tensor::<WgpuRuntime>::try_from_slice(
+    let a = Tensor::<WgpuRuntime>::from_slice(
         &[10.0f32, 20.0, 30.0, 40.0, 50.0, 60.0],
         &[2, 3],
         &device,
     )
     .unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 5.0, 10.0], &[3], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 5.0, 10.0], &[3], &device).unwrap();
 
     let c = client.div(&a, &b).unwrap();
 
@@ -519,10 +510,9 @@ fn test_broadcast_max() {
     let client = WgpuRuntime::default_client(&device);
 
     // max([2, 3], [3]) -> [2, 3]
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device)
-            .unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[3.0f32, 3.0, 3.0], &[3], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device)
+        .unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[3.0f32, 3.0, 3.0], &[3], &device).unwrap();
 
     let c = client.maximum(&a, &b).unwrap();
 
@@ -542,10 +532,9 @@ fn test_broadcast_min() {
     let client = WgpuRuntime::default_client(&device);
 
     // min([2, 3], [3]) -> [2, 3]
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device)
-            .unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[3.0f32, 3.0, 3.0], &[3], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device)
+        .unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[3.0f32, 3.0, 3.0], &[3], &device).unwrap();
 
     let c = client.minimum(&a, &b).unwrap();
 
@@ -569,9 +558,8 @@ fn test_broadcast_i32_add() {
     let client = WgpuRuntime::default_client(&device);
 
     // [2, 3] + [3] -> [2, 3]
-    let a =
-        Tensor::<WgpuRuntime>::try_from_slice(&[1i32, 2, 3, 4, 5, 6], &[2, 3], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10i32, 20, 30], &[3], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1i32, 2, 3, 4, 5, 6], &[2, 3], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10i32, 20, 30], &[3], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -591,8 +579,8 @@ fn test_broadcast_i32_mul() {
     let client = WgpuRuntime::default_client(&device);
 
     // [3, 1] * [1, 4] -> [3, 4]
-    let a = Tensor::<WgpuRuntime>::try_from_slice(&[1i32, 2, 3], &[3, 1], &device).unwrap();
-    let b = Tensor::<WgpuRuntime>::try_from_slice(&[10i32, 20, 30, 40], &[1, 4], &device).unwrap();
+    let a = Tensor::<WgpuRuntime>::from_slice(&[1i32, 2, 3], &[3, 1], &device).unwrap();
+    let b = Tensor::<WgpuRuntime>::from_slice(&[10i32, 20, 30, 40], &[1, 4], &device).unwrap();
 
     let c = client.mul(&a, &b).unwrap();
 

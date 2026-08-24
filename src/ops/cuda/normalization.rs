@@ -46,7 +46,7 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
 
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
-        let out = Tensor::<CudaRuntime>::try_empty(input_shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(input_shape, dtype, &self.device)?;
 
         unsafe {
             launch_rms_norm(
@@ -110,7 +110,7 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
-        let out = Tensor::<CudaRuntime>::try_empty(input_shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(input_shape, dtype, &self.device)?;
 
         unsafe {
             launch_layer_norm(
@@ -185,7 +185,7 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
-        let out = Tensor::<CudaRuntime>::try_empty(shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device)?;
 
         unsafe {
             launch_group_norm(
@@ -255,8 +255,8 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let x_contig = ensure_contiguous(x)?;
         let residual_contig = ensure_contiguous(residual)?;
         let weight_contig = ensure_contiguous(weight)?;
-        let output = Tensor::<CudaRuntime>::try_empty(x_shape, dtype, &self.device)?;
-        let pre_norm = Tensor::<CudaRuntime>::try_empty(x_shape, dtype, &self.device)?;
+        let output = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
+        let pre_norm = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
 
         unsafe {
             launch_fused_add_rms_norm(
@@ -322,8 +322,8 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let grad_contig = ensure_contiguous(grad)?;
         let pre_norm_contig = ensure_contiguous(pre_norm)?;
         let weight_contig = ensure_contiguous(weight)?;
-        let d_input_residual = Tensor::<CudaRuntime>::try_empty(grad_shape, dtype, &self.device)?;
-        let d_weight = Tensor::<CudaRuntime>::try_zeros(&[hidden_size], dtype, &self.device)?;
+        let d_input_residual = Tensor::<CudaRuntime>::empty(grad_shape, dtype, &self.device)?;
+        let d_weight = Tensor::<CudaRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
 
         unsafe {
             launch_fused_add_rms_norm_bwd(
@@ -400,8 +400,8 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let residual_contig = ensure_contiguous(residual)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
-        let output = Tensor::<CudaRuntime>::try_empty(x_shape, dtype, &self.device)?;
-        let pre_norm = Tensor::<CudaRuntime>::try_empty(x_shape, dtype, &self.device)?;
+        let output = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
+        let pre_norm = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
 
         unsafe {
             launch_fused_add_layer_norm(
@@ -501,9 +501,9 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let grad_contig = ensure_contiguous(grad)?;
         let pre_norm_contig = ensure_contiguous(pre_norm)?;
         let weight_contig = ensure_contiguous(weight)?;
-        let d_input_residual = Tensor::<CudaRuntime>::try_empty(grad_shape, dtype, &self.device)?;
-        let d_weight = Tensor::<CudaRuntime>::try_zeros(&[hidden_size], dtype, &self.device)?;
-        let d_bias = Tensor::<CudaRuntime>::try_zeros(&[hidden_size], dtype, &self.device)?;
+        let d_input_residual = Tensor::<CudaRuntime>::empty(grad_shape, dtype, &self.device)?;
+        let d_weight = Tensor::<CudaRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
+        let d_bias = Tensor::<CudaRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
 
         unsafe {
             launch_fused_add_layer_norm_bwd(

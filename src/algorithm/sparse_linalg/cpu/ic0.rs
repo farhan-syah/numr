@@ -211,16 +211,16 @@ fn extract_lower_triangle<R: Runtime<DType = DType>>(
     }
 
     // Create output tensors
-    let l_row_ptrs_tensor = Tensor::<R>::try_from_slice(&new_row_ptrs, &[n + 1], device)?;
+    let l_row_ptrs_tensor = Tensor::<R>::from_slice(&new_row_ptrs, &[n + 1], device)?;
     let l_col_indices_tensor =
-        Tensor::<R>::try_from_slice(&new_col_indices, &[new_col_indices.len()], device)?;
+        Tensor::<R>::from_slice(&new_col_indices, &[new_col_indices.len()], device)?;
 
     let l_values_tensor = match dtype {
         DType::F32 => {
             let f32_vals: Vec<f32> = new_values.iter().map(|&x| x as f32).collect();
-            Tensor::<R>::try_from_slice(&f32_vals, &[f32_vals.len()], device)?
+            Tensor::<R>::from_slice(&f32_vals, &[f32_vals.len()], device)?
         }
-        DType::F64 => Tensor::<R>::try_from_slice(&new_values, &[new_values.len()], device)?,
+        DType::F64 => Tensor::<R>::from_slice(&new_values, &[new_values.len()], device)?,
         _ => unreachable!(),
     };
 

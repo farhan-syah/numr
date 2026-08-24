@@ -77,11 +77,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             true,
         );
         let y = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -105,11 +105,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             true,
         );
         let y = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -130,11 +130,11 @@ mod tests {
 
         // z = (x * y) + x = x*(y+1)
         let x = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             true,
         );
         let y = Var::new(
-            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap(),
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
             true,
         );
 

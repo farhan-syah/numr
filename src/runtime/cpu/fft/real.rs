@@ -42,7 +42,7 @@ pub(super) fn rfft_impl(
     let mut out_shape = input_contig.shape().to_vec();
     out_shape[ndim - 1] = n / 2 + 1;
 
-    let output = Tensor::<CpuRuntime>::try_empty(&out_shape, output_dtype, &client.device)?;
+    let output = Tensor::<CpuRuntime>::empty(&out_shape, output_dtype, &client.device)?;
 
     let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
     let batch_size = batch_size.max(1);
@@ -192,7 +192,7 @@ pub(super) fn irfft_impl(
     let mut out_shape = input_contig.shape().to_vec();
     out_shape[ndim - 1] = output_n;
 
-    let output = Tensor::<CpuRuntime>::try_empty(&out_shape, output_dtype, &client.device)?;
+    let output = Tensor::<CpuRuntime>::empty(&out_shape, output_dtype, &client.device)?;
 
     let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
     let batch_size = batch_size.max(1);

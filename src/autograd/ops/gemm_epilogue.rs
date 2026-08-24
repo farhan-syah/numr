@@ -284,26 +284,23 @@ mod tests {
         Tensor<CpuRuntime>,
     ) {
         let device = CpuDevice::new();
-        let a = Tensor::<CpuRuntime>::try_from_slice(
+        let a = Tensor::<CpuRuntime>::from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
             &[2, 2, 1, 2],
             &device,
         )
         .unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[10.0f32, 20.0, 30.0, 40.0],
-            &[2, 1, 2, 1],
-            &device,
-        )
-        .unwrap();
-        let bias = Tensor::<CpuRuntime>::try_zeros(&[1], DType::F32, &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 1, 2, 1], &device)
+                .unwrap();
+        let bias = Tensor::<CpuRuntime>::zeros(&[1], DType::F32, &device).unwrap();
         (device, a, b, bias)
     }
 
     #[test]
     fn test_gemm_epilogue_backward_broadcast_middle_batch_dim() {
         let (device, a, b, bias) = broadcast_case();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 2, 1, 1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device).unwrap();
 
         let backward = MatmulBiasActivationBackward::<CpuRuntime>::new(
             a.id(),
@@ -341,7 +338,7 @@ mod tests {
     fn test_gemm_epilogue_backward_var_broadcast_middle_batch_dim() {
         let (device, a, b, bias) = broadcast_case();
         let grad_out = Var::new(
-            Tensor::<CpuRuntime>::try_ones(&[2, 2, 1, 1], DType::F32, &device).unwrap(),
+            Tensor::<CpuRuntime>::ones(&[2, 2, 1, 1], DType::F32, &device).unwrap(),
             true,
         );
 

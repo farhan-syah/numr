@@ -25,7 +25,7 @@ use std::fmt;
 /// ```
 /// # use numr::prelude::*;
 /// # let device = CpuDevice::new();
-/// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+/// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
 /// let b = a.transpose(-1, -2); // Zero-copy, shares storage with a
 /// # Ok::<(), numr::error::Error>(())
 /// ```
@@ -66,7 +66,7 @@ impl<R: Runtime> Tensor<R> {
     }
 
     /// Create an uninitialized tensor (fallible version)
-    pub fn try_empty(shape: &[usize], dtype: R::DType, device: &R::Device) -> Result<Self> {
+    pub fn empty(shape: &[usize], dtype: R::DType, device: &R::Device) -> Result<Self> {
         let len: usize = shape.iter().product();
         let storage = Storage::new(len, dtype, device)
             .map_err(|e| Self::alloc_failed(shape, dtype, device, e))?;
@@ -384,7 +384,7 @@ impl<R: Runtime> Tensor<R> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let data = vec![0.0f32; 24];
-    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3, 4], &device)?;
+    /// let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3, 4], &device)?;
     /// let permuted = tensor.permute(&[2, 0, 1])?; // Shape becomes [4, 2, 3]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -420,7 +420,7 @@ impl<R: Runtime> Tensor<R> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let data = vec![0.0f32; 120];
-    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[4, 5, 6], &device)?;
+    /// let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[4, 5, 6], &device)?;
     /// let narrowed = tensor.narrow(1, 1, 3)?; // Shape becomes [4, 3, 6]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -478,7 +478,7 @@ impl<R: Runtime> Tensor<R> {
     /// ```
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
-    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
     /// let flipped = tensor.flip(0)?; // Reverse rows: [[3, 4], [1, 2]]
     /// let flipped = tensor.flip(-1)?; // Reverse columns: [[2, 1], [4, 3]]
     /// # Ok::<(), numr::error::Error>(())
@@ -507,7 +507,7 @@ impl<R: Runtime> Tensor<R> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let data = vec![0.0f32; 24];
-    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3, 4], &device)?;
+    /// let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3, 4], &device)?;
     /// let flipped = tensor.flip_dims(&[0, 2])?; // Flip first and last dimensions
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -682,7 +682,7 @@ impl<R: Runtime> Tensor<R> {
     /// ```
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
-    /// # let loss = Tensor::<CpuRuntime>::try_from_slice(&[0.5f32], &[], &device)?;
+    /// # let loss = Tensor::<CpuRuntime>::from_slice(&[0.5f32], &[], &device)?;
     /// let loss_val: f32 = loss.item()?;
     /// if loss_val < 1.0 {
     ///     // training converged
@@ -724,20 +724,20 @@ impl<R: Runtime> Tensor<R> {
 
 impl<R: Runtime> Tensor<R> {
     /// Create a tensor filled with zeros (generic, works with any DType)
-    pub fn try_zeros_generic(shape: &[usize], dtype: R::DType, device: &R::Device) -> Result<Self> {
-        Self::try_full_scalar_generic(shape, dtype, 0.0, device)
+    pub fn zeros_generic(shape: &[usize], dtype: R::DType, device: &R::Device) -> Result<Self> {
+        Self::full_scalar_generic(shape, dtype, 0.0, device)
     }
 
     /// Create a tensor filled with ones (generic, works with any DType)
-    pub fn try_ones_generic(shape: &[usize], dtype: R::DType, device: &R::Device) -> Result<Self> {
-        Self::try_full_scalar_generic(shape, dtype, 1.0, device)
+    pub fn ones_generic(shape: &[usize], dtype: R::DType, device: &R::Device) -> Result<Self> {
+        Self::full_scalar_generic(shape, dtype, 1.0, device)
     }
 
     /// Create a tensor filled with a scalar value (generic, works with any DType)
     ///
     /// Uses `DataType::fill_bytes` to generate the fill pattern, so it works
     /// with any DType that implements the trait (including boostr's quantized types).
-    pub fn try_full_scalar_generic(
+    pub fn full_scalar_generic(
         shape: &[usize],
         dtype: R::DType,
         value: f64,
@@ -745,7 +745,7 @@ impl<R: Runtime> Tensor<R> {
     ) -> Result<Self> {
         let len: usize = shape.iter().product();
         if len == 0 {
-            return Self::try_empty(shape, dtype, device);
+            return Self::empty(shape, dtype, device);
         }
 
         let bytes = dtype.fill_bytes(value, len).ok_or_else(|| {
@@ -767,7 +767,7 @@ impl<R: Runtime> Tensor<R> {
     }
 
     /// Create a tensor from raw bytes with specified dtype (generic)
-    pub fn try_from_bytes(
+    pub fn from_bytes(
         bytes: &[u8],
         shape: &[usize],
         dtype: R::DType,
@@ -798,14 +798,10 @@ impl<R: Runtime<DType = DType>> Tensor<R> {
     /// ```
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
-    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+    /// let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
-    pub fn try_from_slice<T: Element>(
-        data: &[T],
-        shape: &[usize],
-        device: &R::Device,
-    ) -> Result<Self> {
+    pub fn from_slice<T: Element>(data: &[T], shape: &[usize], device: &R::Device) -> Result<Self> {
         let expected_len: usize = shape.iter().product();
         if data.len() != expected_len {
             return Err(Error::ShapeMismatch {
@@ -828,19 +824,19 @@ impl<R: Runtime<DType = DType>> Tensor<R> {
     /// Create a tensor filled with zeros
     ///
     /// This properly initializes memory to zero on all backends (CPU and GPU).
-    pub fn try_zeros(shape: &[usize], dtype: DType, device: &R::Device) -> Result<Self> {
-        Self::try_full_scalar(shape, dtype, 0.0, device)
+    pub fn zeros(shape: &[usize], dtype: DType, device: &R::Device) -> Result<Self> {
+        Self::full_scalar(shape, dtype, 0.0, device)
     }
 
     /// Create a tensor filled with ones
-    pub fn try_ones(shape: &[usize], dtype: DType, device: &R::Device) -> Result<Self> {
-        Self::try_full_scalar(shape, dtype, 1.0, device)
+    pub fn ones(shape: &[usize], dtype: DType, device: &R::Device) -> Result<Self> {
+        Self::full_scalar(shape, dtype, 1.0, device)
     }
 
     /// Create a tensor filled with a scalar value
     ///
     /// The scalar is converted to the target dtype.
-    pub fn try_full_scalar(
+    pub fn full_scalar(
         shape: &[usize],
         dtype: DType,
         value: f64,
@@ -855,7 +851,7 @@ impl<R: Runtime<DType = DType>> Tensor<R> {
 
         let len: usize = shape.iter().product();
         if len == 0 {
-            return Self::try_empty(shape, dtype, device);
+            return Self::empty(shape, dtype, device);
         }
 
         // Allocate with correct type alignment, then convert to bytes.
@@ -948,7 +944,7 @@ impl<R: Runtime> Tensor<R> {
     /// Clone tensor with new storage (deep copy)
     pub fn clone_deep(&self) -> Result<Self> {
         let bytes = self.to_bytes()?;
-        Self::try_from_bytes(&bytes, self.shape(), self.dtype(), self.device())
+        Self::from_bytes(&bytes, self.shape(), self.dtype(), self.device())
     }
 }
 
@@ -1032,7 +1028,7 @@ mod tests {
     fn test_from_slice() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 3]);
         assert_eq!(tensor.dtype(), DType::F32);
@@ -1047,7 +1043,7 @@ mod tests {
     fn test_transpose() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device).unwrap();
 
         let transposed = tensor.transpose(0, 1).unwrap();
 
@@ -1060,7 +1056,7 @@ mod tests {
     fn test_contiguous_already_contiguous() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0];
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 2], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device).unwrap();
 
         assert!(tensor.is_contiguous());
         let contiguous = tensor.contiguous().unwrap();
@@ -1075,7 +1071,7 @@ mod tests {
         let device = CpuDevice::new();
         // Create a 2x3 matrix: [[1, 2, 3], [4, 5, 6]]
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device).unwrap();
 
         // Transpose to 3x2: [[1, 4], [2, 5], [3, 6]]
         let transposed = tensor.transpose(0, 1).unwrap();
@@ -1096,7 +1092,7 @@ mod tests {
     fn test_reshape() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device).unwrap();
 
         let reshaped = tensor.reshape(&[3, 2]).unwrap();
         assert_eq!(reshaped.shape(), &[3, 2]);
@@ -1110,7 +1106,7 @@ mod tests {
     fn test_squeeze_unsqueeze() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0];
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[1, 3, 1], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[1, 3, 1], &device).unwrap();
 
         // Squeeze all dimensions of size 1
         let squeezed = tensor.squeeze(None);
@@ -1124,7 +1120,7 @@ mod tests {
     #[test]
     fn test_zeros() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::try_zeros(&[2, 3], DType::F32, &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::zeros(&[2, 3], DType::F32, &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 3]);
         assert_eq!(tensor.dtype(), DType::F32);
@@ -1137,7 +1133,7 @@ mod tests {
     #[test]
     fn test_ones() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::try_ones(&[2, 3], DType::F32, &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 3]);
         assert_eq!(tensor.dtype(), DType::F32);
@@ -1150,8 +1146,7 @@ mod tests {
     #[test]
     fn test_full_scalar() {
         let device = CpuDevice::new();
-        let tensor =
-            Tensor::<CpuRuntime>::try_full_scalar(&[2, 2], DType::I32, 42.0, &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::full_scalar(&[2, 2], DType::I32, 42.0, &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 2]);
         assert_eq!(tensor.dtype(), DType::I32);
@@ -1166,17 +1161,17 @@ mod tests {
 
         // 0-dimensional scalar
         let tensor =
-            Tensor::<CpuRuntime>::try_from_slice(&[std::f32::consts::PI], &[], &device).unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[std::f32::consts::PI], &[], &device).unwrap();
         let val: f32 = tensor.item().unwrap();
         assert!((val - std::f32::consts::PI).abs() < 1e-6);
 
         // Shape [1] tensor
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&[42.0f64], &[1], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&[42.0f64], &[1], &device).unwrap();
         let val: f64 = tensor.item().unwrap();
         assert!((val - 42.0).abs() < 1e-10);
 
         // Shape [1, 1, 1] tensor
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&[7i32], &[1, 1, 1], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&[7i32], &[1, 1, 1], &device).unwrap();
         let val: i32 = tensor.item().unwrap();
         assert_eq!(val, 7);
     }
@@ -1184,7 +1179,7 @@ mod tests {
     #[test]
     fn test_item_error_on_multi_element() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
 
         let result: Result<f32> = tensor.item();
         assert!(result.is_err());
@@ -1197,7 +1192,7 @@ mod tests {
     /// satisfy it. The resulting error must carry shape, dtype and device;
     /// the raw byte count alone forces the reader to hand-derive the tensor.
     ///
-    /// Sabotage check: drop the `map_err` in `try_empty` so the bare
+    /// Sabotage check: drop the `map_err` in `empty` so the bare
     /// `Error::OutOfMemory` propagates. The message becomes
     /// `Out of memory: failed to allocate 4611686018427387904 bytes` and every
     /// assertion below fails — it contains no shape, no dtype, no device.
@@ -1206,7 +1201,7 @@ mod tests {
         let device = CpuDevice::new();
         let shape = [1usize << 40, 1usize << 20];
 
-        let err = Tensor::<CpuRuntime>::try_empty(&shape, DType::F32, &device)
+        let err = Tensor::<CpuRuntime>::empty(&shape, DType::F32, &device)
             .expect_err("4 EiB must not allocate");
         let msg = err.to_string();
 
@@ -1228,7 +1223,7 @@ mod tests {
     fn try_to_vec_matches_to_vec() {
         let device = CpuDevice::new();
         let data = [1.5f32, -2.25, 3.75, 0.0];
-        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 2], &device).unwrap();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device).unwrap();
 
         let got: Vec<f32> = tensor.try_to_vec().expect("readback runs");
         assert_eq!(got, vec![1.5f32, -2.25, 3.75, 0.0]);
@@ -1241,8 +1236,7 @@ mod tests {
     fn try_to_vec_rejects_a_non_contiguous_tensor() {
         let device = CpuDevice::new();
         let tensor =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
-                .unwrap();
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
         let transposed = tensor.transpose(0, 1).expect("transpose runs");
 
         assert!(matches!(

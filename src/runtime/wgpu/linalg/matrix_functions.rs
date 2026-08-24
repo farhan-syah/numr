@@ -40,7 +40,7 @@ pub fn expm(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<WgpuR
     }
 
     if n == 0 {
-        return Tensor::<WgpuRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<WgpuRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -85,7 +85,7 @@ pub fn logm(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<WgpuR
     }
 
     if n == 0 {
-        return Tensor::<WgpuRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<WgpuRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -139,7 +139,7 @@ pub fn sqrtm(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<Wgpu
     }
 
     if n == 0 {
-        return Tensor::<WgpuRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<WgpuRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -224,7 +224,7 @@ pub fn signm(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<Wgpu
     }
 
     if n == 0 {
-        return Tensor::<WgpuRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<WgpuRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -295,7 +295,7 @@ pub fn fractional_matrix_power(
     }
 
     if n == 0 {
-        return Tensor::<WgpuRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<WgpuRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     // p = 0: Return identity
@@ -382,7 +382,7 @@ where
     }
 
     if n == 0 {
-        return Tensor::<WgpuRuntime>::try_zeros(&[0, 0], dtype, device);
+        return Tensor::<WgpuRuntime>::zeros(&[0, 0], dtype, device);
     }
 
     if n == 1 {
@@ -399,7 +399,7 @@ where
                 reason: "function returned NaN or Inf for eigenvalue".to_string(),
             });
         }
-        return Tensor::<WgpuRuntime>::try_full_scalar(&[1, 1], dtype, result, device);
+        return Tensor::<WgpuRuntime>::full_scalar(&[1, 1], dtype, result, device);
     }
 
     // Compute Schur decomposition
@@ -416,8 +416,8 @@ where
     let f_t = funm_quasi_triangular_f32(&t_data, n, &f)?;
 
     // Reconstruct on GPU
-    let f_t_tensor = Tensor::<WgpuRuntime>::try_from_slice(&f_t, &[n, n], device)?;
-    let z_tensor = Tensor::<WgpuRuntime>::try_from_slice(&z_data, &[n, n], device)?;
+    let f_t_tensor = Tensor::<WgpuRuntime>::from_slice(&f_t, &[n, n], device)?;
+    let z_tensor = Tensor::<WgpuRuntime>::from_slice(&z_data, &[n, n], device)?;
 
     let temp = client.matmul(&z_tensor, &f_t_tensor)?;
     let z_t = z_tensor.transpose(0, 1)?;
@@ -455,7 +455,7 @@ fn compute_schur_exp(
     let device = client.device();
 
     // Allocate output buffer
-    let output = Tensor::<WgpuRuntime>::try_zeros(&[n, n], dtype, device)?;
+    let output = Tensor::<WgpuRuntime>::zeros(&[n, n], dtype, device)?;
 
     let t_buffer = get_tensor_buffer(t)?;
     let output_buffer = get_tensor_buffer(&output)?;
@@ -488,7 +488,7 @@ fn compute_schur_log(
     let device = client.device();
 
     // Allocate output buffer
-    let output = Tensor::<WgpuRuntime>::try_zeros(&[n, n], dtype, device)?;
+    let output = Tensor::<WgpuRuntime>::zeros(&[n, n], dtype, device)?;
 
     let t_buffer = get_tensor_buffer(t)?;
     let output_buffer = get_tensor_buffer(&output)?;
@@ -523,7 +523,7 @@ fn validate_schur_eigenvalues_gpu(
     let eps = f32::EPSILON;
 
     // Allocate result buffer (2 elements: has_error flag, error value)
-    let result = Tensor::<WgpuRuntime>::try_zeros(&[2], dtype, device)?;
+    let result = Tensor::<WgpuRuntime>::zeros(&[2], dtype, device)?;
 
     let t_buffer = get_tensor_buffer(t)?;
     let result_buffer = get_tensor_buffer(&result)?;

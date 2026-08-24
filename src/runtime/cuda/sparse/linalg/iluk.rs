@@ -48,12 +48,12 @@ pub fn iluk_numeric_cuda(
     let orig_col_indices: Vec<i64> = a.col_indices().to_vec();
 
     // Convert combined pattern to GPU tensors on GPU (no CPU transfer of large arrays)
-    let combined_row_ptrs_gpu = Tensor::<CudaRuntime>::try_from_slice(
+    let combined_row_ptrs_gpu = Tensor::<CudaRuntime>::from_slice(
         &combined_row_ptrs,
         &[combined_row_ptrs.len()],
         &client.device,
     )?;
-    let combined_col_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
+    let combined_col_indices_gpu = Tensor::<CudaRuntime>::from_slice(
         &combined_col_indices,
         &[combined_col_indices.len()],
         &client.device,
@@ -81,7 +81,7 @@ pub fn iluk_numeric_cuda(
     )?;
 
     // Allocate diagonal indices buffer
-    let diag_indices_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, device)?;
+    let diag_indices_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, device)?;
 
     // Find diagonal indices on GPU
     unsafe {
@@ -356,10 +356,10 @@ fn initialize_combined_values_cuda(
     let combined_values = match dtype {
         DType::F32 => {
             let vals_f32: Vec<f32> = combined_values_cpu.iter().map(|&x| x as f32).collect();
-            Tensor::<CudaRuntime>::try_from_slice(&vals_f32, &[combined_nnz], device)?
+            Tensor::<CudaRuntime>::from_slice(&vals_f32, &[combined_nnz], device)?
         }
         DType::F64 => {
-            Tensor::<CudaRuntime>::try_from_slice(&combined_values_cpu, &[combined_nnz], device)?
+            Tensor::<CudaRuntime>::from_slice(&combined_values_cpu, &[combined_nnz], device)?
         }
         _ => unreachable!(),
     };
@@ -385,14 +385,11 @@ mod tests {
 
         // Create a simple 4x4 sparse matrix
         let row_ptrs =
-            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
-        let col_indices = Tensor::<CudaRuntime>::try_from_slice(
-            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
-            &[10],
-            device,
-        )
-        .unwrap();
-        let values = Tensor::<CudaRuntime>::try_from_slice(
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices =
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device)
+                .unwrap();
+        let values = Tensor::<CudaRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,
@@ -416,14 +413,11 @@ mod tests {
 
         // Tridiagonal matrix
         let row_ptrs =
-            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
-        let col_indices = Tensor::<CudaRuntime>::try_from_slice(
-            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
-            &[10],
-            device,
-        )
-        .unwrap();
-        let values = Tensor::<CudaRuntime>::try_from_slice(
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices =
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device)
+                .unwrap();
+        let values = Tensor::<CudaRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,
@@ -448,14 +442,11 @@ mod tests {
 
         // Tridiagonal matrix
         let row_ptrs =
-            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
-        let col_indices = Tensor::<CudaRuntime>::try_from_slice(
-            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
-            &[10],
-            device,
-        )
-        .unwrap();
-        let values = Tensor::<CudaRuntime>::try_from_slice(
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices =
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device)
+                .unwrap();
+        let values = Tensor::<CudaRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,

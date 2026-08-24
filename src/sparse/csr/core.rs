@@ -96,9 +96,9 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         let row_ptrs_data: Vec<i64> = vec![0; nrows + 1];
 
         Ok(Self {
-            row_ptrs: Tensor::try_from_slice(&row_ptrs_data, &[nrows + 1], device)?,
-            col_indices: Tensor::try_empty(&[0], DType::I64, device)?,
-            values: Tensor::try_empty(&[0], dtype, device)?,
+            row_ptrs: Tensor::from_slice(&row_ptrs_data, &[nrows + 1], device)?,
+            col_indices: Tensor::empty(&[0], DType::I64, device)?,
+            values: Tensor::empty(&[0], dtype, device)?,
             shape,
         })
     }
@@ -202,7 +202,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         let device = self.values.device();
 
         if n == 0 {
-            return Tensor::try_empty(&[0], self.dtype(), device);
+            return Tensor::empty(&[0], self.dtype(), device);
         }
 
         // Validate dtype matches T
@@ -235,7 +235,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         }
 
         // Create result tensor on original device
-        Tensor::try_from_slice(&diag_values, &[n], device)
+        Tensor::from_slice(&diag_values, &[n], device)
     }
 
     /// Extract diagonal elements using a `SparseOps` client (on-device).
@@ -374,9 +374,9 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
             }
         }
 
-        let row_ptrs_tensor = Tensor::try_from_slice(row_ptrs, &[row_ptrs.len()], device)?;
-        let col_indices_tensor = Tensor::try_from_slice(col_indices, &[col_indices.len()], device)?;
-        let values_tensor = Tensor::try_from_slice(values, &[values.len()], device)?;
+        let row_ptrs_tensor = Tensor::from_slice(row_ptrs, &[row_ptrs.len()], device)?;
+        let col_indices_tensor = Tensor::from_slice(col_indices, &[col_indices.len()], device)?;
+        let values_tensor = Tensor::from_slice(values, &[values.len()], device)?;
 
         Self::new(row_ptrs_tensor, col_indices_tensor, values_tensor, shape)
     }
@@ -470,7 +470,7 @@ mod tests {
 
         // Update values - double them
         let new_values = vec![2.0f32, 4.0, 6.0, 8.0, 10.0];
-        let new_values_tensor = Tensor::try_from_slice(&new_values, &[5], &device).unwrap();
+        let new_values_tensor = Tensor::from_slice(&new_values, &[5], &device).unwrap();
         csr.update_values(new_values_tensor).unwrap();
 
         // Verify values changed but structure unchanged
@@ -497,7 +497,7 @@ mod tests {
                 .unwrap();
 
         // Try to update with wrong size
-        let wrong_size = Tensor::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let wrong_size = Tensor::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         assert!(csr.update_values(wrong_size).is_err());
     }
 
@@ -514,8 +514,7 @@ mod tests {
                 .unwrap();
 
         // Try to update with wrong dtype (f64 instead of f32)
-        let wrong_dtype =
-            Tensor::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap();
+        let wrong_dtype = Tensor::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap();
         assert!(csr.update_values(wrong_dtype).is_err());
     }
 

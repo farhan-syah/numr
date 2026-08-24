@@ -19,7 +19,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
     fn relu(&self, a: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_relu(
@@ -39,7 +39,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
     fn sigmoid(&self, a: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_sigmoid(
@@ -59,7 +59,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
     fn silu(&self, a: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_silu(
@@ -79,7 +79,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
     fn gelu(&self, a: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_gelu(
@@ -110,7 +110,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         }
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_silu_mul(
@@ -142,7 +142,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         }
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_gelu_mul(
@@ -174,7 +174,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         }
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_relu_mul(
@@ -206,7 +206,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         }
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_sigmoid_mul(
@@ -234,8 +234,8 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         let grad_contig = ensure_contiguous(grad)?;
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let d_a = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
-        let d_b = Tensor::<CudaRuntime>::try_empty(b.shape(), dtype, &self.device)?;
+        let d_a = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
+        let d_b = Tensor::<CudaRuntime>::empty(b.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_silu_mul_bwd(
@@ -265,8 +265,8 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         let grad_contig = ensure_contiguous(grad)?;
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let d_a = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
-        let d_b = Tensor::<CudaRuntime>::try_empty(b.shape(), dtype, &self.device)?;
+        let d_a = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
+        let d_b = Tensor::<CudaRuntime>::empty(b.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_gelu_mul_bwd(
@@ -296,8 +296,8 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         let grad_contig = ensure_contiguous(grad)?;
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let d_a = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
-        let d_b = Tensor::<CudaRuntime>::try_empty(b.shape(), dtype, &self.device)?;
+        let d_a = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
+        let d_b = Tensor::<CudaRuntime>::empty(b.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_relu_mul_bwd(
@@ -327,8 +327,8 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         let grad_contig = ensure_contiguous(grad)?;
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let d_a = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
-        let d_b = Tensor::<CudaRuntime>::try_empty(b.shape(), dtype, &self.device)?;
+        let d_a = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
+        let d_b = Tensor::<CudaRuntime>::empty(b.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_sigmoid_mul_bwd(
@@ -355,7 +355,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
     ) -> Result<Tensor<CudaRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_leaky_relu(
@@ -376,7 +376,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
     fn elu(&self, a: &Tensor<CudaRuntime>, alpha: f64) -> Result<Tensor<CudaRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         unsafe {
             launch_elu(
@@ -402,7 +402,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
             normalize_softmax_dim(ndim, dim).ok_or(Error::InvalidDimension { dim, ndim })?;
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         let shape = a.shape();
         let outer_size: usize = shape[..dim_idx].iter().product();
@@ -457,7 +457,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
 
         let grad_contig = ensure_contiguous(grad)?;
         let output_contig = ensure_contiguous(output)?;
-        let d_input = Tensor::<CudaRuntime>::try_empty(grad.shape(), dtype, &self.device)?;
+        let d_input = Tensor::<CudaRuntime>::empty(grad.shape(), dtype, &self.device)?;
 
         let shape = grad.shape();
         let outer_size: usize = shape[..dim_idx].iter().product::<usize>().max(1);
@@ -525,7 +525,7 @@ impl ActivationOps<CudaRuntime> for CudaClient {
             let outer_size: usize = a_shape[..dim_idx].iter().product::<usize>().max(1);
             let a_contig = ensure_contiguous(a)?;
             let bias_contig = ensure_contiguous(bias)?;
-            let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+            let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
 
             unsafe {
                 launch_softmax_with_bias(

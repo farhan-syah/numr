@@ -35,7 +35,7 @@ pub trait ComplexOps<R: Runtime> {
     /// use numr::ops::ComplexOps;
     /// use numr::dtype::Complex64;
     ///
-    /// let z = Tensor::<CpuRuntime>::try_from_slice(
+    /// let z = Tensor::<CpuRuntime>::from_slice(
     ///     &[Complex64::new(1.0, 2.0), Complex64::new(3.0, -4.0)],
     ///     &[2],
     ///     &device
@@ -81,7 +81,7 @@ pub trait ComplexOps<R: Runtime> {
     /// use numr::ops::ComplexOps;
     /// use numr::dtype::Complex64;
     ///
-    /// let z = Tensor::<CpuRuntime>::try_from_slice(
+    /// let z = Tensor::<CpuRuntime>::from_slice(
     ///     &[Complex64::new(1.0, 2.0), Complex64::new(3.0, 4.0)],
     ///     &[2],
     ///     &device
@@ -126,7 +126,7 @@ pub trait ComplexOps<R: Runtime> {
     /// use numr::ops::ComplexOps;
     /// use numr::dtype::Complex64;
     ///
-    /// let z = Tensor::<CpuRuntime>::try_from_slice(
+    /// let z = Tensor::<CpuRuntime>::from_slice(
     ///     &[Complex64::new(1.0, 2.0), Complex64::new(3.0, 4.0)],
     ///     &[2],
     ///     &device
@@ -171,7 +171,7 @@ pub trait ComplexOps<R: Runtime> {
     /// use numr::ops::ComplexOps;
     /// use numr::dtype::Complex64;
     ///
-    /// let z = Tensor::<CpuRuntime>::try_from_slice(
+    /// let z = Tensor::<CpuRuntime>::from_slice(
     ///     &[Complex64::new(1.0, 1.0), Complex64::new(-1.0, 0.0)],
     ///     &[2],
     ///     &device
@@ -225,8 +225,8 @@ pub trait ComplexOps<R: Runtime> {
     /// # let client = CpuRuntime::default_client(&device);
     /// use numr::ops::ComplexOps;
     ///
-    /// let real = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)?;
-    /// let imag = Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 5.0, 6.0], &[3], &device)?;
+    /// let real = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)?;
+    /// let imag = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 5.0, 6.0], &[3], &device)?;
     /// let complex = client.make_complex(&real, &imag)?;
     /// // Result: [1.0+4.0i, 2.0+5.0i, 3.0+6.0i]
     /// # Ok::<(), numr::error::Error>(())
@@ -271,12 +271,12 @@ pub trait ComplexOps<R: Runtime> {
     /// use numr::ops::ComplexOps;
     /// use numr::dtype::Complex64;
     ///
-    /// let complex = Tensor::<CpuRuntime>::try_from_slice(
+    /// let complex = Tensor::<CpuRuntime>::from_slice(
     ///     &[Complex64::new(1.0, 2.0), Complex64::new(3.0, 4.0)],
     ///     &[2],
     ///     &device
     /// )?;
-    /// let scale = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 0.5], &[2], &device)?;
+    /// let scale = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 0.5], &[2], &device)?;
     /// let result = client.complex_mul_real(&complex, &scale)?;
     /// // Result: [2.0+4.0i, 1.5+2.0i]
     /// # Ok::<(), numr::error::Error>(())
@@ -325,12 +325,12 @@ pub trait ComplexOps<R: Runtime> {
     /// use numr::ops::ComplexOps;
     /// use numr::dtype::Complex64;
     ///
-    /// let complex = Tensor::<CpuRuntime>::try_from_slice(
+    /// let complex = Tensor::<CpuRuntime>::from_slice(
     ///     &[Complex64::new(4.0, 6.0), Complex64::new(2.0, 4.0)],
     ///     &[2],
     ///     &device
     /// )?;
-    /// let divisor = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 2.0], &[2], &device)?;
+    /// let divisor = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 2.0], &[2], &device)?;
     /// let result = client.complex_div_real(&complex, &divisor)?;
     /// // Result: [2.0+3.0i, 1.0+2.0i]
     /// # Ok::<(), numr::error::Error>(())
@@ -365,8 +365,8 @@ pub trait ComplexOps<R: Runtime> {
     /// use numr::ops::ComplexOps;
     /// use numr::dtype::Complex64;
     ///
-    /// let scale = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 0.5], &[2], &device)?;
-    /// let complex = Tensor::<CpuRuntime>::try_from_slice(
+    /// let scale = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 0.5], &[2], &device)?;
+    /// let complex = Tensor::<CpuRuntime>::from_slice(
     ///     &[Complex64::new(1.0, 2.0), Complex64::new(3.0, 4.0)],
     ///     &[2],
     ///     &device

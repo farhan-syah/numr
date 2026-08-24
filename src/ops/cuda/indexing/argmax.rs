@@ -31,7 +31,7 @@ pub fn argmax(
     let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device)?;
 
     // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
     // would still make the kernel write one element past the empty allocation.
@@ -79,7 +79,7 @@ pub fn argmin(
     let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device)?;
 
     // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
     // would still make the kernel write one element past the empty allocation.

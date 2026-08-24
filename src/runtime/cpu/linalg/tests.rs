@@ -17,8 +17,7 @@ fn test_lu_decomposition_2x2() {
     let device = client.device();
 
     // A = [[4, 3], [6, 3]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device).unwrap();
 
     let lu = client.lu_decompose(&a).unwrap();
 
@@ -33,7 +32,7 @@ fn test_lu_decomposition_3x3() {
     let device = client.device();
 
     // A = [[2, -1, 0], [-1, 2, -1], [0, -1, 2]] (tridiagonal matrix)
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[2.0f32, -1.0, 0.0, -1.0, 2.0, -1.0, 0.0, -1.0, 2.0],
         &[3, 3],
         device,
@@ -55,9 +54,8 @@ fn test_solve_2x2() {
 
     // A = [[2, 1], [1, 2]], b = [3, 3]
     // Solution: x = [1, 1]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 3.0], &[2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 3.0], &[2], device).unwrap();
 
     let x = client.solve(&a, &b).unwrap();
     let x_data: Vec<f32> = x.to_vec();
@@ -74,8 +72,7 @@ fn test_det_2x2() {
 
     // A = [[4, 3], [6, 3]]
     // det = 4*3 - 3*6 = 12 - 18 = -6
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device).unwrap();
 
     let det = client.det(&a).unwrap();
     let det_val: Vec<f32> = det.to_vec();
@@ -90,8 +87,7 @@ fn test_trace() {
 
     // A = [[1, 2], [3, 4]]
     // trace = 1 + 4 = 5
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let tr = client.trace(&a).unwrap();
     let tr_val: Vec<f32> = tr.to_vec();
@@ -106,8 +102,7 @@ fn test_cholesky_2x2() {
 
     // A = [[4, 2], [2, 2]] - symmetric positive definite
     // L = [[2, 0], [1, 1]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 2.0, 2.0, 2.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 2.0, 2.0, 2.0], &[2, 2], device).unwrap();
 
     let chol = client.cholesky_decompose(&a).unwrap();
     let l_data: Vec<f32> = chol.l.to_vec();
@@ -127,8 +122,7 @@ fn test_inverse_2x2() {
     // A = [[4, 7], [2, 6]]
     // det = 24 - 14 = 10
     // A^(-1) = 1/10 * [[6, -7], [-2, 4]] = [[0.6, -0.7], [-0.2, 0.4]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device).unwrap();
 
     let inv = client.inverse(&a).unwrap();
     let inv_data: Vec<f32> = inv.to_vec();
@@ -144,9 +138,8 @@ fn test_diag() {
     let client = create_client();
     let device = client.device();
 
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)
-            .unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)
+        .unwrap();
 
     let d = client.diag(&a).unwrap();
     let d_data: Vec<f32> = d.to_vec();
@@ -161,7 +154,7 @@ fn test_diagflat() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
 
     let mat = client.diagflat(&a).unwrap();
     let mat_data: Vec<f32> = mat.to_vec();
@@ -182,8 +175,7 @@ fn test_qr_decomposition_2x2() {
     let device = client.device();
 
     // A = [[1, 2], [3, 4]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let qr = client.qr_decompose(&a).unwrap();
 
@@ -228,9 +220,8 @@ fn test_lstsq_exact() {
     // Exact system: A @ x = b with unique solution
     // A = [[2, 1], [1, 2]], b = [3, 3]
     // Solution: x = [1, 1]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 3.0], &[2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 3.0], &[2], device).unwrap();
 
     let x = client.lstsq(&a, &b).unwrap();
     let x_data: Vec<f32> = x.to_vec();
@@ -254,8 +245,7 @@ fn test_matrix_rank_full_rank() {
     let device = client.device();
 
     // Full rank 2x2 matrix
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let rank = client.matrix_rank(&a, None).unwrap();
     let rank_val: Vec<i64> = rank.to_vec();
@@ -270,8 +260,7 @@ fn test_matrix_rank_rank_deficient() {
 
     // Rank-deficient 2x2 matrix: second row is multiple of first
     // [[1, 2], [2, 4]] has rank 1
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 4.0], &[2, 2], device).unwrap();
 
     let rank = client.matrix_rank(&a, None).unwrap();
     let rank_val: Vec<i64> = rank.to_vec();
@@ -286,8 +275,7 @@ fn test_frobenius_norm_2x2() {
 
     // A = [[1, 2], [3, 4]]
     // ||A||_F = sqrt(1² + 2² + 3² + 4²) = sqrt(1 + 4 + 9 + 16) = sqrt(30)
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let norm = client.matrix_norm(&a, MatrixNormOrder::Frobenius).unwrap();
     let norm_val: Vec<f32> = norm.to_vec();
@@ -307,7 +295,7 @@ fn test_frobenius_norm_3x3() {
     let device = client.device();
 
     // Identity matrix: ||I||_F = sqrt(3) for 3x3
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         &[3, 3],
         device,
@@ -332,8 +320,7 @@ fn test_spectral_norm() {
     let device = client.device();
 
     // Test on a 2x2 matrix [[1, 2], [3, 4]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let result = client.matrix_norm(&a, MatrixNormOrder::Spectral).unwrap();
     let norm_val: Vec<f32> = result.to_vec();
@@ -353,8 +340,7 @@ fn test_nuclear_norm() {
     let device = client.device();
 
     // Test on a 2x2 matrix [[1, 2], [3, 4]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let result = client.matrix_norm(&a, MatrixNormOrder::Nuclear).unwrap();
     let norm_val: Vec<f32> = result.to_vec();
@@ -375,8 +361,7 @@ fn test_spectral_norm_identity() {
     let device = client.device();
 
     // Identity matrix has spectral norm = 1 (all singular values = 1)
-    let eye =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], device).unwrap();
+    let eye = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], device).unwrap();
 
     let result = client.matrix_norm(&eye, MatrixNormOrder::Spectral).unwrap();
     let norm_val: Vec<f32> = result.to_vec();
@@ -394,7 +379,7 @@ fn test_nuclear_norm_identity() {
     let device = client.device();
 
     // 3x3 Identity matrix has nuclear norm = 3 (sum of 3 singular values = 1)
-    let eye = Tensor::<CpuRuntime>::try_from_slice(
+    let eye = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         &[3, 3],
         device,
@@ -420,7 +405,7 @@ fn test_schur_1x1() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[5.0f64], &[1, 1], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[5.0f64], &[1, 1], device).unwrap();
     let schur = client.schur_decompose(&a).unwrap();
 
     let z_data: Vec<f64> = schur.z.to_vec();
@@ -437,8 +422,7 @@ fn test_schur_2x2_reconstruction() {
     let device = client.device();
 
     // A = [[1, 2], [3, 4]]
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
     let schur = client.schur_decompose(&a).unwrap();
 
     let z_data: Vec<f64> = schur.z.to_vec();
@@ -495,8 +479,7 @@ fn test_schur_symmetric_diagonal() {
 
     // For a symmetric matrix, Schur form is diagonal (eigenvalue decomposition)
     // A = [[2, 1], [1, 3]] (symmetric)
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 3.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 3.0], &[2, 2], device).unwrap();
     let schur = client.schur_decompose(&a).unwrap();
 
     let t_data: Vec<f64> = schur.t.to_vec();
@@ -515,7 +498,7 @@ fn test_schur_3x3() {
     let device = client.device();
 
     // A 3x3 upper triangular matrix is already in Schur form
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f64, 2.0, 3.0, 0.0, 4.0, 5.0, 0.0, 0.0, 6.0],
         &[3, 3],
         device,
@@ -558,7 +541,7 @@ fn test_eig_1x1() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[5.0f64], &[1, 1], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[5.0f64], &[1, 1], device).unwrap();
     let eig = client.eig_decompose(&a).unwrap();
 
     let eval_real: Vec<f64> = eig.eigenvalues_real.to_vec();
@@ -575,8 +558,7 @@ fn test_eig_2x2_real_eigenvalues() {
     let device = client.device();
 
     // A = [[2, 1], [1, 2]] - symmetric with real eigenvalues 3 and 1
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
     let eig = client.eig_decompose(&a).unwrap();
 
     let eval_real: Vec<f64> = eig.eigenvalues_real.to_vec();
@@ -605,8 +587,7 @@ fn test_eig_2x2_complex_eigenvalues() {
     let device = client.device();
 
     // A = [[0, -1], [1, 0]] - rotation matrix with eigenvalues ±i
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[0.0f64, -1.0, 1.0, 0.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[0.0f64, -1.0, 1.0, 0.0], &[2, 2], device).unwrap();
     let eig = client.eig_decompose(&a).unwrap();
 
     let eval_real: Vec<f64> = eig.eigenvalues_real.to_vec();
@@ -632,8 +613,7 @@ fn test_eig_eigenvector_equation() {
     let device = client.device();
 
     // A = [[1, 2], [3, 4]] - non-symmetric with real eigenvalues
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
     let a_data: Vec<f64> = a.to_vec();
     let eig = client.eig_decompose(&a).unwrap();
 
@@ -682,7 +662,7 @@ fn test_eig_3x3_diagonal() {
     let device = client.device();
 
     // Diagonal matrix - eigenvalues are the diagonal elements
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f64, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0],
         &[3, 3],
         device,
@@ -718,8 +698,7 @@ fn test_kron_2x2_identity() {
     let device = client.device();
 
     // I₂ ⊗ I₂ = I₄
-    let i2 =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], device).unwrap();
+    let i2 = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], device).unwrap();
     let kron = client.kron(&i2, &i2).unwrap();
 
     assert_eq!(kron.shape(), &[4, 4]);
@@ -748,10 +727,8 @@ fn test_kron_2x2_simple() {
 
     // A = [[1, 2], [3, 4]], B = [[0, 5], [6, 7]]
     // A ⊗ B should be 4x4
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 5.0, 6.0, 7.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 5.0, 6.0, 7.0], &[2, 2], device).unwrap();
 
     let kron = client.kron(&a, &b).unwrap();
     assert_eq!(kron.shape(), &[4, 4]);
@@ -788,9 +765,8 @@ fn test_kron_scalar_property() {
     let device = client.device();
 
     // 1x1 ⊗ A = scalar * A
-    let scalar = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1, 1], device).unwrap();
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let scalar = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1, 1], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let kron = client.kron(&scalar, &a).unwrap();
     assert_eq!(kron.shape(), &[2, 2]);
@@ -809,12 +785,10 @@ fn test_kron_rectangular() {
     let device = client.device();
 
     // 2x3 ⊗ 3x2 = 6x6
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)
-            .unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], device)
-            .unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device)
+        .unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], device)
+        .unwrap();
 
     let kron = client.kron(&a, &b).unwrap();
     assert_eq!(kron.shape(), &[6, 6]);
@@ -835,10 +809,8 @@ fn test_kron_f64() {
     let device = client.device();
 
     // Test with F64
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
 
     let kron = client.kron(&a, &b).unwrap();
     assert_eq!(kron.shape(), &[4, 4]);
@@ -863,10 +835,8 @@ fn test_khatri_rao_2x2() {
     // A = [[1, 2], [3, 4]] (2x2)
     // B = [[5, 6], [7, 8]] (2x2)
     // A ⊙ B should be (2*2)x2 = 4x2
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
 
     let kr = client.khatri_rao(&a, &b).unwrap();
     assert_eq!(kr.shape(), &[4, 2]);
@@ -898,10 +868,9 @@ fn test_khatri_rao_different_rows() {
     // A = [[1, 2, 3]] (1x3)
     // B = [[4, 5, 6], [7, 8, 9]] (2x3)
     // A ⊙ B should be (1*2)x3 = 2x3
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], device).unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 5.0, 6.0, 7.0, 8.0, 9.0], &[2, 3], device)
-            .unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 5.0, 6.0, 7.0, 8.0, 9.0], &[2, 3], device)
+        .unwrap();
 
     let kr = client.khatri_rao(&a, &b).unwrap();
     assert_eq!(kr.shape(), &[2, 3]);
@@ -931,8 +900,8 @@ fn test_khatri_rao_column_mismatch() {
     let device = client.device();
 
     // Different column counts should fail
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], device).unwrap();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0, 5.0], &[1, 3], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0, 5.0], &[1, 3], device).unwrap();
 
     let result = client.khatri_rao(&a, &b);
     assert!(
@@ -947,10 +916,8 @@ fn test_khatri_rao_f64() {
     let device = client.device();
 
     // Test with F64
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
 
     let kr = client.khatri_rao(&a, &b).unwrap();
     assert_eq!(kr.shape(), &[4, 2]);
@@ -978,10 +945,8 @@ fn test_khatri_rao_gram_property() {
 
     // Property: (A ⊙ B)^T (A ⊙ B) = (A^T A) * (B^T B) (Hadamard product)
     // This is a fundamental property of Khatri-Rao used in tensor decompositions
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
-    let b =
-        Tensor::<CpuRuntime>::try_from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
 
     let kr = client.khatri_rao(&a, &b).unwrap();
 
@@ -1000,7 +965,7 @@ fn test_triu_3x3_default_diagonal() {
     let device = client.device();
 
     // A = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
         &[3, 3],
         device,
@@ -1019,7 +984,7 @@ fn test_triu_3x3_diagonal_1() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
         &[3, 3],
         device,
@@ -1038,7 +1003,7 @@ fn test_triu_3x3_negative_diagonal() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
         &[3, 3],
         device,
@@ -1057,7 +1022,7 @@ fn test_tril_3x3_default_diagonal() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
         &[3, 3],
         device,
@@ -1076,7 +1041,7 @@ fn test_tril_3x3_diagonal_1() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
         &[3, 3],
         device,
@@ -1096,7 +1061,7 @@ fn test_triu_rectangular_2x4() {
     let device = client.device();
 
     // A = [[1, 2, 3, 4], [5, 6, 7, 8]]
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         &[2, 4],
         device,
@@ -1115,8 +1080,8 @@ fn test_triu_i32() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1i32, 2, 3, 4, 5, 6, 7, 8, 9], &[3, 3], device)
-        .unwrap();
+    let a =
+        Tensor::<CpuRuntime>::from_slice(&[1i32, 2, 3, 4, 5, 6, 7, 8, 9], &[3, 3], device).unwrap();
 
     let result = client.triu(&a, 0).unwrap();
     let data: Vec<i32> = result.to_vec();
@@ -1129,7 +1094,7 @@ fn test_triu_f64() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
         &[3, 3],
         device,
@@ -1153,8 +1118,7 @@ fn test_slogdet_2x2() {
 
     // A = [[1, 2], [3, 4]], det = 1*4 - 2*3 = -2
     // sign = -1, logabsdet = ln(2)
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let result = client.slogdet(&a).unwrap();
 
@@ -1180,7 +1144,7 @@ fn test_slogdet_3x3_identity() {
     let device = client.device();
 
     // Identity matrix: det = 1, sign = 1, logabsdet = 0
-    let a = Tensor::<CpuRuntime>::try_from_slice(
+    let a = Tensor::<CpuRuntime>::from_slice(
         &[1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         &[3, 3],
         device,
@@ -1211,8 +1175,7 @@ fn test_slogdet_positive_det() {
 
     // A = [[2, 0], [0, 3]], det = 6
     // sign = 1, logabsdet = ln(6)
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 0.0, 0.0, 3.0], &[2, 2], device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 0.0, 0.0, 3.0], &[2, 2], device).unwrap();
 
     let result = client.slogdet(&a).unwrap();
 

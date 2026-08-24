@@ -353,8 +353,8 @@ mod tests {
     fn test_add_scalar_backward() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device).unwrap();
 
         let backward = AddScalarBackward::<CpuRuntime>::new(a.id(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -368,8 +368,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // z = a * 3, dz/da = 3
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device).unwrap();
 
         let backward = MulScalarBackward::<CpuRuntime>::new(a.id(), 3.0, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -383,8 +383,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // z = a / 2, dz/da = 1/2 = 0.5
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 6.0, 8.0], &[3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 6.0, 8.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device).unwrap();
 
         let backward = DivScalarBackward::<CpuRuntime>::new(a.id(), 2.0, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -398,8 +398,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // z = a^2, dz/da = 2*a
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0, 4.0], &[3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0, 4.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device).unwrap();
 
         let backward = PowScalarBackward::<CpuRuntime>::new(a.id(), a.clone(), 2.0, None);
         let grads = backward.backward_all(&grad_out).unwrap();

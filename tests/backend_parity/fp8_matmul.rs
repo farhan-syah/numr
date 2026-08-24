@@ -16,7 +16,7 @@ fn create_fp8e4m3_tensor<R: numr::runtime::Runtime<DType = DType>>(
     device: &R::Device,
     client: &impl TypeConversionOps<R>,
 ) -> numr::error::Result<Tensor<R>> {
-    let f32_tensor = Tensor::try_from_slice(data, shape, device).unwrap();
+    let f32_tensor = Tensor::from_slice(data, shape, device).unwrap();
     client.cast(&f32_tensor, DType::FP8E4M3)
 }
 
@@ -27,7 +27,7 @@ fn create_fp8e5m2_tensor<R: numr::runtime::Runtime<DType = DType>>(
     device: &R::Device,
     client: &impl TypeConversionOps<R>,
 ) -> numr::error::Result<Tensor<R>> {
-    let f32_tensor = Tensor::try_from_slice(data, shape, device).unwrap();
+    let f32_tensor = Tensor::from_slice(data, shape, device).unwrap();
     client.cast(&f32_tensor, DType::FP8E5M2)
 }
 
@@ -142,7 +142,7 @@ fn test_fp8_matmul_e4m3_cpu_bf16_output() {
 #[test]
 fn test_fp8_matmul_dtype_validation() {
     let (client, device) = create_cpu_client();
-    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
     let b_data: Vec<f32> = vec![1.0, 2.0];
     let b = create_fp8e4m3_tensor::<CpuRuntime>(&b_data, &[2, 1], &device, &client).unwrap();
 

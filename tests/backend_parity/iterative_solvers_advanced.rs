@@ -33,11 +33,10 @@ fn create_diag_dominant(n: usize, device: &<CpuRuntime as Runtime>::Device) -> C
     }
 
     let row_ptrs_tensor =
-        Tensor::<CpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
+        Tensor::<CpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
     let col_indices_tensor =
-        Tensor::<CpuRuntime>::try_from_slice(&col_indices, &[col_indices.len()], device).unwrap();
-    let values_tensor =
-        Tensor::<CpuRuntime>::try_from_slice(&values, &[values.len()], device).unwrap();
+        Tensor::<CpuRuntime>::from_slice(&col_indices, &[col_indices.len()], device).unwrap();
+    let values_tensor = Tensor::<CpuRuntime>::from_slice(&values, &[values.len()], device).unwrap();
 
     CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, [n, n])
         .expect("CSR creation should succeed")
@@ -55,7 +54,7 @@ fn test_jacobi_diag_dominant() {
     let n = 10;
     let a = create_diag_dominant(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .jacobi(
@@ -97,7 +96,7 @@ fn test_sor_laplacian() {
     let n = 10;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .sor(
@@ -135,7 +134,7 @@ fn test_sor_vs_jacobi() {
     let n = 10;
     let a = create_diag_dominant(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let jacobi_result = client
         .jacobi(
@@ -185,7 +184,7 @@ fn test_lgmres_nonsymmetric() {
     let n = 10;
     let a = create_nonsymmetric(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .lgmres(
@@ -225,7 +224,7 @@ fn test_lgmres_laplacian() {
     let n = 10;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .lgmres(&a, &b, None, LgmresOptions::default())
@@ -246,7 +245,7 @@ fn test_qmr_nonsymmetric() {
     let n = 10;
     let a = create_nonsymmetric(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .qmr(
@@ -284,7 +283,7 @@ fn test_qmr_laplacian() {
     let n = 10;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .qmr(&a, &b, None, QmrOptions::default())
@@ -307,7 +306,7 @@ fn test_amg_preconditioned_cg() {
     let n = 20;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
+    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device).unwrap();
 
     let hierarchy =
         amg_setup(&client, &a, AmgOptions::default()).expect("AMG setup should succeed");

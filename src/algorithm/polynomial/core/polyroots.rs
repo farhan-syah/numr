@@ -72,8 +72,8 @@ where
     // Degree 0 polynomial (constant) - no roots
     if n == 1 {
         return Ok(PolynomialRoots {
-            roots_real: Tensor::try_zeros(&[0], dtype, device)?,
-            roots_imag: Tensor::try_zeros(&[0], dtype, device)?,
+            roots_real: Tensor::zeros(&[0], dtype, device)?,
+            roots_imag: Tensor::zeros(&[0], dtype, device)?,
         });
     }
 
@@ -92,7 +92,7 @@ where
 
     // Build companion matrix using tensor operations
     // Start with zeros matrix
-    let mut companion = Tensor::try_zeros(&[degree, degree], dtype, device)?;
+    let mut companion = Tensor::zeros(&[degree, degree], dtype, device)?;
 
     // Build subdiagonal: positions (i+1, i) for i in 0..degree-1 should be 1
     // This can be done by shifting an identity matrix
@@ -101,8 +101,8 @@ where
         let sub_eye = client.eye(degree - 1, None, dtype)?;
         // Pad to create subdiagonal pattern
         // eye is at positions (0..d-1, 0..d-1), we need it at (1..d, 0..d-1)
-        let zeros_row = Tensor::try_zeros(&[1, degree - 1], dtype, device)?;
-        let zeros_col = Tensor::try_zeros(&[degree, 1], dtype, device)?;
+        let zeros_row = Tensor::zeros(&[1, degree - 1], dtype, device)?;
+        let zeros_col = Tensor::zeros(&[degree, 1], dtype, device)?;
         // Stack: [zeros_row; sub_eye] gives (degree x degree-1) with subdiagonal
         let sub_with_top = client.cat(&[&zeros_row, &sub_eye], 0)?; // [degree, degree-1]
         // Add zeros column on right to make it [degree, degree]
@@ -126,7 +126,7 @@ where
     let last_col_2d = last_col.reshape(&[degree, 1])?;
 
     // Create column indices (all pointing to last column = degree-1)
-    let col_indices = Tensor::try_full_scalar(&[degree], index_dtype, (degree - 1) as f64, device)?;
+    let col_indices = Tensor::full_scalar(&[degree], index_dtype, (degree - 1) as f64, device)?;
 
     // Use scatter to set last column
     let col_indices_2d = col_indices.reshape(&[degree, 1])?;

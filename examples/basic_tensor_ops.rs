@@ -25,14 +25,13 @@ fn main() -> Result<()> {
     // -----------------------------------------------------------------------
 
     // From a slice – you provide data and the desired shape.
-    let a =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
+    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
     println!("a (2×3):\n{:?}", a.to_vec::<f32>());
 
     // Convenience constructors.
-    let zeros = Tensor::<CpuRuntime>::try_zeros(&[2, 3], DType::F32, &device)?;
-    let ones = Tensor::<CpuRuntime>::try_ones(&[2, 3], DType::F32, &device)?;
-    let filled = Tensor::<CpuRuntime>::try_full_scalar(&[2, 3], DType::F32, 7.0, &device)?;
+    let zeros = Tensor::<CpuRuntime>::zeros(&[2, 3], DType::F32, &device)?;
+    let ones = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device)?;
+    let filled = Tensor::<CpuRuntime>::full_scalar(&[2, 3], DType::F32, 7.0, &device)?;
     println!("zeros: {:?}", zeros.to_vec::<f32>());
     println!("ones:  {:?}", ones.to_vec::<f32>());
     println!("filled:{:?}", filled.to_vec::<f32>());
@@ -60,7 +59,7 @@ fn main() -> Result<()> {
     // -----------------------------------------------------------------------
     // All operations go through the client, not operator overloading.
 
-    let b = Tensor::<CpuRuntime>::try_from_slice(
+    let b = Tensor::<CpuRuntime>::from_slice(
         &[10.0f32, 20.0, 30.0, 40.0, 50.0, 60.0],
         &[2, 3],
         &device,
@@ -83,14 +82,13 @@ fn main() -> Result<()> {
     // -----------------------------------------------------------------------
     // 5. Unary math functions
     // -----------------------------------------------------------------------
-    let x = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0, 2.0, 3.0], &[4], &device)?;
+    let x = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0, 2.0, 3.0], &[4], &device)?;
     println!("\nexp(x) = {:?}", client.exp(&x)?.to_vec::<f32>());
     println!("sqrt(x) = {:?}", client.sqrt(&x)?.to_vec::<f32>());
     println!("sin(x) = {:?}", client.sin(&x)?.to_vec::<f32>());
 
     // Activations.
-    let logits =
-        Tensor::<CpuRuntime>::try_from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)?;
+    let logits = Tensor::<CpuRuntime>::from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)?;
     println!(
         "relu(logits)    = {:?}",
         client.relu(&logits)?.to_vec::<f32>()
@@ -106,8 +104,7 @@ fn main() -> Result<()> {
     // `dims` selects which axes to reduce; `keepdim` controls whether
     // reduced dimensions are retained as size-1.
 
-    let m =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
+    let m = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
     let row_sum = client.sum(&m, &[1], false)?; // sum across columns
     let col_mean = client.mean(&m, &[0], false)?; // mean down rows
     let global_max = client.max(&m, &[0, 1], false)?;
@@ -122,12 +119,9 @@ fn main() -> Result<()> {
     // matmul follows standard linear-algebra rules: (M,K) @ (K,N) → (M,N).
 
     let lhs =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
-    let rhs = Tensor::<CpuRuntime>::try_from_slice(
-        &[7.0f32, 8.0, 9.0, 10.0, 11.0, 12.0],
-        &[3, 2],
-        &device,
-    )?;
+        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
+    let rhs =
+        Tensor::<CpuRuntime>::from_slice(&[7.0f32, 8.0, 9.0, 10.0, 11.0, 12.0], &[3, 2], &device)?;
     let matmul_result = client.matmul(&lhs, &rhs)?;
     println!(
         "\n(2×3) @ (3×2) = {:?}  (shape {:?})",
@@ -140,8 +134,7 @@ fn main() -> Result<()> {
     // -----------------------------------------------------------------------
     // These operations create a *view* sharing the same underlying storage.
 
-    let t =
-        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
+    let t = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)?;
 
     let reshaped = t.reshape(&[3, 2])?;
     println!("\nreshaped (3×2): {:?}", reshaped.to_vec::<f32>());
@@ -156,8 +149,8 @@ fn main() -> Result<()> {
     println!("unsqueeze(0) shape: {:?}", unsqueezed.shape());
 
     // Broadcasting: [2, 1] + [1, 3] → [2, 3]
-    let col = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0], &[2, 1], &device)?;
-    let row = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device)?;
+    let col = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0], &[2, 1], &device)?;
+    let row = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device)?;
     let broadcast_sum = client.add(&col, &row)?;
     println!(
         "\nbroadcast [2,1]+[1,3] = {:?}  (shape {:?})",
@@ -168,15 +161,15 @@ fn main() -> Result<()> {
     // -----------------------------------------------------------------------
     // 9. Extracting scalar values
     // -----------------------------------------------------------------------
-    let scalar = Tensor::<CpuRuntime>::try_from_slice(&[42.0f32], &[], &device)?;
+    let scalar = Tensor::<CpuRuntime>::from_slice(&[42.0f32], &[], &device)?;
     let value: f32 = scalar.item()?;
     println!("\nscalar item = {value}");
 
     // -----------------------------------------------------------------------
     // 10. Comparison operations
     // -----------------------------------------------------------------------
-    let p = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0], &[3], &device)?;
-    let q = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 5.0, 1.0], &[3], &device)?;
+    let p = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0], &[3], &device)?;
+    let q = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 5.0, 1.0], &[3], &device)?;
     let eq_mask = client.eq(&p, &q)?;
     let gt_mask = client.gt(&p, &q)?;
     // Comparison results use the same dtype (1.0 = true, 0.0 = false).

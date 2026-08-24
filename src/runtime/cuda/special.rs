@@ -18,7 +18,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn erf(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_erf(
@@ -38,7 +38,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn erfc(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_erfc(
@@ -58,7 +58,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn erfinv(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_erfinv(
@@ -78,7 +78,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn gamma(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_gamma(
@@ -98,7 +98,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn lgamma(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_lgamma(
@@ -118,7 +118,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn digamma(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_digamma(
@@ -155,7 +155,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
         }
 
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), a.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), a.dtype(), device)?;
 
         unsafe {
             kernels::launch_beta(
@@ -194,7 +194,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
         }
 
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), a.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), a.dtype(), device)?;
 
         unsafe {
             kernels::launch_betainc(
@@ -233,7 +233,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
         }
 
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), a.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), a.dtype(), device)?;
 
         unsafe {
             kernels::launch_gammainc(
@@ -271,7 +271,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
         }
 
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), a.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), a.dtype(), device)?;
 
         unsafe {
             kernels::launch_gammaincc(
@@ -309,7 +309,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
         }
 
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), a.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), a.dtype(), device)?;
 
         unsafe {
             kernels::launch_gammaincinv(
@@ -348,7 +348,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
         }
 
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(a.shape(), a.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(a.shape(), a.dtype(), device)?;
 
         unsafe {
             kernels::launch_betaincinv(
@@ -370,7 +370,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_j0(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_j0(
@@ -390,7 +390,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_j1(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_j1(
@@ -410,7 +410,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_y0(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_y0(
@@ -430,7 +430,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_y1(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_y1(
@@ -450,7 +450,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_i0(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_i0(
@@ -470,7 +470,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_i1(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_i1(
@@ -490,7 +490,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_k0(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_k0(
@@ -510,7 +510,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn bessel_k1(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_bessel_k1(
@@ -534,7 +534,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn ellipk(&self, m: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(m.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(m.shape(), m.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(m.shape(), m.dtype(), device)?;
 
         unsafe {
             kernels::launch_ellipk(
@@ -554,7 +554,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn ellipe(&self, m: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(m.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(m.shape(), m.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(m.shape(), m.dtype(), device)?;
 
         unsafe {
             kernels::launch_ellipe(
@@ -580,7 +580,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     ) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(z.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(z.shape(), z.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(z.shape(), z.dtype(), device)?;
 
         unsafe {
             kernels::launch_hyp2f1(
@@ -603,7 +603,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn hyp1f1(&self, a: f64, b: f64, z: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(z.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(z.shape(), z.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(z.shape(), z.dtype(), device)?;
 
         unsafe {
             kernels::launch_hyp1f1(
@@ -625,7 +625,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn airy_ai(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_airy_ai(
@@ -645,7 +645,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn airy_bi(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_airy_bi(
@@ -665,7 +665,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn legendre_p(&self, n: i32, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_legendre_p(
@@ -691,7 +691,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     ) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_legendre_p_assoc(
@@ -732,7 +732,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
         }
 
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(theta.shape(), theta.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(theta.shape(), theta.dtype(), device)?;
 
         unsafe {
             kernels::launch_sph_harm(
@@ -755,7 +755,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn fresnel_s(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_fresnel_s(
@@ -775,7 +775,7 @@ impl SpecialFunctions<CudaRuntime> for CudaClient {
     fn fresnel_c(&self, x: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         validate_special_dtype(x.dtype())?;
         let device = self.device();
-        let out = Tensor::<CudaRuntime>::try_empty(x.shape(), x.dtype(), device)?;
+        let out = Tensor::<CudaRuntime>::empty(x.shape(), x.dtype(), device)?;
 
         unsafe {
             kernels::launch_fresnel_c(

@@ -73,7 +73,7 @@ where
     let ncv = ncv.max(k + 1).min(n);
 
     // Deterministic starting vector: v = [1, 1, ..., 1] / sqrt(n)
-    let ones = Tensor::<R>::try_ones(&[n], dtype, device)?;
+    let ones = Tensor::<R>::ones(&[n], dtype, device)?;
     let scale = 1.0 / (n as f64).sqrt();
     let mut v_curr = client.mul_scalar(&ones, scale)?;
 
@@ -81,7 +81,7 @@ where
     let mut alphas: Vec<f64> = Vec::with_capacity(ncv);
     let mut betas: Vec<f64> = Vec::with_capacity(ncv);
 
-    let mut v_prev = Tensor::<R>::try_zeros(&[n], dtype, device)?;
+    let mut v_prev = Tensor::<R>::zeros(&[n], dtype, device)?;
     let mut beta_prev = 0.0_f64;
 
     for restart_iter in 0..options.max_iter {
@@ -167,7 +167,7 @@ where
                 ritz_vectors.push(ritz);
             }
 
-            let eigenvalues = Tensor::<R>::try_from_slice(&eigenvalue_data, &[k_actual], device)?;
+            let eigenvalues = Tensor::<R>::from_slice(&eigenvalue_data, &[k_actual], device)?;
             let eigenvectors = assemble_column_matrix::<R>(&ritz_vectors, n, k_actual, device)?;
 
             return Ok(SparseEigResult {
@@ -225,5 +225,5 @@ fn assemble_column_matrix<R: Runtime<DType = DType>>(
         let col_data: Vec<f64> = tensor.to_vec();
         flat[col * n..(col + 1) * n].copy_from_slice(&col_data);
     }
-    Tensor::<R>::try_from_slice(&flat, &[n, k], device)
+    Tensor::<R>::from_slice(&flat, &[n, k], device)
 }

@@ -11,7 +11,7 @@
 //! # use numr::ops::SpecialFunctions;
 //! # let device = CpuDevice::new();
 //! # let client = CpuRuntime::default_client(&device);
-//! let x = Tensor::try_from_slice(&[0.0, 0.5, 1.0], &[3], &device)?;
+//! let x = Tensor::from_slice(&[0.0, 0.5, 1.0], &[3], &device)?;
 //! let erf_x = client.erf(&x)?;
 //! # Ok::<(), numr::error::Error>(())
 //! ```

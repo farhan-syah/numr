@@ -56,26 +56,23 @@ pub fn sparse_solve_triangular_wgpu(
     // Convert all indices to i32 on GPU (eliminates manual CPU conversion)
     let level_rows_i32: Vec<i32> = level_rows.iter().map(|&x| x as i32).collect();
     let row_ptrs_i64_gpu =
-        Tensor::<WgpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], &client.device_id)?;
-    let col_indices_i64_gpu = Tensor::<WgpuRuntime>::try_from_slice(
-        &col_indices,
-        &[col_indices.len()],
-        &client.device_id,
-    )?;
+        Tensor::<WgpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], &client.device_id)?;
+    let col_indices_i64_gpu =
+        Tensor::<WgpuRuntime>::from_slice(&col_indices, &[col_indices.len()], &client.device_id)?;
 
     // Cast i64→i32 on GPU (native WGSL shader, avoids manual conversion)
     let row_ptrs_gpu = cast_i64_to_i32_gpu(client, &row_ptrs_i64_gpu)?;
     let col_indices_gpu = cast_i64_to_i32_gpu(client, &col_indices_i64_gpu)?;
 
     // Create GPU buffer for level rows
-    let level_rows_gpu = Tensor::<WgpuRuntime>::try_from_slice(
+    let level_rows_gpu = Tensor::<WgpuRuntime>::from_slice(
         &level_rows_i32,
         &[level_rows_i32.len()],
         &client.device_id,
     )?;
 
     // Allocate output and copy b into it on GPU (must be separate buffer)
-    let x = Tensor::<WgpuRuntime>::try_zeros(b.shape(), dtype, &client.device_id)?;
+    let x = Tensor::<WgpuRuntime>::zeros(b.shape(), dtype, &client.device_id)?;
     let copy_size = b.numel() * dtype.size_in_bytes();
     WgpuRuntime::copy_within_device(b.ptr(), x.ptr(), copy_size, &client.device_id)?;
 
@@ -605,18 +602,16 @@ mod tests {
         // L = [2 0 0]
         //     [1 3 0]
         //     [0 2 4]
-        let row_ptrs =
-            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 1, 3, 5], &[4], device).unwrap();
+        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 3, 5], &[4], device).unwrap();
         let col_indices =
-            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 0, 1, 1, 2], &[5], device).unwrap();
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 0, 1, 1, 2], &[5], device).unwrap();
         let values =
-            Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device)
-                .unwrap();
+            Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device).unwrap();
 
         let l = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");
 
-        let b = Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 4.0, 8.0], &[3], device).unwrap();
+        let b = Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 4.0, 8.0], &[3], device).unwrap();
 
         let x = client
             .sparse_solve_triangular(&l, &b, true, false)
@@ -636,18 +631,16 @@ mod tests {
         // U = [2 1 0]
         //     [0 3 2]
         //     [0 0 4]
-        let row_ptrs =
-            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 4, 5], &[4], device).unwrap();
+        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 4, 5], &[4], device).unwrap();
         let col_indices =
-            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 1, 1, 2, 2], &[5], device).unwrap();
+            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 1, 2, 2], &[5], device).unwrap();
         let values =
-            Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device)
-                .unwrap();
+            Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device).unwrap();
 
         let u = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");
 
-        let b = Tensor::<WgpuRuntime>::try_from_slice(&[5.0f32, 7.0, 8.0], &[3], device).unwrap();
+        let b = Tensor::<WgpuRuntime>::from_slice(&[5.0f32, 7.0, 8.0], &[3], device).unwrap();
 
         let x = client
             .sparse_solve_triangular(&u, &b, false, false)

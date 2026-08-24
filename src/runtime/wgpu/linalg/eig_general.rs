@@ -31,10 +31,10 @@ pub fn eig_decompose(
     // Handle trivial cases
     if n == 0 {
         return Ok(GeneralEigenDecomposition {
-            eigenvalues_real: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0], device)?,
-            eigenvalues_imag: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0], device)?,
-            eigenvectors_real: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
-            eigenvectors_imag: Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device)?,
+            eigenvalues_real: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0], device)?,
+            eigenvalues_imag: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0], device)?,
+            eigenvectors_real: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
+            eigenvectors_imag: Tensor::<WgpuRuntime>::from_slice::<f32>(&[], &[0, 0], device)?,
         });
     }
 
@@ -48,9 +48,9 @@ pub fn eig_decompose(
             unsafe { WgpuClient::tensor_from_raw(eval_guard.release(), &[1], dtype, device) };
         return Ok(GeneralEigenDecomposition {
             eigenvalues_real,
-            eigenvalues_imag: Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32], &[1], device)?,
-            eigenvectors_real: Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32], &[1, 1], device)?,
-            eigenvectors_imag: Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32], &[1, 1], device)?,
+            eigenvalues_imag: Tensor::<WgpuRuntime>::from_slice(&[0.0f32], &[1], device)?,
+            eigenvectors_real: Tensor::<WgpuRuntime>::from_slice(&[1.0f32], &[1, 1], device)?,
+            eigenvectors_imag: Tensor::<WgpuRuntime>::from_slice(&[0.0f32], &[1, 1], device)?,
         });
     }
 

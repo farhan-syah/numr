@@ -49,7 +49,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
     /// # let device = CpuDevice::new();
     /// # let sp = SparseTensor::<CpuRuntime>::from_coo_slices(&[0, 0, 1], &[0, 1, 0], &[1.0f32, 2.0, 3.0], [2, 2], &device)?.to_csr()?;
     /// # if let numr::sparse::SparseTensor::Csr(csr) = sp {
-    /// let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device)?;
+    /// let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device)?;
     /// let y = csr.spmv(&x)?;  // y = [1*1 + 2*2, 3*1] = [5, 3]
     /// # }
     /// # }
@@ -86,7 +86,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         if self.is_empty() {
             crate::dispatch_dtype!(dtype, T => {
                 let zeros: Vec<T> = vec![T::zero(); nrows];
-                return Tensor::try_from_slice(&zeros, &[nrows], device);
+                return Tensor::from_slice(&zeros, &[nrows], device);
             }, "spmv empty");
         }
 
@@ -148,7 +148,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
     /// // A: `[2, 3]` sparse, B: `[3, 2]` dense -> C: `[2, 2]` dense
     /// # let sp = SparseTensor::<CpuRuntime>::from_coo_slices(&[0, 0, 1], &[0, 1, 2], &[1.0f32, 2.0, 3.0], [2, 3], &device)?.to_csr()?;
     /// # if let numr::sparse::SparseTensor::Csr(csr) = sp {
-    /// # let b = Tensor::try_from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0f32], &[3, 2], &device)?;
+    /// # let b = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0f32], &[3, 2], &device)?;
     /// let c = csr.spmm(&b)?;
     /// # }
     /// # }
@@ -196,7 +196,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         if self.is_empty() {
             crate::dispatch_dtype!(dtype, T => {
                 let zeros: Vec<T> = vec![T::zero(); m * n];
-                return Tensor::try_from_slice(&zeros, &[m, n], device);
+                return Tensor::from_slice(&zeros, &[m, n], device);
             }, "spmm empty");
         }
 
@@ -295,7 +295,7 @@ mod tests {
                 .unwrap();
 
         // x = [1, 2, 3]
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         // y = A * x
         // y[0] = 1*1 + 2*3 = 7
@@ -313,7 +313,7 @@ mod tests {
         let device = <CpuRuntime as Runtime>::Device::default();
 
         let csr = CsrData::<CpuRuntime>::empty([3, 3], DType::F32, &device).unwrap();
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         let y = csr.spmv(&x).unwrap();
 
@@ -338,7 +338,7 @@ mod tests {
             CsrData::<CpuRuntime>::from_slices(&row_ptrs, &col_indices, &values, [3, 3], &device)
                 .unwrap();
 
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[7.0f32, 8.0, 9.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[7.0f32, 8.0, 9.0], &[3], &device).unwrap();
         let y = csr.spmv(&x).unwrap();
 
         let y_data: Vec<f32> = y.to_vec();
@@ -361,8 +361,7 @@ mod tests {
                 .unwrap();
 
         // x = [1, 2, 3, 4]
-        let x =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
         // y = A * x
         // y[0] = 1*1 + 2*2 + 3*4 = 17
@@ -387,7 +386,7 @@ mod tests {
                 .unwrap();
 
         // Wrong vector length (2 instead of 3)
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
 
         let result = csr.spmv(&x);
         assert!(result.is_err());
@@ -406,7 +405,7 @@ mod tests {
                 .unwrap();
 
         // F64 vector
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0], &[3], &device).unwrap();
 
         let result = csr.spmv(&x);
         assert!(result.is_err());
@@ -427,7 +426,7 @@ mod tests {
             CsrData::<CpuRuntime>::from_slices(&row_ptrs, &col_indices, &values, [2, 2], &device)
                 .unwrap();
 
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 1.0], &[2], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 1.0], &[2], &device).unwrap();
 
         // y = A * x
         // y[0] = 1 + 2 = 3
@@ -452,7 +451,7 @@ mod tests {
             CsrData::<CpuRuntime>::from_slices(&row_ptrs, &col_indices, &values, [3, 3], &device)
                 .unwrap();
 
-        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         // y = A * x
         // y[0] = 0
@@ -487,12 +486,9 @@ mod tests {
         // [1, 2]
         // [3, 4]
         // [5, 6]
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         // C = A * B [2, 2]:
         // C[0,0] = 1*1 + 2*5 = 11
@@ -511,12 +507,9 @@ mod tests {
         let device = <CpuRuntime as Runtime>::Device::default();
 
         let csr = CsrData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         let c = csr.spmm(&b).unwrap();
 
@@ -539,12 +532,9 @@ mod tests {
                 .unwrap();
 
         // B [3, 2]
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         // I * B = B
         let c = csr.spmm(&b).unwrap();
@@ -567,8 +557,8 @@ mod tests {
                 .unwrap();
 
         // B [2, 2] - wrong dimension (should be [3, ...])
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
-            .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
 
         let result = csr.spmm(&b);
         assert!(result.is_err());
@@ -587,7 +577,7 @@ mod tests {
                 .unwrap();
 
         // 1D tensor instead of 2D
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         let result = csr.spmm(&b);
         assert!(result.is_err());
@@ -606,12 +596,9 @@ mod tests {
                 .unwrap();
 
         // F64 matrix
-        let b = Tensor::<CpuRuntime>::try_from_slice(
-            &[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0],
-            &[3, 2],
-            &device,
-        )
-        .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .unwrap();
 
         let result = csr.spmm(&b);
         assert!(result.is_err());
@@ -631,8 +618,8 @@ mod tests {
                 .unwrap();
 
         // B [2, 2]
-        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], &device)
-            .unwrap();
+        let b =
+            Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], &device).unwrap();
 
         // C = A * I = A
         let c = csr.spmm(&b).unwrap();
@@ -656,8 +643,7 @@ mod tests {
                 .unwrap();
 
         // B [3, 1] - single column (like a vector reshaped)
-        let b =
-            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
 
         // Should match spmv result
         let c = csr.spmm(&b).unwrap();

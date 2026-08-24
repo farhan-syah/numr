@@ -57,9 +57,9 @@ fn test_cpu_complex_parallelism_config_matches_default() {
         .collect();
     let imag_data: Vec<f32> = (0..numel).map(|i| (i as f32 * 0.023).cos()).collect();
 
-    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &shape, &device).unwrap();
-    let real = Tensor::<CpuRuntime>::try_from_slice(&real_data, &shape, &device).unwrap();
-    let imag = Tensor::<CpuRuntime>::try_from_slice(&imag_data, &shape, &device).unwrap();
+    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &shape, &device).unwrap();
+    let real = Tensor::<CpuRuntime>::from_slice(&real_data, &shape, &device).unwrap();
+    let imag = Tensor::<CpuRuntime>::from_slice(&imag_data, &shape, &device).unwrap();
 
     let base_conj: Vec<Complex64> = default_client.conj(&a).unwrap().to_vec();
     let cfg_conj: Vec<Complex64> = configured_client.conj(&a).unwrap().to_vec();
@@ -144,26 +144,22 @@ fn test_complex_angle_parity() {
     ];
     let real_data = vec![1.0f32, -2.0, 3.0, -5.0, 0.0];
 
-    let cpu_complex =
-        Tensor::<CpuRuntime>::try_from_slice(&complex_data, &[3], &cpu_device).unwrap();
-    let cpu_real = Tensor::<CpuRuntime>::try_from_slice(&real_data, &[5], &cpu_device).unwrap();
+    let cpu_complex = Tensor::<CpuRuntime>::from_slice(&complex_data, &[3], &cpu_device).unwrap();
+    let cpu_real = Tensor::<CpuRuntime>::from_slice(&real_data, &[5], &cpu_device).unwrap();
     let cpu_angle_complex: Vec<f32> = cpu_client.angle(&cpu_complex).unwrap().to_vec();
     let cpu_angle_real: Vec<f32> = cpu_client.angle(&cpu_real).unwrap().to_vec();
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let cuda_complex = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
+        let cuda_complex = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
             &complex_data,
             &[3],
             &cuda_device,
         )
         .unwrap();
-        let cuda_real = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &real_data,
-            &[5],
-            &cuda_device,
-        )
-        .unwrap();
+        let cuda_real =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&real_data, &[5], &cuda_device)
+                .unwrap();
         let cuda_angle_complex: Vec<f32> = cuda_client.angle(&cuda_complex).unwrap().to_vec();
         let cuda_angle_real: Vec<f32> = cuda_client.angle(&cuda_real).unwrap().to_vec();
 
@@ -177,18 +173,15 @@ fn test_complex_angle_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let wgpu_complex = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
+        let wgpu_complex = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
             &complex_data,
             &[3],
             &wgpu_device,
         )
         .unwrap();
-        let wgpu_real = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &real_data,
-            &[5],
-            &wgpu_device,
-        )
-        .unwrap();
+        let wgpu_real =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&real_data, &[5], &wgpu_device)
+                .unwrap();
         let wgpu_angle_complex: Vec<f32> = wgpu_client.angle(&wgpu_complex).unwrap().to_vec();
         let wgpu_angle_real: Vec<f32> = wgpu_client.angle(&wgpu_real).unwrap().to_vec();
 
@@ -217,17 +210,16 @@ fn test_complex_make_mul_div_real_parity() {
     let mul_real = vec![2.0f32, 0.5, -1.0];
     let div_real = vec![2.0f32, 3.0, 5.0];
 
-    let cpu_real = Tensor::<CpuRuntime>::try_from_slice(&real_data, &[5], &cpu_device).unwrap();
-    let cpu_imag = Tensor::<CpuRuntime>::try_from_slice(&imag_data, &[5], &cpu_device).unwrap();
+    let cpu_real = Tensor::<CpuRuntime>::from_slice(&real_data, &[5], &cpu_device).unwrap();
+    let cpu_imag = Tensor::<CpuRuntime>::from_slice(&imag_data, &[5], &cpu_device).unwrap();
     let cpu_make: Vec<Complex64> = cpu_client
         .make_complex(&cpu_real, &cpu_imag)
         .unwrap()
         .to_vec();
 
-    let cpu_complex =
-        Tensor::<CpuRuntime>::try_from_slice(&complex_data, &[3], &cpu_device).unwrap();
-    let cpu_mul_r = Tensor::<CpuRuntime>::try_from_slice(&mul_real, &[3], &cpu_device).unwrap();
-    let cpu_div_r = Tensor::<CpuRuntime>::try_from_slice(&div_real, &[3], &cpu_device).unwrap();
+    let cpu_complex = Tensor::<CpuRuntime>::from_slice(&complex_data, &[3], &cpu_device).unwrap();
+    let cpu_mul_r = Tensor::<CpuRuntime>::from_slice(&mul_real, &[3], &cpu_device).unwrap();
+    let cpu_div_r = Tensor::<CpuRuntime>::from_slice(&div_real, &[3], &cpu_device).unwrap();
     let cpu_mul: Vec<Complex64> = cpu_client
         .complex_mul_real(&cpu_complex, &cpu_mul_r)
         .unwrap()
@@ -239,18 +231,12 @@ fn test_complex_make_mul_div_real_parity() {
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let cuda_real = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &real_data,
-            &[5],
-            &cuda_device,
-        )
-        .unwrap();
-        let cuda_imag = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &imag_data,
-            &[5],
-            &cuda_device,
-        )
-        .unwrap();
+        let cuda_real =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&real_data, &[5], &cuda_device)
+                .unwrap();
+        let cuda_imag =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&imag_data, &[5], &cuda_device)
+                .unwrap();
         let cuda_make: Vec<Complex64> = cuda_client
             .make_complex(&cuda_real, &cuda_imag)
             .unwrap()
@@ -259,24 +245,18 @@ fn test_complex_make_mul_div_real_parity() {
             assert!((c.re - g.re).abs() < 1e-6 && (c.im - g.im).abs() < 1e-6);
         }
 
-        let cuda_complex = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
+        let cuda_complex = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
             &complex_data,
             &[3],
             &cuda_device,
         )
         .unwrap();
-        let cuda_mul_r = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &mul_real,
-            &[3],
-            &cuda_device,
-        )
-        .unwrap();
-        let cuda_div_r = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &div_real,
-            &[3],
-            &cuda_device,
-        )
-        .unwrap();
+        let cuda_mul_r =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&mul_real, &[3], &cuda_device)
+                .unwrap();
+        let cuda_div_r =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&div_real, &[3], &cuda_device)
+                .unwrap();
         let cuda_mul: Vec<Complex64> = cuda_client
             .complex_mul_real(&cuda_complex, &cuda_mul_r)
             .unwrap()
@@ -295,18 +275,12 @@ fn test_complex_make_mul_div_real_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let wgpu_real = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &real_data,
-            &[5],
-            &wgpu_device,
-        )
-        .unwrap();
-        let wgpu_imag = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &imag_data,
-            &[5],
-            &wgpu_device,
-        )
-        .unwrap();
+        let wgpu_real =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&real_data, &[5], &wgpu_device)
+                .unwrap();
+        let wgpu_imag =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&imag_data, &[5], &wgpu_device)
+                .unwrap();
         let wgpu_make: Vec<Complex64> = wgpu_client
             .make_complex(&wgpu_real, &wgpu_imag)
             .unwrap()
@@ -315,24 +289,18 @@ fn test_complex_make_mul_div_real_parity() {
             assert!((c.re - g.re).abs() < 1e-4 && (c.im - g.im).abs() < 1e-4);
         }
 
-        let wgpu_complex = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
+        let wgpu_complex = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
             &complex_data,
             &[3],
             &wgpu_device,
         )
         .unwrap();
-        let wgpu_mul_r = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &mul_real,
-            &[3],
-            &wgpu_device,
-        )
-        .unwrap();
-        let wgpu_div_r = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &div_real,
-            &[3],
-            &wgpu_device,
-        )
-        .unwrap();
+        let wgpu_mul_r =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&mul_real, &[3], &wgpu_device)
+                .unwrap();
+        let wgpu_div_r =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&div_real, &[3], &wgpu_device)
+                .unwrap();
         let wgpu_mul: Vec<Complex64> = wgpu_client
             .complex_mul_real(&wgpu_complex, &wgpu_mul_r)
             .unwrap()
@@ -359,9 +327,9 @@ fn test_complex64_binary_ops_parity() {
     let b_data = vec![Complex64::new(5.0, 6.0), Complex64::new(7.0, 8.0)];
     let b_div_data = vec![Complex64::new(1.0, 1.0), Complex64::new(2.0, 0.0)];
 
-    let cpu_a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[2], &cpu_device).unwrap();
-    let cpu_b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[2], &cpu_device).unwrap();
-    let cpu_b_div = Tensor::<CpuRuntime>::try_from_slice(&b_div_data, &[2], &cpu_device).unwrap();
+    let cpu_a = Tensor::<CpuRuntime>::from_slice(&a_data, &[2], &cpu_device).unwrap();
+    let cpu_b = Tensor::<CpuRuntime>::from_slice(&b_data, &[2], &cpu_device).unwrap();
+    let cpu_b_div = Tensor::<CpuRuntime>::from_slice(&b_div_data, &[2], &cpu_device).unwrap();
 
     let cpu_add: Vec<Complex64> = cpu_client.add(&cpu_a, &cpu_b).unwrap().to_vec();
     let cpu_mul: Vec<Complex64> = cpu_client.mul(&cpu_a, &cpu_b).unwrap().to_vec();
@@ -370,17 +338,14 @@ fn test_complex64_binary_ops_parity() {
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
         let cuda_a =
-            Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(&a_data, &[2], &cuda_device)
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&a_data, &[2], &cuda_device)
                 .unwrap();
         let cuda_b =
-            Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(&b_data, &[2], &cuda_device)
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&b_data, &[2], &cuda_device)
                 .unwrap();
-        let cuda_b_div = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &b_div_data,
-            &[2],
-            &cuda_device,
-        )
-        .unwrap();
+        let cuda_b_div =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&b_div_data, &[2], &cuda_device)
+                .unwrap();
 
         let cuda_add: Vec<Complex64> = cuda_client.add(&cuda_a, &cuda_b).unwrap().to_vec();
         let cuda_mul: Vec<Complex64> = cuda_client.mul(&cuda_a, &cuda_b).unwrap().to_vec();
@@ -394,17 +359,14 @@ fn test_complex64_binary_ops_parity() {
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
         let wgpu_a =
-            Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(&a_data, &[2], &wgpu_device)
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&a_data, &[2], &wgpu_device)
                 .unwrap();
         let wgpu_b =
-            Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(&b_data, &[2], &wgpu_device)
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&b_data, &[2], &wgpu_device)
                 .unwrap();
-        let wgpu_b_div = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &b_div_data,
-            &[2],
-            &wgpu_device,
-        )
-        .unwrap();
+        let wgpu_b_div =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&b_div_data, &[2], &wgpu_device)
+                .unwrap();
 
         let wgpu_add: Option<Vec<Complex64>> = match wgpu_client.add(&wgpu_a, &wgpu_b) {
             Ok(t) => Some(t.to_vec()),
@@ -468,9 +430,9 @@ fn test_complex64_unary_ops_parity() {
     ];
     let sqrt_data = vec![Complex64::new(3.0, 4.0), Complex64::new(0.0, 2.0)];
 
-    let cpu_neg_in = Tensor::<CpuRuntime>::try_from_slice(&neg_data, &[2], &cpu_device).unwrap();
-    let cpu_exp_in = Tensor::<CpuRuntime>::try_from_slice(&exp_data, &[2], &cpu_device).unwrap();
-    let cpu_sqrt_in = Tensor::<CpuRuntime>::try_from_slice(&sqrt_data, &[2], &cpu_device).unwrap();
+    let cpu_neg_in = Tensor::<CpuRuntime>::from_slice(&neg_data, &[2], &cpu_device).unwrap();
+    let cpu_exp_in = Tensor::<CpuRuntime>::from_slice(&exp_data, &[2], &cpu_device).unwrap();
+    let cpu_sqrt_in = Tensor::<CpuRuntime>::from_slice(&sqrt_data, &[2], &cpu_device).unwrap();
 
     let cpu_neg: Vec<Complex64> = cpu_client.neg(&cpu_neg_in).unwrap().to_vec();
     let cpu_exp: Vec<Complex64> = cpu_client.exp(&cpu_exp_in).unwrap().to_vec();
@@ -478,24 +440,15 @@ fn test_complex64_unary_ops_parity() {
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let cuda_neg_in = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &neg_data,
-            &[2],
-            &cuda_device,
-        )
-        .unwrap();
-        let cuda_exp_in = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &exp_data,
-            &[2],
-            &cuda_device,
-        )
-        .unwrap();
-        let cuda_sqrt_in = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
-            &sqrt_data,
-            &[2],
-            &cuda_device,
-        )
-        .unwrap();
+        let cuda_neg_in =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&neg_data, &[2], &cuda_device)
+                .unwrap();
+        let cuda_exp_in =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&exp_data, &[2], &cuda_device)
+                .unwrap();
+        let cuda_sqrt_in =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&sqrt_data, &[2], &cuda_device)
+                .unwrap();
 
         let cuda_neg: Vec<Complex64> = cuda_client.neg(&cuda_neg_in).unwrap().to_vec();
         let cuda_exp: Vec<Complex64> = cuda_client.exp(&cuda_exp_in).unwrap().to_vec();
@@ -508,24 +461,15 @@ fn test_complex64_unary_ops_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let wgpu_neg_in = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &neg_data,
-            &[2],
-            &wgpu_device,
-        )
-        .unwrap();
-        let wgpu_exp_in = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &exp_data,
-            &[2],
-            &wgpu_device,
-        )
-        .unwrap();
-        let wgpu_sqrt_in = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
-            &sqrt_data,
-            &[2],
-            &wgpu_device,
-        )
-        .unwrap();
+        let wgpu_neg_in =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&neg_data, &[2], &wgpu_device)
+                .unwrap();
+        let wgpu_exp_in =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&exp_data, &[2], &wgpu_device)
+                .unwrap();
+        let wgpu_sqrt_in =
+            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&sqrt_data, &[2], &wgpu_device)
+                .unwrap();
 
         let wgpu_neg: Option<Vec<Complex64>> = match wgpu_client.neg(&wgpu_neg_in) {
             Ok(t) => Some(t.to_vec()),

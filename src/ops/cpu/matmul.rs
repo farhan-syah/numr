@@ -71,7 +71,7 @@ impl MatmulOps<CpuRuntime> for CpuClient {
                 let b_ptr = b.ptr(); // Use original ptr - data is contiguous [N,K]
 
                 // Create output tensor
-                let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+                let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
                 let out_ptr = out.ptr();
                 let ldc = n;
 
@@ -162,7 +162,7 @@ impl MatmulOps<CpuRuntime> for CpuClient {
         if dtype == DType::I8 {
             use crate::runtime::cpu::kernels::matmul_i8_to_i32_kernel;
 
-            let out = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I32, &self.device)?;
+            let out = Tensor::<CpuRuntime>::empty(&out_shape, DType::I32, &self.device)?;
             let out_ptr = out.ptr();
 
             #[cfg(feature = "rayon")]
@@ -235,7 +235,7 @@ impl MatmulOps<CpuRuntime> for CpuClient {
         }
 
         // Create output tensor
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
         let out_ptr = out.ptr();
 
         // Dispatch based on dtype
@@ -365,7 +365,7 @@ impl MatmulOps<CpuRuntime> for CpuClient {
             crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
 
         // Create output tensor
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();

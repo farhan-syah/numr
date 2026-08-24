@@ -42,7 +42,7 @@ pub fn ilu0_cuda(
     let values_gpu = a.values().clone();
 
     // Allocate diagonal indices buffer
-    let diag_indices_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, device)?;
+    let diag_indices_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, device)?;
 
     // Find diagonal indices on GPU
     unsafe {
@@ -173,7 +173,7 @@ pub fn ilu0_numeric_cuda(
     let values_gpu = a.values().clone();
 
     // Allocate diagonal indices buffer
-    let diag_indices_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, device)?;
+    let diag_indices_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, device)?;
 
     // Find diagonal indices on GPU
     unsafe {
@@ -266,11 +266,10 @@ mod tests {
         // A = [ 4 -1  0]
         //     [-1  4 -1]
         //     [ 0 -1  4]
-        let row_ptrs =
-            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
+        let row_ptrs = Tensor::<CudaRuntime>::from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
-        let values = Tensor::<CudaRuntime>::try_from_slice(
+            Tensor::<CudaRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
+        let values = Tensor::<CudaRuntime>::from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[7],
             device,

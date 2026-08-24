@@ -469,7 +469,7 @@ where
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz * (1 - tanh²(a))
         let tanh_squared = client.square(&self.saved_output)?;
-        let one = Tensor::<R>::try_ones(
+        let one = Tensor::<R>::ones(
             self.saved_output.shape(),
             self.saved_output.dtype(),
             self.saved_output.device(),
@@ -485,7 +485,7 @@ where
         let output_var = Var::new(self.saved_output.clone(), false);
         // dL/da = grad_output * (1 - tanh²(a))
         let tanh_squared = var_square(&output_var, &client)?;
-        let one = Tensor::<R>::try_ones(
+        let one = Tensor::<R>::ones(
             self.saved_output.shape(),
             self.saved_output.dtype(),
             self.saved_output.device(),
@@ -861,13 +861,13 @@ where
 
         // Create mask where min < a < max (gradient flows through)
         // gradient is zero at boundaries
-        let min_tensor = Tensor::<R>::try_full_scalar(
+        let min_tensor = Tensor::<R>::full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.min_val,
             self.saved_input.device(),
         )?;
-        let max_tensor = Tensor::<R>::try_full_scalar(
+        let max_tensor = Tensor::<R>::full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.max_val,
@@ -896,13 +896,13 @@ where
 
         // Create mask where min < a < max (gradient flows through)
         // The mask is non-differentiable (step function), so treat as constant
-        let min_tensor = Tensor::<R>::try_full_scalar(
+        let min_tensor = Tensor::<R>::full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.min_val,
             self.saved_input.device(),
         )?;
-        let max_tensor = Tensor::<R>::try_full_scalar(
+        let max_tensor = Tensor::<R>::full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.max_val,
@@ -952,8 +952,8 @@ mod tests {
     #[test]
     fn test_neg_backward() {
         let device = CpuDevice::new();
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device).unwrap();
 
         let backward = NegBackward::<CpuRuntime>::new(a.id(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -968,10 +968,10 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         // z = exp(a), dz/da = exp(a)
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap(); // exp(0) = 1
+        let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device).unwrap(); // exp(0) = 1
         let output = client.exp(&a).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device).unwrap();
 
         let backward = ExpBackward::<CpuRuntime>::new(a.id(), output, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -985,9 +985,9 @@ mod tests {
         let device = CpuDevice::new();
 
         // z = log(a), dz/da = 1/a
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device).unwrap();
 
         let backward = LogBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -1002,10 +1002,10 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         // z = sqrt(a), dz/da = 1/(2*sqrt(a))
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[4.0f32], &[1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[4.0f32], &[1], &device).unwrap();
         let output = client.sqrt(&a).unwrap(); // sqrt(4) = 2
 
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SqrtBackward::<CpuRuntime>::new(a.id(), output, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -1021,10 +1021,10 @@ mod tests {
 
         // z = tanh(a), dz/da = 1 - tanh²(a)
         // At a = 0, tanh(0) = 0, so dz/da = 1 - 0 = 1
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device).unwrap();
         let output = client.tanh(&a).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device).unwrap();
 
         let backward = TanhBackward::<CpuRuntime>::new(a.id(), output, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -1038,9 +1038,9 @@ mod tests {
         let device = CpuDevice::new();
 
         // z = a², dz/da = 2a
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SquareBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -1055,9 +1055,9 @@ mod tests {
 
         // z = tan(a), dz/da = 1/cos²(a)
         // At a = 0, cos(0) = 1, so dz/da = 1
-        let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
+        let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device).unwrap();
 
         let backward = TanBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
         let grads = backward.backward_all(&grad_out).unwrap();

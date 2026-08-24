@@ -102,7 +102,7 @@ impl CudaClient {
 
         // Cast row_ptrs from I32 to I64 (numr internal format)
         let c_row_ptrs = unsafe {
-            let output = Tensor::try_zeros(&[m + 1], DType::I64, device)?;
+            let output = Tensor::zeros(&[m + 1], DType::I64, device)?;
             launch_cast(
                 &self.context,
                 &self.stream,
@@ -120,8 +120,8 @@ impl CudaClient {
         let total_nnz = total_nnz_i32;
 
         // Allocate output arrays
-        let c_col_indices = Tensor::try_zeros(&[total_nnz], crate::dtype::DType::I64, device)?;
-        let c_values = Tensor::try_zeros(&[total_nnz], dtype, device)?;
+        let c_col_indices = Tensor::zeros(&[total_nnz], crate::dtype::DType::I64, device)?;
+        let c_values = Tensor::zeros(&[total_nnz], dtype, device)?;
 
         // ====================================================================
         // PHASE 2: Numeric (Compute values with pre-sized hash accumulator)

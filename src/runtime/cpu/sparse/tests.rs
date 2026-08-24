@@ -16,12 +16,12 @@ mod tests {
         // [1, 0, 2]
         // [0, 0, 3]
         // [4, 5, 0]
-        let row_ptrs = Tensor::try_from_slice(&[0i64, 2, 3, 5], &[4], &device).unwrap();
-        let col_indices = Tensor::try_from_slice(&[0i64, 2, 2, 0, 1], &[5], &device).unwrap();
-        let values = Tensor::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap();
+        let row_ptrs = Tensor::from_slice(&[0i64, 2, 3, 5], &[4], &device).unwrap();
+        let col_indices = Tensor::from_slice(&[0i64, 2, 2, 0, 1], &[5], &device).unwrap();
+        let values = Tensor::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap();
 
         // x = [1, 2, 3]
-        let x = Tensor::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         // y = A * x
         // y[0] = 1*1 + 2*3 = 7
@@ -44,16 +44,16 @@ mod tests {
         // A:
         // [1, 0, 2]
         // [0, 3, 0]
-        let a_row_ptrs = Tensor::try_from_slice(&[0i64, 2, 3], &[3], &device).unwrap();
-        let a_col_indices = Tensor::try_from_slice(&[0i64, 2, 1], &[3], &device).unwrap();
-        let a_values = Tensor::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let a_row_ptrs = Tensor::from_slice(&[0i64, 2, 3], &[3], &device).unwrap();
+        let a_col_indices = Tensor::from_slice(&[0i64, 2, 1], &[3], &device).unwrap();
+        let a_values = Tensor::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         // B:
         // [0, 4, 0]
         // [5, 0, 6]
-        let b_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 3], &[3], &device).unwrap();
-        let b_col_indices = Tensor::try_from_slice(&[1i64, 0, 2], &[3], &device).unwrap();
-        let b_values = Tensor::try_from_slice(&[4.0f32, 5.0, 6.0], &[3], &device).unwrap();
+        let b_row_ptrs = Tensor::from_slice(&[0i64, 1, 3], &[3], &device).unwrap();
+        let b_col_indices = Tensor::from_slice(&[1i64, 0, 2], &[3], &device).unwrap();
+        let b_values = Tensor::from_slice(&[4.0f32, 5.0, 6.0], &[3], &device).unwrap();
 
         // C = A + B:
         // [1, 4, 2]
@@ -94,15 +94,15 @@ mod tests {
         // Test via multiplication which reliably produces small values
         // A = [1e-4, 0]
         //     [0, 2.0]
-        let a_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let a_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a_values = Tensor::try_from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
+        let a_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let a_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a_values = Tensor::from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
 
         // B = [1e-5, 0]
         //     [0, 2.0]
-        let b_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let b_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b_values = Tensor::try_from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
+        let b_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let b_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b_values = Tensor::from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
 
         // C = A .* B (element-wise multiply)
         // (0,0): 1e-4 * 1e-5 = 1e-9 (< 1e-7, eliminated)
@@ -140,15 +140,15 @@ mod tests {
         // Create matrices that produce values ABOVE the tolerance
         // A = [1.001, 0]
         //     [0, 5.0]
-        let a_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let a_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a_values = Tensor::try_from_slice(&[1.001f32, 5.0], &[2], &device).unwrap();
+        let a_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let a_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a_values = Tensor::from_slice(&[1.001f32, 5.0], &[2], &device).unwrap();
 
         // B = [1.0, 0]
         //     [0, 5.0]
-        let b_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let b_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b_values = Tensor::try_from_slice(&[1.0f32, 5.0], &[2], &device).unwrap();
+        let b_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let b_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b_values = Tensor::from_slice(&[1.0f32, 5.0], &[2], &device).unwrap();
 
         // C = A - B should keep the first element (1.001 - 1.0 = 0.001)
         // since 0.001 > 1e-7 (F32 tolerance)
@@ -185,14 +185,14 @@ mod tests {
         // F64 has much tighter tolerance (1e-15)
         // Create values that would be eliminated in F32 but kept in F64
         // A = [1.0 + 1e-8, 0]
-        let a_row_ptrs = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a_col_indices = Tensor::try_from_slice(&[0i64], &[1], &device).unwrap();
-        let a_values = Tensor::try_from_slice(&[1.0 + 1e-8], &[1], &device).unwrap();
+        let a_row_ptrs = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a_col_indices = Tensor::from_slice(&[0i64], &[1], &device).unwrap();
+        let a_values = Tensor::from_slice(&[1.0 + 1e-8], &[1], &device).unwrap();
 
         // B = [1.0, 0]
-        let b_row_ptrs = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b_col_indices = Tensor::try_from_slice(&[0i64], &[1], &device).unwrap();
-        let b_values = Tensor::try_from_slice(&[1.0], &[1], &device).unwrap();
+        let b_row_ptrs = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b_col_indices = Tensor::from_slice(&[0i64], &[1], &device).unwrap();
+        let b_values = Tensor::from_slice(&[1.0], &[1], &device).unwrap();
 
         // C = A - B = 1e-8, which is well above F64 tolerance (1e-15)
         let (_, _col_indices, values) = client
@@ -221,14 +221,14 @@ mod tests {
 
         // COO format test: Use multiplication to create predictable small values
         // A has triplets: (0, 0, 1e-4), (1, 1, 2.0)
-        let a_row_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a_values = Tensor::try_from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
+        let a_row_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a_values = Tensor::from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
 
         // B has triplets: (0, 0, 1e-5), (1, 1, 2.0)
-        let b_row_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b_values = Tensor::try_from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
+        let b_row_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b_values = Tensor::from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
 
         // C = A .* B (element-wise multiply)
         // (0,0): 1e-4 * 1e-5 = 1e-9 (< 1e-7, eliminated)
@@ -266,16 +266,16 @@ mod tests {
         // A (column-major):
         // Col 0: [1e-4]
         // Col 1: [2.0]
-        let a_col_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let a_row_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a_values = Tensor::try_from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
+        let a_col_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let a_row_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a_values = Tensor::from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
 
         // B (column-major):
         // Col 0: [1e-5]
         // Col 1: [2.0]
-        let b_col_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let b_row_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b_values = Tensor::try_from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
+        let b_col_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let b_row_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b_values = Tensor::from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
 
         // C = A .* B (element-wise multiply)
         // Col 0: 1e-4 * 1e-5 = 1e-9 (< 1e-7, eliminated)
@@ -313,15 +313,15 @@ mod tests {
         // Create small values through multiplication, testing both sides of tolerance
         // A = [1e-3, 0]
         //     [0, 2.0]
-        let a_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let a_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a_values = Tensor::try_from_slice(&[1e-3f32, 2.0], &[2], &device).unwrap();
+        let a_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let a_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a_values = Tensor::from_slice(&[1e-3f32, 2.0], &[2], &device).unwrap();
 
         // B = [1e-3, 0]
         //     [0, 3.0]
-        let b_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let b_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b_values = Tensor::try_from_slice(&[1e-3f32, 3.0], &[2], &device).unwrap();
+        let b_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let b_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b_values = Tensor::from_slice(&[1e-3f32, 3.0], &[2], &device).unwrap();
 
         // C = A .* B (element-wise multiply)
         // (0,0): 1e-3 * 1e-3 = 1e-6 (> 1e-7, above tolerance, kept)
@@ -366,13 +366,13 @@ mod tests {
         // Test 1: Below tolerance (1e-5 * 1e-4 = 1e-9 < 1e-7, eliminated)
         // A = [1e-5, 0]    B = [1e-4, 0]
         //     [0, 2.0]         [0, 2.0]
-        let a1_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let a1_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a1_values = Tensor::try_from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
+        let a1_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let a1_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a1_values = Tensor::from_slice(&[1e-5f32, 2.0], &[2], &device).unwrap();
 
-        let b1_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let b1_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b1_values = Tensor::try_from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
+        let b1_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let b1_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b1_values = Tensor::from_slice(&[1e-4f32, 2.0], &[2], &device).unwrap();
 
         let (_, _col_indices1, values1) = client
             .mul_csr::<f32>(
@@ -396,13 +396,13 @@ mod tests {
         // Test 2: Above tolerance (1e-3 * 1e-3 = 1e-6 > 1e-7, kept)
         // A = [1e-3, 0]    B = [1e-3, 0]
         //     [0, 3.0]         [0, 3.0]
-        let a2_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let a2_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let a2_values = Tensor::try_from_slice(&[1e-3f32, 3.0], &[2], &device).unwrap();
+        let a2_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let a2_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let a2_values = Tensor::from_slice(&[1e-3f32, 3.0], &[2], &device).unwrap();
 
-        let b2_row_ptrs = Tensor::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
-        let b2_col_indices = Tensor::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
-        let b2_values = Tensor::try_from_slice(&[1e-3f32, 3.0], &[2], &device).unwrap();
+        let b2_row_ptrs = Tensor::from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let b2_col_indices = Tensor::from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let b2_values = Tensor::from_slice(&[1e-3f32, 3.0], &[2], &device).unwrap();
 
         let (_, _col_indices2, values2) = client
             .mul_csr::<f32>(

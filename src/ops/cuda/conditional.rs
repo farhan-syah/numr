@@ -28,7 +28,7 @@ impl ConditionalOps<CudaRuntime> for CudaClient {
             let cond_contig = ensure_contiguous(cond)?;
             let x_contig = ensure_contiguous(x)?;
             let y_contig = ensure_contiguous(y)?;
-            let out = Tensor::<CudaRuntime>::try_empty(x.shape(), dtype, &self.device)?;
+            let out = Tensor::<CudaRuntime>::empty(x.shape(), dtype, &self.device)?;
 
             unsafe {
                 if cond_dtype == DType::U8 {
@@ -77,7 +77,7 @@ impl ConditionalOps<CudaRuntime> for CudaClient {
         let cond_contig = ensure_contiguous(cond)?;
         let x_contig = ensure_contiguous(x)?;
         let y_contig = ensure_contiguous(y)?;
-        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device)?;
 
         unsafe {
             if cond_dtype == DType::U8 {

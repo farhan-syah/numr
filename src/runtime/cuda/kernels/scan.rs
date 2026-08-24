@@ -84,7 +84,7 @@ pub unsafe fn exclusive_scan_i32_gpu(
     }
 
     // Allocate output tensor with size n+1
-    let output = Tensor::<CudaRuntime>::try_zeros(&[n + 1], DType::I32, device)?;
+    let output = Tensor::<CudaRuntime>::zeros(&[n + 1], DType::I32, device)?;
 
     let input_ptr = input.ptr();
     let output_ptr = output.ptr();
@@ -201,7 +201,7 @@ unsafe fn launch_scan_multi_block_i32(
     let num_blocks = (n + SCAN_BLOCK_SIZE - 1) / SCAN_BLOCK_SIZE;
 
     // Allocate temporary buffer for block sums
-    let block_sums = Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize], DType::I32, device)?;
+    let block_sums = Tensor::<CudaRuntime>::zeros(&[num_blocks as usize], DType::I32, device)?;
     let block_sums_ptr = block_sums.ptr();
 
     // Step 1: Scan each block independently
@@ -226,7 +226,7 @@ unsafe fn launch_scan_multi_block_i32(
     // Step 2: Recursively scan the block sums
     // Allocate buffer for scanned block sums (size num_blocks + 1)
     let scanned_block_sums =
-        Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize + 1], DType::I32, device)?;
+        Tensor::<CudaRuntime>::zeros(&[num_blocks as usize + 1], DType::I32, device)?;
     let scanned_block_sums_ptr = scanned_block_sums.ptr();
 
     if num_blocks <= SCAN_BLOCK_SIZE {
@@ -349,7 +349,7 @@ pub unsafe fn exclusive_scan_i64_gpu(
     }
 
     // Allocate output tensor with size n+1
-    let output = Tensor::<CudaRuntime>::try_zeros(&[n + 1], DType::I64, device)?;
+    let output = Tensor::<CudaRuntime>::zeros(&[n + 1], DType::I64, device)?;
 
     let input_ptr = input.ptr();
     let output_ptr = output.ptr();
@@ -466,7 +466,7 @@ unsafe fn launch_scan_multi_block_i64(
     let num_blocks = (n + SCAN_BLOCK_SIZE - 1) / SCAN_BLOCK_SIZE;
 
     // Allocate temporary buffer for block sums
-    let block_sums = Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize], DType::I64, device)?;
+    let block_sums = Tensor::<CudaRuntime>::zeros(&[num_blocks as usize], DType::I64, device)?;
     let block_sums_ptr = block_sums.ptr();
 
     // Step 1: Scan each block independently
@@ -498,7 +498,7 @@ unsafe fn launch_scan_multi_block_i64(
     // Step 2: Recursively scan the block sums
     // Allocate buffer for scanned block sums (size num_blocks + 1)
     let scanned_block_sums =
-        Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize + 1], DType::I64, device)?;
+        Tensor::<CudaRuntime>::zeros(&[num_blocks as usize + 1], DType::I64, device)?;
     let scanned_block_sums_ptr = scanned_block_sums.ptr();
 
     if num_blocks <= SCAN_BLOCK_SIZE {
@@ -603,8 +603,7 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // Input: [3, 1, 4, 1, 5]
-        let input =
-            Tensor::<CudaRuntime>::try_from_slice(&[3i32, 1, 4, 1, 5], &[5], &device).unwrap();
+        let input = Tensor::<CudaRuntime>::from_slice(&[3i32, 1, 4, 1, 5], &[5], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -634,7 +633,7 @@ mod tests {
 
         // Input: 1024 elements, all ones
         let input_vec = vec![1i32; 1024];
-        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[1024], &device).unwrap();
+        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[1024], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -669,7 +668,7 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let input = Tensor::<CudaRuntime>::try_from_slice(&[0i32, 0, 0, 0], &[4], &device).unwrap();
+        let input = Tensor::<CudaRuntime>::from_slice(&[0i32, 0, 0, 0], &[4], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -696,7 +695,7 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let input = Tensor::<CudaRuntime>::try_from_slice(&[42i32], &[1], &device).unwrap();
+        let input = Tensor::<CudaRuntime>::from_slice(&[42i32], &[1], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -727,7 +726,7 @@ mod tests {
 
         let n = 500_000;
         let input_vec = vec![1i32; n];
-        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[n], &device).unwrap();
+        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[n], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -766,7 +765,7 @@ mod tests {
         // Just above the boundary to trigger recursive path
         let n = 262_145;
         let input_vec = vec![1i32; n];
-        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[n], &device).unwrap();
+        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[n], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -799,7 +798,7 @@ mod tests {
         let n = 100_000;
         // Use large values to test i64 arithmetic
         let input_vec = vec![50_000i64; n];
-        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[n], &device).unwrap();
+        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[n], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i64_gpu(

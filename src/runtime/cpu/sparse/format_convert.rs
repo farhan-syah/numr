@@ -38,9 +38,9 @@ pub fn coo_to_csr<T: Element>(
         row_ptrs[i] += row_ptrs[i - 1];
     }
 
-    let row_ptrs_tensor = Tensor::try_from_slice(&row_ptrs, &[nrows + 1], device)?;
-    let col_indices_tensor = Tensor::try_from_slice(&sorted_col_indices, &[nnz], device)?;
-    let values_tensor = Tensor::try_from_slice(&sorted_values, &[nnz], device)?;
+    let row_ptrs_tensor = Tensor::from_slice(&row_ptrs, &[nrows + 1], device)?;
+    let col_indices_tensor = Tensor::from_slice(&sorted_col_indices, &[nnz], device)?;
+    let values_tensor = Tensor::from_slice(&sorted_values, &[nnz], device)?;
 
     Ok((row_ptrs_tensor, col_indices_tensor, values_tensor))
 }
@@ -78,9 +78,9 @@ pub fn coo_to_csc<T: Element>(
         col_ptrs[i] += col_ptrs[i - 1];
     }
 
-    let col_ptrs_tensor = Tensor::try_from_slice(&col_ptrs, &[ncols + 1], device)?;
-    let row_indices_tensor = Tensor::try_from_slice(&sorted_row_indices, &[nnz], device)?;
-    let values_tensor = Tensor::try_from_slice(&sorted_values, &[nnz], device)?;
+    let col_ptrs_tensor = Tensor::from_slice(&col_ptrs, &[ncols + 1], device)?;
+    let row_indices_tensor = Tensor::from_slice(&sorted_row_indices, &[nnz], device)?;
+    let values_tensor = Tensor::from_slice(&sorted_values, &[nnz], device)?;
 
     Ok((col_ptrs_tensor, row_indices_tensor, values_tensor))
 }
@@ -106,7 +106,7 @@ pub fn csr_to_coo<T: Element>(
         }
     }
 
-    let row_indices_tensor = Tensor::try_from_slice(&row_indices, &[nnz], device)?;
+    let row_indices_tensor = Tensor::from_slice(&row_indices, &[nnz], device)?;
     Ok((row_indices_tensor, col_indices.clone(), values.clone()))
 }
 
@@ -131,7 +131,7 @@ pub fn csc_to_coo<T: Element>(
         }
     }
 
-    let col_indices_tensor = Tensor::try_from_slice(&col_indices_vec, &[nnz], device)?;
+    let col_indices_tensor = Tensor::from_slice(&col_indices_vec, &[nnz], device)?;
     Ok((row_indices.clone(), col_indices_tensor, values.clone()))
 }
 
@@ -175,9 +175,9 @@ pub fn csr_to_csc<T: Element>(
         }
     }
 
-    let col_ptrs_tensor = Tensor::try_from_slice(&col_ptrs, &[ncols + 1], device)?;
-    let row_indices_tensor = Tensor::try_from_slice(&new_row_indices, &[nnz], device)?;
-    let values_tensor = Tensor::try_from_slice(&new_values, &[nnz], device)?;
+    let col_ptrs_tensor = Tensor::from_slice(&col_ptrs, &[ncols + 1], device)?;
+    let row_indices_tensor = Tensor::from_slice(&new_row_indices, &[nnz], device)?;
+    let values_tensor = Tensor::from_slice(&new_values, &[nnz], device)?;
 
     Ok((col_ptrs_tensor, row_indices_tensor, values_tensor))
 }
@@ -222,9 +222,9 @@ pub fn csc_to_csr<T: Element>(
         }
     }
 
-    let row_ptrs_tensor = Tensor::try_from_slice(&row_ptrs, &[nrows + 1], device)?;
-    let col_indices_tensor = Tensor::try_from_slice(&new_col_indices, &[nnz], device)?;
-    let values_tensor = Tensor::try_from_slice(&new_values, &[nnz], device)?;
+    let row_ptrs_tensor = Tensor::from_slice(&row_ptrs, &[nrows + 1], device)?;
+    let col_indices_tensor = Tensor::from_slice(&new_col_indices, &[nnz], device)?;
+    let values_tensor = Tensor::from_slice(&new_values, &[nnz], device)?;
 
     Ok((row_ptrs_tensor, col_indices_tensor, values_tensor))
 }
@@ -240,7 +240,7 @@ pub fn extract_diagonal_csr<T: Element>(
     let device = values.device();
 
     if n == 0 {
-        return Tensor::try_empty(&[0], values.dtype(), device);
+        return Tensor::empty(&[0], values.dtype(), device);
     }
 
     let row_ptrs_data: Vec<i64> = row_ptrs.to_vec();
@@ -259,5 +259,5 @@ pub fn extract_diagonal_csr<T: Element>(
         }
     }
 
-    Tensor::try_from_slice(&diag, &[n], device)
+    Tensor::from_slice(&diag, &[n], device)
 }

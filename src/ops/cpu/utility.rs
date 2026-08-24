@@ -23,7 +23,7 @@ impl UtilityOps<CpuRuntime> for CpuClient {
     ) -> Result<Tensor<CpuRuntime>> {
         let dtype = a.dtype();
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &self.device)?;
 
         let a_ptr = a_contig.ptr();
         let out_ptr = out.ptr();
@@ -45,7 +45,7 @@ impl UtilityOps<CpuRuntime> for CpuClient {
     }
 
     fn fill(&self, shape: &[usize], value: f64, dtype: DType) -> Result<Tensor<CpuRuntime>> {
-        let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device)?;
         let out_ptr = out.ptr();
         let numel = out.numel();
 
@@ -68,10 +68,10 @@ impl UtilityOps<CpuRuntime> for CpuClient {
 
         // Handle empty tensor case
         if numel == 0 {
-            return Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device);
+            return Tensor::<CpuRuntime>::empty(&[0], dtype, &self.device);
         }
 
-        let out = Tensor::<CpuRuntime>::try_empty(&[numel], dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&[numel], dtype, &self.device)?;
         let out_ptr = out.ptr();
 
         dispatch_dtype!(dtype, T => {
@@ -95,11 +95,11 @@ impl UtilityOps<CpuRuntime> for CpuClient {
 
         // Handle edge cases
         if steps == 0 {
-            return Tensor::<CpuRuntime>::try_empty(&[0], dtype, &self.device);
+            return Tensor::<CpuRuntime>::empty(&[0], dtype, &self.device);
         }
 
         if steps == 1 {
-            let out = Tensor::<CpuRuntime>::try_empty(&[1], dtype, &self.device)?;
+            let out = Tensor::<CpuRuntime>::empty(&[1], dtype, &self.device)?;
             let out_ptr = out.ptr();
 
             dispatch_dtype!(dtype, T => {
@@ -111,7 +111,7 @@ impl UtilityOps<CpuRuntime> for CpuClient {
             return Ok(out);
         }
 
-        let out = Tensor::<CpuRuntime>::try_empty(&[steps], dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&[steps], dtype, &self.device)?;
         let out_ptr = out.ptr();
 
         dispatch_dtype!(dtype, T => {
@@ -130,10 +130,10 @@ impl UtilityOps<CpuRuntime> for CpuClient {
 
         // Handle edge cases
         if rows == 0 || cols == 0 {
-            return Tensor::<CpuRuntime>::try_empty(&[rows, cols], dtype, &self.device);
+            return Tensor::<CpuRuntime>::empty(&[rows, cols], dtype, &self.device);
         }
 
-        let out = Tensor::<CpuRuntime>::try_empty(&[rows, cols], dtype, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&[rows, cols], dtype, &self.device)?;
         let out_ptr = out.ptr();
 
         dispatch_dtype!(dtype, T => {
@@ -174,7 +174,7 @@ impl UtilityOps<CpuRuntime> for CpuClient {
         let mut out_shape = indices.shape().to_vec();
         out_shape.push(num_classes);
 
-        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::F32, &self.device)?;
+        let out = Tensor::<CpuRuntime>::empty(&out_shape, DType::F32, &self.device)?;
         let out_ptr = out.ptr() as *mut f32;
 
         // Zero-fill output

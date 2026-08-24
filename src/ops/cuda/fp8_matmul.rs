@@ -90,7 +90,7 @@ impl Fp8MatmulOps<CudaRuntime> for CudaClient {
 
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, out_dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &self.device)?;
 
         unsafe {
             if batch_size > 1 {
@@ -143,7 +143,7 @@ impl Fp8MatmulOps<CudaRuntime> for CudaClient {
 
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, out_dtype, &self.device)?;
+        let out = Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &self.device)?;
 
         unsafe {
             if batch_size > 1 {

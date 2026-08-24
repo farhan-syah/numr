@@ -23,7 +23,7 @@ fn bench(
     dtype: DType,
     label: &str,
 ) {
-    let a32 = Tensor::<CudaRuntime>::try_from_slice(
+    let a32 = Tensor::<CudaRuntime>::from_slice(
         &(0..m * k)
             .map(|i| ((i % 97) as f32) * 0.01)
             .collect::<Vec<_>>(),
@@ -31,7 +31,7 @@ fn bench(
         device,
     )
     .unwrap();
-    let b32 = Tensor::<CudaRuntime>::try_from_slice(
+    let b32 = Tensor::<CudaRuntime>::from_slice(
         &(0..k * n)
             .map(|i| ((i % 89) as f32) * 0.01)
             .collect::<Vec<_>>(),
