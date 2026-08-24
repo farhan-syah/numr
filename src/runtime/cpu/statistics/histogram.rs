@@ -43,7 +43,7 @@ pub fn histogram_impl(
 
     if numel == 0 {
         let (min_val, max_val) = range.unwrap_or((0.0, 1.0));
-        let hist = Tensor::<CpuRuntime>::zeros(&[bins], DType::I64, &client.device);
+        let hist = Tensor::<CpuRuntime>::try_zeros(&[bins], DType::I64, &client.device)?;
         let edges = create_bin_edges(client, min_val, max_val, bins, dtype)?;
         return Ok((hist, edges));
     }
@@ -77,7 +77,7 @@ pub fn histogram_impl(
     };
 
     // Create histogram counts tensor
-    let hist = Tensor::<CpuRuntime>::zeros(&[bins], DType::I64, &client.device);
+    let hist = Tensor::<CpuRuntime>::try_zeros(&[bins], DType::I64, &client.device)?;
     let hist_ptr = hist.ptr() as *mut i64;
 
     // Compute histogram using optimized kernel

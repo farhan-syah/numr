@@ -147,7 +147,7 @@ where
     let tangent = match a.tangent() {
         Some(at) => {
             let tanh_sq = client.square(&primal)?;
-            let one = Tensor::ones(tanh_sq.shape(), tanh_sq.dtype(), tanh_sq.device());
+            let one = Tensor::try_ones(tanh_sq.shape(), tanh_sq.dtype(), tanh_sq.device())?;
             let sech_sq = client.sub(&one, &tanh_sq)?;
             Some(client.mul(&sech_sq, at)?)
         }

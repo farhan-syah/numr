@@ -527,7 +527,7 @@ where
     let device = factors[0].device();
 
     // Start with ones matrix
-    let mut result = Tensor::<R>::ones(&[rank, rank], dtype, device);
+    let mut result = Tensor::<R>::try_ones(&[rank, rank], dtype, device)?;
 
     for mode in 0..n {
         if mode == skip_mode {

@@ -32,11 +32,11 @@ where
 {
     if p == 0.0 {
         // No dropout — return input unchanged with a ones mask
-        let mask = crate::tensor::Tensor::<R>::ones(
+        let mask = crate::tensor::Tensor::<R>::try_ones(
             a.tensor().shape(),
             a.tensor().dtype(),
             a.tensor().device(),
-        );
+        )?;
         // Identity must preserve the grad_fn. Rebuilding with `Var::new` would
         // create a leaf and silently sever the graph for every caller that
         // passes p == 0.0 to disable dropout.
@@ -50,11 +50,11 @@ where
 
     if p >= 1.0 {
         // Drop everything — return zeros
-        let zeros = crate::tensor::Tensor::<R>::zeros(
+        let zeros = crate::tensor::Tensor::<R>::try_zeros(
             a.tensor().shape(),
             a.tensor().dtype(),
             a.tensor().device(),
-        );
+        )?;
         return Ok((Var::new(zeros.clone(), a.requires_grad()), zeros));
     }
 

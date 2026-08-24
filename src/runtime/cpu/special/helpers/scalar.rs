@@ -25,12 +25,12 @@ where
         DType::F32 => {
             let data: Vec<f32> = x.to_vec();
             let result: Vec<f32> = data.iter().map(|&v| f(v as f64) as f32).collect();
-            Ok(Tensor::from_slice(&result, x.shape(), device))
+            Tensor::try_from_slice(&result, x.shape(), device)
         }
         DType::F64 => {
             let data: Vec<f64> = x.to_vec();
             let result: Vec<f64> = data.iter().map(|&v| f(v)).collect();
-            Ok(Tensor::from_slice(&result, x.shape(), device))
+            Tensor::try_from_slice(&result, x.shape(), device)
         }
         #[cfg(feature = "f16")]
         DType::F16 => {
@@ -39,7 +39,7 @@ where
                 .iter()
                 .map(|&v| half::f16::from_f64(f(v.to_f64())))
                 .collect();
-            Ok(Tensor::from_slice(&result, x.shape(), device))
+            Tensor::try_from_slice(&result, x.shape(), device)
         }
         #[cfg(feature = "f16")]
         DType::BF16 => {
@@ -48,7 +48,7 @@ where
                 .iter()
                 .map(|&v| half::bf16::from_f64(f(v.to_f64())))
                 .collect();
-            Ok(Tensor::from_slice(&result, x.shape(), device))
+            Tensor::try_from_slice(&result, x.shape(), device)
         }
         #[cfg(feature = "fp8")]
         DType::FP8E4M3 => {
@@ -57,7 +57,7 @@ where
                 .iter()
                 .map(|&v| crate::dtype::FP8E4M3::from_f32(f(v.to_f32() as f64) as f32))
                 .collect();
-            Ok(Tensor::from_slice(&result, x.shape(), device))
+            Tensor::try_from_slice(&result, x.shape(), device)
         }
         #[cfg(feature = "fp8")]
         DType::FP8E5M2 => {
@@ -66,7 +66,7 @@ where
                 .iter()
                 .map(|&v| crate::dtype::FP8E5M2::from_f32(f(v.to_f32() as f64) as f32))
                 .collect();
-            Ok(Tensor::from_slice(&result, x.shape(), device))
+            Tensor::try_from_slice(&result, x.shape(), device)
         }
         _ => unreachable!("dtype validated by caller"),
     }
@@ -98,7 +98,7 @@ where
                 .zip(b_data.iter())
                 .map(|(&av, &bv)| f(av as f64, bv as f64) as f32)
                 .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         DType::F64 => {
             let a_data: Vec<f64> = a.to_vec();
@@ -108,7 +108,7 @@ where
                 .zip(b_data.iter())
                 .map(|(&av, &bv)| f(av, bv))
                 .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         #[cfg(feature = "f16")]
         DType::F16 => {
@@ -119,7 +119,7 @@ where
                 .zip(b_data.iter())
                 .map(|(&av, &bv)| half::f16::from_f64(f(av.to_f64(), bv.to_f64())))
                 .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         #[cfg(feature = "f16")]
         DType::BF16 => {
@@ -130,7 +130,7 @@ where
                 .zip(b_data.iter())
                 .map(|(&av, &bv)| half::bf16::from_f64(f(av.to_f64(), bv.to_f64())))
                 .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         #[cfg(feature = "fp8")]
         DType::FP8E4M3 => {
@@ -146,7 +146,7 @@ where
                         )
                     })
                     .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         #[cfg(feature = "fp8")]
         DType::FP8E5M2 => {
@@ -162,7 +162,7 @@ where
                         )
                     })
                     .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         _ => unreachable!("dtype validated by caller"),
     }
@@ -236,7 +236,7 @@ where
                 .zip(c_data.iter())
                 .map(|((&av, &bv), &cv)| f(av as f64, bv as f64, cv as f64) as f32)
                 .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         DType::F64 => {
             let a_data: Vec<f64> = a.to_vec();
@@ -248,7 +248,7 @@ where
                 .zip(c_data.iter())
                 .map(|((&av, &bv), &cv)| f(av, bv, cv))
                 .collect();
-            Ok(Tensor::from_slice(&result, a.shape(), device))
+            Tensor::try_from_slice(&result, a.shape(), device)
         }
         _ => unreachable!("dtype validated by caller"),
     }

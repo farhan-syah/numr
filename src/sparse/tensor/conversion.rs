@@ -88,7 +88,7 @@ impl<R: Runtime<DType = DType>> SparseTensor<R> {
         if self.is_empty() {
             crate::dispatch_dtype!(dtype, T => {
                 let zeros: Vec<T> = vec![T::zero(); numel];
-                return Ok(Tensor::from_slice(&zeros, &[nrows, ncols], device));
+                return Tensor::try_from_slice(&zeros, &[nrows, ncols], device);
             }, "sparse to dense empty");
         }
 
@@ -129,7 +129,7 @@ impl<R: Runtime<DType = DType>> SparseTensor<R> {
                 dense_data[idx] = *val;
             }
 
-            return Ok(Tensor::from_slice(&dense_data, &[nrows, ncols], device));
+            return Tensor::try_from_slice(&dense_data, &[nrows, ncols], device);
         }, "sparse to dense conversion");
     }
 }

@@ -86,7 +86,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         if self.is_empty() {
             crate::dispatch_dtype!(dtype, T => {
                 let zeros: Vec<T> = vec![T::zero(); nrows];
-                return Ok(Tensor::from_slice(&zeros, &[nrows], device));
+                return Tensor::try_from_slice(&zeros, &[nrows], device);
             }, "spmv empty");
         }
 
@@ -196,7 +196,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         if self.is_empty() {
             crate::dispatch_dtype!(dtype, T => {
                 let zeros: Vec<T> = vec![T::zero(); m * n];
-                return Ok(Tensor::from_slice(&zeros, &[m, n], device));
+                return Tensor::try_from_slice(&zeros, &[m, n], device);
             }, "spmm empty");
         }
 

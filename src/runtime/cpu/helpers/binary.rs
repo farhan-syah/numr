@@ -20,7 +20,7 @@ pub fn binary_op_impl(
     let out_shape = compute_broadcast_shape(a, b)?;
 
     // Create output tensor
-    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     write_binary_into(client, op, a, b, &out, &out_shape, op_name)?;
 

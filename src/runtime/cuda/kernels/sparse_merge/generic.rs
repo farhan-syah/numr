@@ -63,7 +63,7 @@ pub unsafe fn generic_csr_merge<T: CudaTypeName, S: MergeStrategy>(
     Tensor<CudaRuntime>,
 )> {
     // Pass 1: Count output size per row
-    let row_counts = Tensor::<CudaRuntime>::zeros(&[nrows], DType::I32, device);
+    let row_counts = Tensor::<CudaRuntime>::try_zeros(&[nrows], DType::I32, device)?;
 
     // Launch count kernel (union vs intersection semantics determined by strategy)
     let count_kernel_name = S::count_kernel_name(SparseFormat::Csr);
@@ -120,8 +120,8 @@ pub unsafe fn generic_csr_merge<T: CudaTypeName, S: MergeStrategy>(
     let (out_row_ptrs, total_nnz) = exclusive_scan_i32(context, stream, device_index, &row_counts)?;
 
     // Pass 2: Allocate output and compute merged result
-    let out_col_indices = Tensor::<CudaRuntime>::zeros(&[total_nnz], DType::I32, device);
-    let out_values = Tensor::<CudaRuntime>::zeros(&[total_nnz], dtype, device);
+    let out_col_indices = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], DType::I32, device)?;
+    let out_values = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], dtype, device)?;
 
     // Launch compute kernel (operation-specific)
     let compute_kernel_name = S::compute_kernel_name(SparseFormat::Csr, T::NAME);
@@ -204,7 +204,7 @@ pub unsafe fn generic_csc_merge<T: CudaTypeName, S: MergeStrategy>(
     Tensor<CudaRuntime>,
 )> {
     // Pass 1: Count output size per column
-    let col_counts = Tensor::<CudaRuntime>::zeros(&[ncols], DType::I32, device);
+    let col_counts = Tensor::<CudaRuntime>::try_zeros(&[ncols], DType::I32, device)?;
 
     // Launch count kernel
     let count_kernel_name = S::count_kernel_name(SparseFormat::Csc);
@@ -261,8 +261,8 @@ pub unsafe fn generic_csc_merge<T: CudaTypeName, S: MergeStrategy>(
     let (out_col_ptrs, total_nnz) = exclusive_scan_i32(context, stream, device_index, &col_counts)?;
 
     // Pass 2: Allocate output and compute merged result
-    let out_row_indices = Tensor::<CudaRuntime>::zeros(&[total_nnz], DType::I32, device);
-    let out_values = Tensor::<CudaRuntime>::zeros(&[total_nnz], dtype, device);
+    let out_row_indices = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], DType::I32, device)?;
+    let out_values = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], dtype, device)?;
 
     // Launch compute kernel
     let compute_kernel_name = S::compute_kernel_name(SparseFormat::Csc, T::NAME);

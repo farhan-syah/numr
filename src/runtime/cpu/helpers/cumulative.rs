@@ -34,14 +34,14 @@ pub fn cumsum_impl(
 
     // Handle empty tensor
     if a.numel() == 0 {
-        return Ok(Tensor::<CpuRuntime>::empty(shape, dtype, &client.device));
+        return Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device);
     }
 
     // Make contiguous for simplicity
     let a_contig = ensure_contiguous(a)?;
 
     // Output has same shape as input
-    let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
 
     // Compute sizes for the scan
     let scan_size = shape[dim_idx];
@@ -93,14 +93,14 @@ pub fn cumprod_impl(
 
     // Handle empty tensor
     if a.numel() == 0 {
-        return Ok(Tensor::<CpuRuntime>::empty(shape, dtype, &client.device));
+        return Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device);
     }
 
     // Make contiguous for simplicity
     let a_contig = ensure_contiguous(a)?;
 
     // Output has same shape as input
-    let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
 
     // Compute sizes for the scan
     let scan_size = shape[dim_idx];
@@ -176,7 +176,7 @@ pub fn logsumexp_impl(
         let outer_size = outer_size.max(1);
 
         let out_shape = reduce_output_shape(shape, dims, keepdim);
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
         let a_ptr = a.ptr();
         let out_ptr = out.ptr();
@@ -254,7 +254,7 @@ fn logsumexp_single_dim(
             .collect()
     };
 
-    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     let a_ptr = a.ptr();
     let out_ptr = out.ptr();

@@ -194,9 +194,9 @@ impl<R: Runtime<DType = DType>> CooData<R> {
             }
         }
 
-        let row_indices = Tensor::from_slice(rows, &[rows.len()], device);
-        let col_indices = Tensor::from_slice(cols, &[cols.len()], device);
-        let values_tensor = Tensor::from_slice(values, &[values.len()], device);
+        let row_indices = Tensor::try_from_slice(rows, &[rows.len()], device)?;
+        let col_indices = Tensor::try_from_slice(cols, &[cols.len()], device)?;
+        let values_tensor = Tensor::try_from_slice(values, &[values.len()], device)?;
 
         Self::new(row_indices, col_indices, values_tensor, shape)
     }

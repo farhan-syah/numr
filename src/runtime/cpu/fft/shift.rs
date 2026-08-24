@@ -40,7 +40,7 @@ fn shift_impl(
     };
 
     let n = input_contig.shape()[ndim - 1];
-    let output = Tensor::<CpuRuntime>::empty(input_contig.shape(), dtype, &client.device);
+    let output = Tensor::<CpuRuntime>::try_empty(input_contig.shape(), dtype, &client.device)?;
 
     let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
     let batch_size = batch_size.max(1);
@@ -156,7 +156,7 @@ pub(super) fn fftfreq_impl(
         });
     }
 
-    let output = Tensor::<CpuRuntime>::empty(&[n], dtype, device);
+    let output = Tensor::<CpuRuntime>::try_empty(&[n], dtype, device)?;
     let scale = 1.0 / (d * n as f64);
     let output_ptr = output.ptr();
 
@@ -214,7 +214,7 @@ pub(super) fn rfftfreq_impl(
     }
 
     let output_len = n / 2 + 1;
-    let output = Tensor::<CpuRuntime>::empty(&[output_len], dtype, device);
+    let output = Tensor::<CpuRuntime>::try_empty(&[output_len], dtype, device)?;
     let scale = 1.0 / (d * n as f64);
     let output_ptr = output.ptr();
 

@@ -157,7 +157,7 @@ impl<R: Runtime<DType = DType>> CscData<R> {
         let device = self.values.device();
 
         if n == 0 {
-            return Ok(Tensor::empty(&[0], self.dtype(), device));
+            return Tensor::try_empty(&[0], self.dtype(), device);
         }
 
         // Validate dtype matches T
@@ -190,7 +190,7 @@ impl<R: Runtime<DType = DType>> CscData<R> {
         }
 
         // Create result tensor on original device
-        Ok(Tensor::from_slice(&diag_values, &[n], device))
+        Tensor::try_from_slice(&diag_values, &[n], device)
     }
 
     /// Check if the matrix has a structural nonzero on every diagonal position.
@@ -295,9 +295,9 @@ impl<R: Runtime<DType = DType>> CscData<R> {
             }
         }
 
-        let col_ptrs_tensor = Tensor::from_slice(col_ptrs, &[col_ptrs.len()], device);
-        let row_indices_tensor = Tensor::from_slice(row_indices, &[row_indices.len()], device);
-        let values_tensor = Tensor::from_slice(values, &[values.len()], device);
+        let col_ptrs_tensor = Tensor::try_from_slice(col_ptrs, &[col_ptrs.len()], device)?;
+        let row_indices_tensor = Tensor::try_from_slice(row_indices, &[row_indices.len()], device)?;
+        let values_tensor = Tensor::try_from_slice(values, &[values.len()], device)?;
 
         Self::new(col_ptrs_tensor, row_indices_tensor, values_tensor, shape)
     }
@@ -367,9 +367,9 @@ impl<R: Runtime<DType = DType>> SparseScaling<R> for CscData<R> {
         match T::DTYPE {
             DType::F32 => {
                 let norms_f32: Vec<f32> = norms.iter().map(|&x| x as f32).collect();
-                Ok(Tensor::from_slice(&norms_f32, &[nrows], device))
+                Tensor::try_from_slice(&norms_f32, &[nrows], device)
             }
-            DType::F64 => Ok(Tensor::from_slice(&norms, &[nrows], device)),
+            DType::F64 => Tensor::try_from_slice(&norms, &[nrows], device),
             _ => Err(Error::UnsupportedDType {
                 dtype: T::DTYPE,
                 op: "row_norms",
@@ -434,9 +434,9 @@ impl<R: Runtime<DType = DType>> SparseScaling<R> for CscData<R> {
         match T::DTYPE {
             DType::F32 => {
                 let norms_f32: Vec<f32> = norms.iter().map(|&x| x as f32).collect();
-                Ok(Tensor::from_slice(&norms_f32, &[ncols], device))
+                Tensor::try_from_slice(&norms_f32, &[ncols], device)
             }
-            DType::F64 => Ok(Tensor::from_slice(&norms, &[ncols], device)),
+            DType::F64 => Tensor::try_from_slice(&norms, &[ncols], device),
             _ => Err(Error::UnsupportedDType {
                 dtype: T::DTYPE,
                 op: "col_norms",

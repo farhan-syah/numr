@@ -172,7 +172,7 @@ where
     let device = grad_output.device();
     let dtype = grad_output.dtype();
 
-    let mut d_input = crate::tensor::Tensor::<R>::zeros(input_shape, dtype, device);
+    let mut d_input = crate::tensor::Tensor::<R>::try_zeros(input_shape, dtype, device)?;
 
     for kh in 0..kernel_h {
         for kw in 0..kernel_w {
@@ -274,7 +274,7 @@ where
     let device = grad_output.device();
     let dtype = grad_output.dtype();
 
-    let mut d_weight = crate::tensor::Tensor::<R>::zeros(weight_shape, dtype, device);
+    let mut d_weight = crate::tensor::Tensor::<R>::try_zeros(weight_shape, dtype, device)?;
 
     for oh in 0..output_h {
         for ow in 0..output_w {

@@ -447,10 +447,10 @@ impl SparseOps<CudaRuntime> for CudaClient {
         let dtype = values.dtype();
 
         if n == 0 {
-            return Ok(Tensor::empty(&[0], dtype, device));
+            return Tensor::try_empty(&[0], dtype, device);
         }
 
-        let out = Tensor::<CudaRuntime>::zeros(&[n], dtype, device);
+        let out = Tensor::<CudaRuntime>::try_zeros(&[n], dtype, device)?;
 
         let row_ptrs_ptr = row_ptrs.ptr();
         let col_indices_ptr = col_indices.ptr();

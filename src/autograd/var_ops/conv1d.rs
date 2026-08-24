@@ -176,7 +176,7 @@ where
     let device = grad_output.device();
     let dtype = grad_output.dtype();
 
-    let mut d_input = crate::tensor::Tensor::<R>::zeros(input_shape, dtype, device);
+    let mut d_input = crate::tensor::Tensor::<R>::try_zeros(input_shape, dtype, device)?;
 
     // Accumulate contributions by iterating and accumulating tensor operations
     for k in 0..kernel_size {
@@ -268,7 +268,7 @@ where
     let device = grad_output.device();
     let dtype = grad_output.dtype();
 
-    let mut d_weight = crate::tensor::Tensor::<R>::zeros(weight_shape, dtype, device);
+    let mut d_weight = crate::tensor::Tensor::<R>::try_zeros(weight_shape, dtype, device)?;
 
     // Accumulate contributions by iterating and accumulating tensor operations
     for o in 0..output_len {

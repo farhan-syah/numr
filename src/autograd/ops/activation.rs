@@ -55,11 +55,11 @@ where
 
         // ReLU derivative: relu'(x) = 1 if x > 0, 0 otherwise
         // mask = (input > 0) -> returns 1.0 where true, 0.0 where false
-        let zero = Tensor::<R>::zeros(
+        let zero = Tensor::<R>::try_zeros(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.saved_input.device(),
-        );
+        )?;
         let mask = client.gt(&self.saved_input, &zero)?;
 
         // grad = grad_output * mask
@@ -76,11 +76,11 @@ where
 
         // ReLU derivative: relu'(x) = 1 if x > 0, 0 otherwise
         // The mask is non-differentiable (step function), so treat as constant
-        let zero = Tensor::<R>::zeros(
+        let zero = Tensor::<R>::try_zeros(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.saved_input.device(),
-        );
+        )?;
         let mask = client.gt(&self.saved_input, &zero)?;
 
         // Wrap mask as Var without gradient tracking
@@ -151,11 +151,11 @@ where
 
         // sigmoid'(x) = sigmoid(x) * (1 - sigmoid(x))
         // dL/da = dL/dz * z * (1 - z)
-        let one = Tensor::<R>::ones(
+        let one = Tensor::<R>::try_ones(
             self.saved_output.shape(),
             self.saved_output.dtype(),
             self.saved_output.device(),
-        );
+        )?;
         let one_minus_sigmoid = client.sub(&one, &self.saved_output)?;
         let sigmoid_deriv = client.mul(&self.saved_output, &one_minus_sigmoid)?;
         let grad = client.mul(grad_output, &sigmoid_deriv)?;
@@ -172,11 +172,11 @@ where
         // sigmoid'(x) = sigmoid(x) * (1 - sigmoid(x))
         // dL/da = dL/dz * z * (1 - z)
         // The derivative z * (1 - z) is computed from saved output, treated as constant
-        let one = Tensor::<R>::ones(
+        let one = Tensor::<R>::try_ones(
             self.saved_output.shape(),
             self.saved_output.dtype(),
             self.saved_output.device(),
-        );
+        )?;
         let one_minus_sigmoid = client.sub(&one, &self.saved_output)?;
         let sigmoid_deriv = client.mul(&self.saved_output, &one_minus_sigmoid)?;
 

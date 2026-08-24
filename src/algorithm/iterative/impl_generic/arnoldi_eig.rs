@@ -73,7 +73,7 @@ where
     let ncv = ncv.max(k + 1).min(n);
 
     // Deterministic starting vector
-    let ones = Tensor::<R>::ones(&[n], dtype, device);
+    let ones = Tensor::<R>::try_ones(&[n], dtype, device)?;
     let scale = 1.0 / (n as f64).sqrt();
     let v0 = client.mul_scalar(&ones, scale)?;
 
@@ -247,12 +247,12 @@ where
             )?;
             ritz_vectors.push(ritz);
         } else {
-            ritz_vectors.push(Tensor::<R>::zeros(&[n], dtype, device));
+            ritz_vectors.push(Tensor::<R>::try_zeros(&[n], dtype, device)?);
         }
     }
 
-    let eigenvalues_real = Tensor::<R>::from_slice(&eig_real_out, &[k_actual], device);
-    let eigenvalues_imag = Tensor::<R>::from_slice(&eig_imag_out, &[k_actual], device);
+    let eigenvalues_real = Tensor::<R>::try_from_slice(&eig_real_out, &[k_actual], device)?;
+    let eigenvalues_imag = Tensor::<R>::try_from_slice(&eig_imag_out, &[k_actual], device)?;
 
     // Assemble eigenvector columns into [n, k] matrix
     let mut flat = vec![0.0f64; n * k_actual];
@@ -260,7 +260,7 @@ where
         let col_data: Vec<f64> = ritz.to_vec();
         flat[col * n..(col + 1) * n].copy_from_slice(&col_data);
     }
-    let eigenvectors = Tensor::<R>::from_slice(&flat, &[n, k_actual], device);
+    let eigenvectors = Tensor::<R>::try_from_slice(&flat, &[n, k_actual], device)?;
 
     Ok(SparseEigComplexResult {
         eigenvalues_real,

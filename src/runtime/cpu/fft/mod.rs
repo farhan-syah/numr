@@ -205,7 +205,7 @@ impl CpuClient {
         let inverse = matches!(direction, FftDirection::Inverse);
         let normalize_factor = norm.factor(direction, n);
 
-        let output = Tensor::<CpuRuntime>::empty(input.shape(), dtype, &self.device);
+        let output = Tensor::<CpuRuntime>::try_empty(input.shape(), dtype, &self.device)?;
 
         let batch_size: usize = input.shape()[..ndim - 1].iter().product();
         let batch_size = batch_size.max(1);

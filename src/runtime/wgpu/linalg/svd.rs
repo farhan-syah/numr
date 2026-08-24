@@ -198,7 +198,7 @@ pub fn pinverse(
     // S_inv[i] = 1/S[i] if S[i] > cutoff else 0
     let mask = client.gt(&svd.s, &cutoff_tensor)?; // Boolean mask
     let s_reciprocal = client.recip(&svd.s)?; // 1/S (may have inf for zeros)
-    let zero = Tensor::<WgpuRuntime>::from_slice(&[0.0f32], &[], device);
+    let zero = Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32], &[], device)?;
     let s_inv = client.where_cond(&mask, &s_reciprocal, &zero)?;
 
     // Create S_inv diagonal matrix on GPU
@@ -229,11 +229,7 @@ pub fn cond(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<WgpuR
 
     // Handle empty matrix
     if m == 0 || n == 0 {
-        return Ok(Tensor::<WgpuRuntime>::from_slice(
-            &[f32::INFINITY],
-            &[],
-            device,
-        ));
+        return Tensor::<WgpuRuntime>::try_from_slice(&[f32::INFINITY], &[], device);
     }
 
     // Compute SVD
@@ -248,8 +244,8 @@ pub fn cond(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<WgpuR
 
     // Handle edge case: if min_sv <= 0 or not finite, result should be infinity
     // Use GPU conditional: where(min_sv > eps, ratio, infinity)
-    let eps = Tensor::<WgpuRuntime>::from_slice(&[f32::EPSILON], &[], device);
-    let infinity = Tensor::<WgpuRuntime>::from_slice(&[f32::INFINITY], &[], device);
+    let eps = Tensor::<WgpuRuntime>::try_from_slice(&[f32::EPSILON], &[], device)?;
+    let infinity = Tensor::<WgpuRuntime>::try_from_slice(&[f32::INFINITY], &[], device)?;
     let valid_mask = client.gt(&min_sv_tensor, &eps)?;
     let cond_result = client.where_cond(&valid_mask, &ratio, &infinity)?;
 

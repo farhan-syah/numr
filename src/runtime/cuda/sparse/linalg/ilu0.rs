@@ -42,7 +42,7 @@ pub fn ilu0_cuda(
     let values_gpu = a.values().clone();
 
     // Allocate diagonal indices buffer
-    let diag_indices_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, device);
+    let diag_indices_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, device)?;
 
     // Find diagonal indices on GPU
     unsafe {
@@ -173,7 +173,7 @@ pub fn ilu0_numeric_cuda(
     let values_gpu = a.values().clone();
 
     // Allocate diagonal indices buffer
-    let diag_indices_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, device);
+    let diag_indices_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, device)?;
 
     // Find diagonal indices on GPU
     unsafe {

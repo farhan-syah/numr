@@ -70,7 +70,7 @@ where
     }
 
     // Create mask in F64 first, then cast to input dtype
-    let mask_f64 = Tensor::<R>::from_slice(&mask_data, &[n, n], x.device());
+    let mask_f64 = Tensor::<R>::try_from_slice(&mask_data, &[n, n], x.device())?;
     let mask = client.cast(&mask_f64, x.dtype())?;
 
     // Apply mask: result = x * mask (single multiplication)
@@ -127,7 +127,7 @@ where
         // 3. Create diagonal matrix from the scaled vector
 
         // Create ones vector with same dtype as input
-        let ones_vec = Tensor::<R>::ones(&[n], saved_a.dtype(), saved_a.device());
+        let ones_vec = Tensor::<R>::try_ones(&[n], saved_a.dtype(), saved_a.device())?;
 
         // Scale by grad_output via broadcasting (stays on device)
         let scaled_diag = client.mul(&ones_vec, grad_output)?;
@@ -148,7 +148,7 @@ where
 
         // dL/dA = dL/ds * I
         // Create ones vector (constant, no gradient tracking)
-        let ones_vec = Tensor::<R>::ones(&[n], saved_a.dtype(), saved_a.device());
+        let ones_vec = Tensor::<R>::try_ones(&[n], saved_a.dtype(), saved_a.device())?;
         let ones_var = Var::new(ones_vec, false);
 
         // Scale by grad_output via var_mul to track gradients through grad_output

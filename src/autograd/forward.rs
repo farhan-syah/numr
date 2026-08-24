@@ -143,11 +143,11 @@ where
     let output_primal = dual_output.primal().clone();
     let output_tangent = match dual_output.tangent() {
         Some(t) => t.clone(),
-        None => Tensor::zeros(
+        None => Tensor::try_zeros(
             output_primal.shape(),
             output_primal.dtype(),
             output_primal.device(),
-        ),
+        )?,
     };
 
     Ok((output_primal, output_tangent))
@@ -206,7 +206,7 @@ where
         let primal = dual.primal().clone();
         let tangent = match dual.tangent() {
             Some(t) => t.clone(),
-            None => Tensor::zeros(primal.shape(), primal.dtype(), primal.device()),
+            None => Tensor::try_zeros(primal.shape(), primal.dtype(), primal.device())?,
         };
         output_primals.push(primal);
         output_tangents.push(tangent);
@@ -267,12 +267,12 @@ where
         let v = match dtype {
             crate::dtype::DType::F32 => {
                 let v_f32: Vec<f32> = v_data.iter().map(|&x| x as f32).collect();
-                Tensor::<R>::from_slice(&v_f32, x.shape(), device)
+                Tensor::<R>::try_from_slice(&v_f32, x.shape(), device)?
             }
-            crate::dtype::DType::F64 => Tensor::<R>::from_slice(&v_data, x.shape(), device),
+            crate::dtype::DType::F64 => Tensor::<R>::try_from_slice(&v_data, x.shape(), device)?,
             _ => {
                 // For other dtypes, create as f64 and rely on operations to handle
-                Tensor::<R>::from_slice(&v_data, x.shape(), device)
+                Tensor::<R>::try_from_slice(&v_data, x.shape(), device)?
             }
         };
 
@@ -285,7 +285,7 @@ where
         // The tangent is the j-th column of the Jacobian
         let col = match dual_y.tangent() {
             Some(t) => t.clone(),
-            None => Tensor::zeros(dual_y.shape(), dtype, device),
+            None => Tensor::try_zeros(dual_y.shape(), dtype, device)?,
         };
 
         columns.push(col);

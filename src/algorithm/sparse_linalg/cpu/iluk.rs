@@ -207,23 +207,25 @@ pub fn iluk_numeric_cpu<R: Runtime<DType = DType>>(
     let original_nnz = values.len();
     let factored_nnz = nnz_l + nnz_u;
 
-    let l_row_ptrs_tensor = Tensor::<R>::from_slice(&symbolic.row_ptrs_l, &[n + 1], device);
-    let l_col_indices_tensor = Tensor::<R>::from_slice(&symbolic.col_indices_l, &[nnz_l], device);
-    let u_row_ptrs_tensor = Tensor::<R>::from_slice(&symbolic.row_ptrs_u, &[n + 1], device);
-    let u_col_indices_tensor = Tensor::<R>::from_slice(&symbolic.col_indices_u, &[nnz_u], device);
+    let l_row_ptrs_tensor = Tensor::<R>::try_from_slice(&symbolic.row_ptrs_l, &[n + 1], device)?;
+    let l_col_indices_tensor =
+        Tensor::<R>::try_from_slice(&symbolic.col_indices_l, &[nnz_l], device)?;
+    let u_row_ptrs_tensor = Tensor::<R>::try_from_slice(&symbolic.row_ptrs_u, &[n + 1], device)?;
+    let u_col_indices_tensor =
+        Tensor::<R>::try_from_slice(&symbolic.col_indices_u, &[nnz_u], device)?;
 
     let (l_values_tensor, u_values_tensor) = match dtype {
         DType::F32 => {
             let l_f32: Vec<f32> = l_values.iter().map(|&x| x as f32).collect();
             let u_f32: Vec<f32> = u_values.iter().map(|&x| x as f32).collect();
             (
-                Tensor::<R>::from_slice(&l_f32, &[nnz_l], device),
-                Tensor::<R>::from_slice(&u_f32, &[nnz_u], device),
+                Tensor::<R>::try_from_slice(&l_f32, &[nnz_l], device)?,
+                Tensor::<R>::try_from_slice(&u_f32, &[nnz_u], device)?,
             )
         }
         DType::F64 => (
-            Tensor::<R>::from_slice(&l_values, &[nnz_l], device),
-            Tensor::<R>::from_slice(&u_values, &[nnz_u], device),
+            Tensor::<R>::try_from_slice(&l_values, &[nnz_l], device)?,
+            Tensor::<R>::try_from_slice(&u_values, &[nnz_u], device)?,
         ),
         _ => unreachable!(),
     };

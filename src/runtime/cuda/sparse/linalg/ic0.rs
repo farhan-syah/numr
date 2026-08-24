@@ -35,7 +35,7 @@ pub fn ic0_cuda(
 
     let device = &client.device;
     let values_gpu = a.values().clone();
-    let diag_indices_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, device);
+    let diag_indices_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, device)?;
 
     // Find diagonal indices
     unsafe {

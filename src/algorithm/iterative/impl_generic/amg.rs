@@ -175,7 +175,7 @@ where
         // Use many Jacobi iterations as a "direct" solve for the small system
         let d_inv = &hierarchy.diag_inv[level];
         let omega = hierarchy.options.smoother_omega;
-        let mut x = Tensor::<R>::zeros(&[n], dtype, device);
+        let mut x = Tensor::<R>::try_zeros(&[n], dtype, device)?;
 
         for _ in 0..50 {
             let ax = a.spmv(&x)?;
@@ -191,7 +191,7 @@ where
     let omega = hierarchy.options.smoother_omega;
 
     // Pre-smoothing: weighted Jacobi iterations
-    let mut x = Tensor::<R>::zeros(&[n], dtype, device);
+    let mut x = Tensor::<R>::try_zeros(&[n], dtype, device)?;
     for _ in 0..hierarchy.options.smoother_sweeps {
         let ax = a.spmv(&x)?;
         let r = client.sub(rhs, &ax)?;
@@ -252,7 +252,7 @@ where
 
     let mut x = match x0 {
         Some(x0) => x0.clone(),
-        None => Tensor::<R>::zeros(&[n], dtype, device),
+        None => Tensor::<R>::try_zeros(&[n], dtype, device)?,
     };
 
     let b_norm = vector_norm(client, b)?;

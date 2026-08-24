@@ -64,7 +64,7 @@ unsafe fn cast_i32_to_i64_gpu(
     input: &Tensor<CudaRuntime>,
 ) -> Result<Tensor<CudaRuntime>> {
     let n = input.numel();
-    let output = Tensor::<CudaRuntime>::zeros(&[n], DType::I64, device);
+    let output = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I64, device)?;
 
     // Use cast kernel from cast.rs
     use super::cast::launch_cast;
@@ -227,7 +227,7 @@ pub unsafe fn filter_csr_values_gpu<T: CudaTypeName + Copy + cudarc::driver::Dev
     }
 
     // Pass 1: Count values above threshold per row
-    let row_counts = Tensor::<CudaRuntime>::zeros(&[nrows], DType::I32, device);
+    let row_counts = Tensor::<CudaRuntime>::try_zeros(&[nrows], DType::I32, device)?;
 
     unsafe {
         launch_filter_csr_count::<T>(
@@ -256,8 +256,8 @@ pub unsafe fn filter_csr_values_gpu<T: CudaTypeName + Copy + cudarc::driver::Dev
         cast_i32_to_i64_gpu(context, stream, device_index, device, &out_row_ptrs_i32)?;
 
     // Pass 2: Copy filtered data
-    let out_col_indices = Tensor::<CudaRuntime>::zeros(&[total_nnz], DType::I64, device);
-    let out_values = Tensor::<CudaRuntime>::zeros(&[total_nnz], dtype, device);
+    let out_col_indices = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], DType::I64, device)?;
+    let out_values = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], dtype, device)?;
 
     unsafe {
         launch_filter_csr_compute::<T>(
@@ -306,7 +306,7 @@ pub unsafe fn csr_sum_rows_gpu<T: CudaTypeName>(
     let module = get_or_load_module(context, device_index, SPARSE_UTILS_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let out = Tensor::<CudaRuntime>::zeros(&[nrows], dtype, device);
+    let out = Tensor::<CudaRuntime>::try_zeros(&[nrows], dtype, device)?;
 
     let block_size = BLOCK_SIZE;
     let grid_size = (nrows as u32 + block_size - 1) / block_size;
@@ -355,7 +355,7 @@ pub unsafe fn csc_sum_cols_gpu<T: CudaTypeName>(
     let module = get_or_load_module(context, device_index, SPARSE_UTILS_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let out = Tensor::<CudaRuntime>::zeros(&[ncols], dtype, device);
+    let out = Tensor::<CudaRuntime>::try_zeros(&[ncols], dtype, device)?;
 
     let block_size = BLOCK_SIZE;
     let grid_size = (ncols as u32 + block_size - 1) / block_size;
@@ -403,7 +403,7 @@ pub unsafe fn csr_nnz_per_row_gpu(
     let module = get_or_load_module(context, device_index, SPARSE_UTILS_MODULE)?;
     let func = get_kernel_function(&module, "csr_nnz_per_row_kernel")?;
 
-    let out = Tensor::<CudaRuntime>::zeros(&[nrows], DType::I64, device);
+    let out = Tensor::<CudaRuntime>::try_zeros(&[nrows], DType::I64, device)?;
 
     let block_size = BLOCK_SIZE;
     let grid_size = (nrows as u32 + block_size - 1) / block_size;
@@ -448,7 +448,7 @@ pub unsafe fn csc_nnz_per_col_gpu(
     let module = get_or_load_module(context, device_index, SPARSE_UTILS_MODULE)?;
     let func = get_kernel_function(&module, "csc_nnz_per_col_kernel")?;
 
-    let out = Tensor::<CudaRuntime>::zeros(&[ncols], DType::I64, device);
+    let out = Tensor::<CudaRuntime>::try_zeros(&[ncols], DType::I64, device)?;
 
     let block_size = BLOCK_SIZE;
     let grid_size = (ncols as u32 + block_size - 1) / block_size;
@@ -506,7 +506,7 @@ pub unsafe fn csr_to_dense_gpu<T: CudaTypeName>(
     let module = get_or_load_module(context, device_index, SPARSE_UTILS_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let out = Tensor::<CudaRuntime>::zeros(&[nrows, ncols], dtype, device);
+    let out = Tensor::<CudaRuntime>::try_zeros(&[nrows, ncols], dtype, device)?;
 
     let block_size = BLOCK_SIZE;
     let grid_size = (nrows as u32 + block_size - 1) / block_size;
@@ -675,7 +675,7 @@ pub unsafe fn dense_to_coo_gpu<T: CudaTypeName + Copy + cudarc::driver::DeviceRe
     let ncols = shape[1];
 
     // Pass 1: Count non-zeros per row
-    let row_counts = Tensor::<CudaRuntime>::zeros(&[nrows], DType::I32, device);
+    let row_counts = Tensor::<CudaRuntime>::try_zeros(&[nrows], DType::I32, device)?;
 
     unsafe {
         launch_dense_to_coo_count::<T>(
@@ -703,9 +703,9 @@ pub unsafe fn dense_to_coo_gpu<T: CudaTypeName + Copy + cudarc::driver::DeviceRe
     let offsets = cast_i32_to_i64_gpu(context, stream, device_index, device, &offsets_i32)?;
 
     // Pass 2: Extract COO data
-    let row_indices = Tensor::<CudaRuntime>::zeros(&[total_nnz], DType::I64, device);
-    let col_indices = Tensor::<CudaRuntime>::zeros(&[total_nnz], DType::I64, device);
-    let values = Tensor::<CudaRuntime>::zeros(&[total_nnz], dtype, device);
+    let row_indices = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], DType::I64, device)?;
+    let col_indices = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], DType::I64, device)?;
+    let values = Tensor::<CudaRuntime>::try_zeros(&[total_nnz], dtype, device)?;
 
     unsafe {
         launch_dense_to_coo_extract::<T>(

@@ -300,7 +300,7 @@ pub fn matrix_rank_impl(
 
     // Handle empty matrix
     if k == 0 {
-        return Ok(Tensor::<CudaRuntime>::from_slice(&[0i64], &[], a.device()));
+        return Tensor::<CudaRuntime>::try_from_slice(&[0i64], &[], a.device());
     }
 
     // Compute tolerance factor (depends only on dimensions, no GPU data needed)

@@ -43,8 +43,11 @@ pub(super) fn run_factorization<T: GpuQrScalar>(
         .iter()
         .map(|&x| x as i32)
         .collect();
-    let a_row_indices_gpu =
-        Tensor::<CudaRuntime>::from_slice(&a_row_indices_i32, &[a_row_indices_i32.len()], &device);
+    let a_row_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
+        &a_row_indices_i32,
+        &[a_row_indices_i32.len()],
+        &device,
+    )?;
 
     // Pre-compute buffer sizes
     let total_h_size = if min_mn > 0 {
@@ -55,12 +58,13 @@ pub(super) fn run_factorization<T: GpuQrScalar>(
     let total_r_offdiag = min_mn * min_mn.saturating_sub(1) / 2;
 
     // Allocate GPU buffers
-    let work_gpu = Tensor::<CudaRuntime>::zeros(&[m], dtype, &device);
-    let h_values_gpu = Tensor::<CudaRuntime>::zeros(&[total_h_size.max(1)], dtype, &device);
-    let tau_gpu = Tensor::<CudaRuntime>::zeros(&[min_mn.max(1)], dtype, &device);
-    let diag_gpu = Tensor::<CudaRuntime>::zeros(&[min_mn.max(1)], dtype, &device);
-    let r_offdiag_gpu = Tensor::<CudaRuntime>::zeros(&[total_r_offdiag.max(1)], dtype, &device);
-    let norm_sq_gpu = Tensor::<CudaRuntime>::zeros(&[1], dtype, &device);
+    let work_gpu = Tensor::<CudaRuntime>::try_zeros(&[m], dtype, &device)?;
+    let h_values_gpu = Tensor::<CudaRuntime>::try_zeros(&[total_h_size.max(1)], dtype, &device)?;
+    let tau_gpu = Tensor::<CudaRuntime>::try_zeros(&[min_mn.max(1)], dtype, &device)?;
+    let diag_gpu = Tensor::<CudaRuntime>::try_zeros(&[min_mn.max(1)], dtype, &device)?;
+    let r_offdiag_gpu =
+        Tensor::<CudaRuntime>::try_zeros(&[total_r_offdiag.max(1)], dtype, &device)?;
+    let norm_sq_gpu = Tensor::<CudaRuntime>::try_zeros(&[1], dtype, &device)?;
 
     let context = &client.context;
     let stream = &client.stream;

@@ -75,9 +75,9 @@ pub fn pinverse_impl(
     let s_inv_diag = match dtype {
         DType::F32 => {
             let s_inv_f32: Vec<f32> = s_inv_data.iter().map(|&x| x as f32).collect();
-            Tensor::<CudaRuntime>::from_slice(&s_inv_f32, &[k], device)
+            Tensor::<CudaRuntime>::try_from_slice(&s_inv_f32, &[k], device)?
         }
-        DType::F64 => Tensor::<CudaRuntime>::from_slice(&s_inv_data, &[k], device),
+        DType::F64 => Tensor::<CudaRuntime>::try_from_slice(&s_inv_data, &[k], device)?,
         _ => unreachable!(),
     };
 
@@ -107,8 +107,8 @@ pub fn cond_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor<
     // Handle empty matrix
     if m == 0 || n == 0 {
         let inf_val = match dtype {
-            DType::F32 => Tensor::<CudaRuntime>::from_slice(&[f32::INFINITY], &[], device),
-            DType::F64 => Tensor::<CudaRuntime>::from_slice(&[f64::INFINITY], &[], device),
+            DType::F32 => Tensor::<CudaRuntime>::try_from_slice(&[f32::INFINITY], &[], device)?,
+            DType::F64 => Tensor::<CudaRuntime>::try_from_slice(&[f64::INFINITY], &[], device)?,
             _ => unreachable!(),
         };
         return linalg_demote(client, inf_val, original_dtype);
@@ -141,8 +141,8 @@ pub fn cond_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Tensor<
 
     // Create result tensor
     let result = match dtype {
-        DType::F32 => Tensor::<CudaRuntime>::from_slice(&[cond_val as f32], &[], device),
-        DType::F64 => Tensor::<CudaRuntime>::from_slice(&[cond_val], &[], device),
+        DType::F32 => Tensor::<CudaRuntime>::try_from_slice(&[cond_val as f32], &[], device)?,
+        DType::F64 => Tensor::<CudaRuntime>::try_from_slice(&[cond_val], &[], device)?,
         _ => unreachable!(),
     };
 
@@ -178,8 +178,8 @@ pub fn cov_impl(
     // Compute mean along axis 0 (mean of each column/feature)
     let sum = client.sum(&a_promoted, &[0], true)?; // [1, n_features]
     let n_samples_tensor = match dtype {
-        DType::F32 => Tensor::<CudaRuntime>::from_slice(&[n_samples as f32], &[], device),
-        DType::F64 => Tensor::<CudaRuntime>::from_slice(&[n_samples as f64], &[], device),
+        DType::F32 => Tensor::<CudaRuntime>::try_from_slice(&[n_samples as f32], &[], device)?,
+        DType::F64 => Tensor::<CudaRuntime>::try_from_slice(&[n_samples as f64], &[], device)?,
         _ => unreachable!(),
     };
     let mean = client.div(&sum, &n_samples_tensor)?; // [1, n_features]
@@ -194,8 +194,8 @@ pub fn cov_impl(
     // Normalize by (n - ddof)
     let divisor = (n_samples - ddof_val) as f64;
     let divisor_tensor = match dtype {
-        DType::F32 => Tensor::<CudaRuntime>::from_slice(&[divisor as f32], &[], device),
-        DType::F64 => Tensor::<CudaRuntime>::from_slice(&[divisor], &[], device),
+        DType::F32 => Tensor::<CudaRuntime>::try_from_slice(&[divisor as f32], &[], device)?,
+        DType::F64 => Tensor::<CudaRuntime>::try_from_slice(&[divisor], &[], device)?,
         _ => unreachable!(),
     };
     let cov_mat = client.div(&cov_unnorm, &divisor_tensor)?;
@@ -224,11 +224,7 @@ pub fn corrcoef_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Ten
 
     // Handle edge case: no features
     if n_features == 0 {
-        return Ok(Tensor::<CudaRuntime>::from_slice::<f32>(
-            &[],
-            &[0, 0],
-            device,
-        ));
+        return Tensor::<CudaRuntime>::try_from_slice::<f32>(&[], &[0, 0], device);
     }
 
     // Compute covariance matrix (already in promoted dtype)
@@ -280,10 +276,10 @@ pub fn corrcoef_impl(client: &CudaClient, a: &Tensor<CudaRuntime>) -> Result<Ten
     let result = match dtype {
         DType::F32 => {
             let corr_f32: Vec<f32> = corr_data.iter().map(|&x| x as f32).collect();
-            Tensor::<CudaRuntime>::from_slice(&corr_f32, &[n_features, n_features], device)
+            Tensor::<CudaRuntime>::try_from_slice(&corr_f32, &[n_features, n_features], device)?
         }
         DType::F64 => {
-            Tensor::<CudaRuntime>::from_slice(&corr_data, &[n_features, n_features], device)
+            Tensor::<CudaRuntime>::try_from_slice(&corr_data, &[n_features, n_features], device)?
         }
         _ => unreachable!(),
     };

@@ -75,12 +75,12 @@ where
 
     // Empty roots → constant polynomial [1.0]
     if n_roots == 0 {
-        return Ok(Tensor::full_scalar(&[1], dtype, 1.0, device));
+        return Tensor::try_full_scalar(&[1], dtype, 1.0, device);
     }
 
     // Start with polynomial p(x) = 1 (represented as complex: real=[1], imag=[0])
-    let mut p_real = Tensor::full_scalar(&[1], dtype, 1.0, device);
-    let mut p_imag = Tensor::full_scalar(&[1], dtype, 0.0, device);
+    let mut p_real = Tensor::try_full_scalar(&[1], dtype, 1.0, device)?;
+    let mut p_imag = Tensor::try_full_scalar(&[1], dtype, 0.0, device)?;
 
     // For each root r, multiply polynomial by (x - r)
     // Factor (x - r) where r = r_real + i*r_imag:
@@ -98,8 +98,8 @@ where
         // factor_imag = [-r_imag, 0]
         let neg_r_real = client.neg(&r_real)?;
         let neg_r_imag = client.neg(&r_imag)?;
-        let one = Tensor::full_scalar(&[1], dtype, 1.0, device);
-        let zero = Tensor::full_scalar(&[1], dtype, 0.0, device);
+        let one = Tensor::try_full_scalar(&[1], dtype, 1.0, device)?;
+        let zero = Tensor::try_full_scalar(&[1], dtype, 0.0, device)?;
 
         let factor_real = client.cat(&[&neg_r_real, &one], 0)?;
         let factor_imag = client.cat(&[&neg_r_imag, &zero], 0)?;

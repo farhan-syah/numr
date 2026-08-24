@@ -665,9 +665,9 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         match dtype {
             DType::F32 => {
                 let freqs_f32: Vec<f32> = freqs.iter().map(|&x| x as f32).collect();
-                Ok(Tensor::<CudaRuntime>::from_slice(&freqs_f32, &[n], device))
+                Tensor::<CudaRuntime>::try_from_slice(&freqs_f32, &[n], device)
             }
-            DType::F64 => Ok(Tensor::<CudaRuntime>::from_slice(&freqs, &[n], device)),
+            DType::F64 => Tensor::<CudaRuntime>::try_from_slice(&freqs, &[n], device),
             _ => Err(Error::UnsupportedDType {
                 dtype,
                 op: "fftfreq",
@@ -694,13 +694,9 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         match dtype {
             DType::F32 => {
                 let freqs_f32: Vec<f32> = freqs.iter().map(|&x| x as f32).collect();
-                Ok(Tensor::<CudaRuntime>::from_slice(
-                    &freqs_f32,
-                    &[out_n],
-                    device,
-                ))
+                Tensor::<CudaRuntime>::try_from_slice(&freqs_f32, &[out_n], device)
             }
-            DType::F64 => Ok(Tensor::<CudaRuntime>::from_slice(&freqs, &[out_n], device)),
+            DType::F64 => Tensor::<CudaRuntime>::try_from_slice(&freqs, &[out_n], device),
             _ => Err(Error::UnsupportedDType {
                 dtype,
                 op: "rfftfreq",

@@ -338,16 +338,16 @@ pub fn sparse_lu_solve_cpu<R: Runtime<DType = DType>>(
         DType::F32 => {
             let x_f32: Vec<f32> = x_vec.iter().map(|&x| x as f32).collect();
             if nrhs == 1 {
-                Tensor::<R>::from_slice(&x_f32, &[n], device)
+                Tensor::<R>::try_from_slice(&x_f32, &[n], device)?
             } else {
-                Tensor::<R>::from_slice(&x_f32, &[n, nrhs], device)
+                Tensor::<R>::try_from_slice(&x_f32, &[n, nrhs], device)?
             }
         }
         DType::F64 => {
             if nrhs == 1 {
-                Tensor::<R>::from_slice(&x_vec, &[n], device)
+                Tensor::<R>::try_from_slice(&x_vec, &[n], device)?
             } else {
-                Tensor::<R>::from_slice(&x_vec, &[n, nrhs], device)
+                Tensor::<R>::try_from_slice(&x_vec, &[n, nrhs], device)?
             }
         }
         _ => {

@@ -141,9 +141,9 @@ pub unsafe fn launch_broadcast_compare_op(
     let shape_u32: Vec<u32> = out_shape.iter().map(|&x| x as u32).collect();
 
     // Allocate device memory for strides and shape using Tensor
-    let a_strides_tensor = Tensor::<CudaRuntime>::from_slice(&a_strides, &[ndim], device);
-    let b_strides_tensor = Tensor::<CudaRuntime>::from_slice(&b_strides, &[ndim], device);
-    let shape_tensor = Tensor::<CudaRuntime>::from_slice(&shape_u32, &[ndim], device);
+    let a_strides_tensor = Tensor::<CudaRuntime>::try_from_slice(&a_strides, &[ndim], device)?;
+    let b_strides_tensor = Tensor::<CudaRuntime>::try_from_slice(&b_strides, &[ndim], device)?;
+    let shape_tensor = Tensor::<CudaRuntime>::try_from_slice(&shape_u32, &[ndim], device)?;
 
     // Get device pointers
     let a_strides_ptr = a_strides_tensor.ptr();

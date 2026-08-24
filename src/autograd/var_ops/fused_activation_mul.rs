@@ -382,8 +382,8 @@ where
         }
         FusedKind::Relu => {
             // relu'(x) = 1 if x > 0, else 0
-            let zeros = crate::tensor::Tensor::<R>::zeros(a.shape(), a.dtype(), a.device());
-            let ones = crate::tensor::Tensor::<R>::ones(a.shape(), a.dtype(), a.device());
+            let zeros = crate::tensor::Tensor::<R>::try_zeros(a.shape(), a.dtype(), a.device())?;
+            let ones = crate::tensor::Tensor::<R>::try_ones(a.shape(), a.dtype(), a.device())?;
             let mask = client.gt(a, &zeros)?;
             client.where_cond(&mask, &ones, &zeros)
         }

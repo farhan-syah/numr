@@ -16,7 +16,7 @@ pub fn unary_op_impl(
 ) -> Result<Tensor<CpuRuntime>> {
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
 
     let len = a.numel();
     let a_ptr = a_contig.ptr();

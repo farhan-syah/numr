@@ -469,11 +469,11 @@ where
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz * (1 - tanh²(a))
         let tanh_squared = client.square(&self.saved_output)?;
-        let one = Tensor::<R>::ones(
+        let one = Tensor::<R>::try_ones(
             self.saved_output.shape(),
             self.saved_output.dtype(),
             self.saved_output.device(),
-        );
+        )?;
         let one_minus_tanh2 = client.sub(&one, &tanh_squared)?;
         let grad = client.mul(grad_output, &one_minus_tanh2)?;
         Ok(vec![Some(grad)])
@@ -485,11 +485,11 @@ where
         let output_var = Var::new(self.saved_output.clone(), false);
         // dL/da = grad_output * (1 - tanh²(a))
         let tanh_squared = var_square(&output_var, &client)?;
-        let one = Tensor::<R>::ones(
+        let one = Tensor::<R>::try_ones(
             self.saved_output.shape(),
             self.saved_output.dtype(),
             self.saved_output.device(),
-        );
+        )?;
         let one_var = Var::new(one, false);
         let one_minus_tanh2 = var_sub(&one_var, &tanh_squared, &client)?;
         let grad = var_mul(grad_output, &one_minus_tanh2, &client)?;
@@ -861,18 +861,18 @@ where
 
         // Create mask where min < a < max (gradient flows through)
         // gradient is zero at boundaries
-        let min_tensor = Tensor::<R>::full_scalar(
+        let min_tensor = Tensor::<R>::try_full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.min_val,
             self.saved_input.device(),
-        );
-        let max_tensor = Tensor::<R>::full_scalar(
+        )?;
+        let max_tensor = Tensor::<R>::try_full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.max_val,
             self.saved_input.device(),
-        );
+        )?;
 
         // Check if value is greater than min
         let gt_min = client.gt(&self.saved_input, &min_tensor)?;
@@ -896,18 +896,18 @@ where
 
         // Create mask where min < a < max (gradient flows through)
         // The mask is non-differentiable (step function), so treat as constant
-        let min_tensor = Tensor::<R>::full_scalar(
+        let min_tensor = Tensor::<R>::try_full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.min_val,
             self.saved_input.device(),
-        );
-        let max_tensor = Tensor::<R>::full_scalar(
+        )?;
+        let max_tensor = Tensor::<R>::try_full_scalar(
             self.saved_input.shape(),
             self.saved_input.dtype(),
             self.max_val,
             self.saved_input.device(),
-        );
+        )?;
 
         // Check if value is greater than min
         let gt_min = client.gt(&self.saved_input, &min_tensor)?;

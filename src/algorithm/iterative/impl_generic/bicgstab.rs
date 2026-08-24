@@ -50,7 +50,7 @@ where
     // Initialize solution
     let mut x = match x0 {
         Some(x0) => x0.clone(),
-        None => Tensor::<R>::zeros(&[n], dtype, device),
+        None => Tensor::<R>::try_zeros(&[n], dtype, device)?,
     };
 
     // Compute preconditioner if requested
@@ -96,8 +96,8 @@ where
     let mut alpha = 1.0;
     let mut omega = 1.0;
 
-    let mut v = Tensor::<R>::zeros(&[n], dtype, device);
-    let mut p = Tensor::<R>::zeros(&[n], dtype, device);
+    let mut v = Tensor::<R>::try_zeros(&[n], dtype, device)?;
+    let mut p = Tensor::<R>::try_zeros(&[n], dtype, device)?;
 
     for iter in 0..options.max_iter {
         // rho_new = <r_hat, r>

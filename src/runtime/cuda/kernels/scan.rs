@@ -84,7 +84,7 @@ pub unsafe fn exclusive_scan_i32_gpu(
     }
 
     // Allocate output tensor with size n+1
-    let output = Tensor::<CudaRuntime>::zeros(&[n + 1], DType::I32, device);
+    let output = Tensor::<CudaRuntime>::try_zeros(&[n + 1], DType::I32, device)?;
 
     let input_ptr = input.ptr();
     let output_ptr = output.ptr();
@@ -201,7 +201,7 @@ unsafe fn launch_scan_multi_block_i32(
     let num_blocks = (n + SCAN_BLOCK_SIZE - 1) / SCAN_BLOCK_SIZE;
 
     // Allocate temporary buffer for block sums
-    let block_sums = Tensor::<CudaRuntime>::zeros(&[num_blocks as usize], DType::I32, device);
+    let block_sums = Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize], DType::I32, device)?;
     let block_sums_ptr = block_sums.ptr();
 
     // Step 1: Scan each block independently
@@ -226,7 +226,7 @@ unsafe fn launch_scan_multi_block_i32(
     // Step 2: Recursively scan the block sums
     // Allocate buffer for scanned block sums (size num_blocks + 1)
     let scanned_block_sums =
-        Tensor::<CudaRuntime>::zeros(&[num_blocks as usize + 1], DType::I32, device);
+        Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize + 1], DType::I32, device)?;
     let scanned_block_sums_ptr = scanned_block_sums.ptr();
 
     if num_blocks <= SCAN_BLOCK_SIZE {
@@ -349,7 +349,7 @@ pub unsafe fn exclusive_scan_i64_gpu(
     }
 
     // Allocate output tensor with size n+1
-    let output = Tensor::<CudaRuntime>::zeros(&[n + 1], DType::I64, device);
+    let output = Tensor::<CudaRuntime>::try_zeros(&[n + 1], DType::I64, device)?;
 
     let input_ptr = input.ptr();
     let output_ptr = output.ptr();
@@ -466,7 +466,7 @@ unsafe fn launch_scan_multi_block_i64(
     let num_blocks = (n + SCAN_BLOCK_SIZE - 1) / SCAN_BLOCK_SIZE;
 
     // Allocate temporary buffer for block sums
-    let block_sums = Tensor::<CudaRuntime>::zeros(&[num_blocks as usize], DType::I64, device);
+    let block_sums = Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize], DType::I64, device)?;
     let block_sums_ptr = block_sums.ptr();
 
     // Step 1: Scan each block independently
@@ -498,7 +498,7 @@ unsafe fn launch_scan_multi_block_i64(
     // Step 2: Recursively scan the block sums
     // Allocate buffer for scanned block sums (size num_blocks + 1)
     let scanned_block_sums =
-        Tensor::<CudaRuntime>::zeros(&[num_blocks as usize + 1], DType::I64, device);
+        Tensor::<CudaRuntime>::try_zeros(&[num_blocks as usize + 1], DType::I64, device)?;
     let scanned_block_sums_ptr = scanned_block_sums.ptr();
 
     if num_blocks <= SCAN_BLOCK_SIZE {

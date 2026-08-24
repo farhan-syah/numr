@@ -24,11 +24,7 @@ fn normalize_indices_to_i64(
         DType::I32 => {
             let idx_i32: Vec<i32> = indices.to_vec();
             let idx_i64: Vec<i64> = idx_i32.into_iter().map(i64::from).collect();
-            Ok(Tensor::<CpuRuntime>::from_slice(
-                &idx_i64,
-                indices.shape(),
-                &client.device,
-            ))
+            Tensor::<CpuRuntime>::try_from_slice(&idx_i64, indices.shape(), &client.device)
         }
         other => Err(Error::DTypeMismatch {
             lhs: DType::I64,
@@ -92,7 +88,7 @@ pub fn gather_2d_impl(
     let cols_contig = ensure_contiguous(&cols_i64)?;
 
     // Allocate output
-    let out = Tensor::<CpuRuntime>::empty(&[num_indices], dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&[num_indices], dtype, &client.device)?;
 
     let input_ptr = input_contig.ptr();
     let rows_ptr = rows_contig.ptr();
@@ -156,7 +152,7 @@ pub fn gather_impl(
 
     let a_contig = ensure_contiguous(a)?;
     let index_contig = ensure_contiguous(&index_i64)?;
-    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let index_ptr = index_contig.ptr();
@@ -218,7 +214,7 @@ pub fn scatter_impl(
     let a_contig = ensure_contiguous(a)?;
     let index_contig = ensure_contiguous(&index_i64)?;
     let src_contig = ensure_contiguous(src)?;
-    let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let index_ptr = index_contig.ptr();
@@ -294,7 +290,7 @@ pub fn index_select_impl(
         }
     }
 
-    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let index_ptr = index_contig.ptr();
@@ -385,7 +381,7 @@ pub fn index_put_impl(
     }
 
     // Clone a's data for output
-    let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
 
     let a_ptr = a_contig.ptr();
     let index_ptr = index_contig.ptr();
@@ -442,7 +438,7 @@ pub fn masked_select_impl(
         let count = unsafe { simd_index::masked_count(mask_ptr as *const u8, numel) };
 
         // Allocate output with correct size
-        let out = Tensor::<CpuRuntime>::empty(&[count], dtype, &client.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[count], dtype, &client.device)?;
         let out_ptr = out.ptr();
 
         match dtype {
@@ -492,7 +488,7 @@ pub fn masked_select_impl(
         let count = unsafe { kernels::index::masked_count_kernel(mask_ptr as *const u8, numel) };
 
         // Allocate output with correct size
-        let out = Tensor::<CpuRuntime>::empty(&[count], dtype, &client.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&[count], dtype, &client.device)?;
         let out_ptr = out.ptr();
 
         dispatch_dtype!(dtype, T => {
@@ -532,7 +528,7 @@ pub fn masked_fill_impl(
 
     let a_contig = ensure_contiguous(a)?;
     let mask_contig = ensure_contiguous(&mask_broadcast)?;
-    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
 
     let numel = a.numel();
     let a_ptr = a_contig.ptr();
@@ -622,7 +618,7 @@ pub fn embedding_lookup_impl(
 
     let emb_contig = ensure_contiguous(embeddings)?;
     let idx_contig = ensure_contiguous(&indices_i64)?;
-    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     let emb_ptr = emb_contig.ptr();
     let idx_ptr = idx_contig.ptr();
@@ -695,7 +691,7 @@ pub fn scatter_reduce_impl(
     let dst_contig = ensure_contiguous(dst)?;
     let index_contig = ensure_contiguous(&index_i64)?;
     let src_contig = ensure_contiguous(src)?;
-    let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(shape, dtype, &client.device)?;
 
     // Allocate counts buffer for Mean operation
     let dst_numel: usize = shape.iter().product();
@@ -774,7 +770,7 @@ pub fn gather_nd_impl(
 
     let input_contig = ensure_contiguous(input)?;
     let indices_contig = ensure_contiguous(&indices_i64)?;
-    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     let input_ptr = input_contig.ptr();
     let indices_ptr = indices_contig.ptr();
@@ -856,7 +852,7 @@ pub fn bincount_impl(
     }
     let output_len = (max_val as usize + 1).max(minlength);
 
-    let out = Tensor::<CpuRuntime>::empty(&[output_len], out_dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&[output_len], out_dtype, &client.device)?;
     let out_ptr = out.ptr();
 
     if let Some(w) = weights {
@@ -962,7 +958,7 @@ pub fn slice_assign_impl(
 
     let dst_c = ensure_contiguous(dst)?;
     let src_c = ensure_contiguous(src)?;
-    let out = Tensor::<CpuRuntime>::empty(dst.shape(), dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(dst.shape(), dtype, &client.device)?;
 
     let dst_ptr = dst_c.ptr();
     let src_ptr = src_c.ptr();

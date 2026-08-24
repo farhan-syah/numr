@@ -30,10 +30,10 @@ pub fn rsf2csf_impl(
     // Handle trivial case
     if n == 0 {
         return Ok(ComplexSchurDecomposition {
-            z_real: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            z_imag: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            t_real: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            t_imag: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
+            z_real: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            z_imag: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            t_real: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            t_imag: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
         });
     }
 
@@ -104,12 +104,12 @@ pub fn qz_decompose_impl(
     // Handle trivial case
     if n == 0 {
         return Ok(GeneralizedSchurDecomposition {
-            q: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            z: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            s: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            t: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            eigenvalues_real: Tensor::<CudaRuntime>::zeros(&[0], dtype, device),
-            eigenvalues_imag: Tensor::<CudaRuntime>::zeros(&[0], dtype, device),
+            q: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            z: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            s: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            t: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            eigenvalues_real: Tensor::<CudaRuntime>::try_zeros(&[0], dtype, device)?,
+            eigenvalues_imag: Tensor::<CudaRuntime>::try_zeros(&[0], dtype, device)?,
         });
     }
 
@@ -205,8 +205,8 @@ pub fn polar_decompose_impl(
     // Handle trivial case
     if n == 0 {
         return Ok(PolarDecomposition {
-            u: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
-            p: Tensor::<CudaRuntime>::zeros(&[0, 0], dtype, device),
+            u: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
+            p: Tensor::<CudaRuntime>::try_zeros(&[0, 0], dtype, device)?,
         });
     }
 

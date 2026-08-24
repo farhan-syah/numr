@@ -44,8 +44,8 @@ pub fn cov(
     // Compute mean along axis 0
     let sum = client.sum(a, &[0], true)?;
     let n_samples_tensor = match dtype {
-        DType::F32 => Tensor::<WgpuRuntime>::from_slice(&[n_samples as f32], &[], device),
-        DType::F64 => Tensor::<WgpuRuntime>::from_slice(&[n_samples as f64], &[], device),
+        DType::F32 => Tensor::<WgpuRuntime>::try_from_slice(&[n_samples as f32], &[], device)?,
+        DType::F64 => Tensor::<WgpuRuntime>::try_from_slice(&[n_samples as f64], &[], device)?,
         _ => unreachable!(),
     };
     let mean = client.div(&sum, &n_samples_tensor)?;
@@ -61,10 +61,10 @@ pub fn cov(
     // Normalize by (n - ddof)
     let divisor_tensor = match dtype {
         DType::F32 => {
-            Tensor::<WgpuRuntime>::from_slice(&[(n_samples - ddof_val) as f32], &[], device)
+            Tensor::<WgpuRuntime>::try_from_slice(&[(n_samples - ddof_val) as f32], &[], device)?
         }
         DType::F64 => {
-            Tensor::<WgpuRuntime>::from_slice(&[(n_samples - ddof_val) as f64], &[], device)
+            Tensor::<WgpuRuntime>::try_from_slice(&[(n_samples - ddof_val) as f64], &[], device)?
         }
         _ => unreachable!(),
     };
@@ -101,16 +101,8 @@ pub fn corrcoef(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<W
     // Handle edge case: no features
     if n_features == 0 {
         return match dtype {
-            DType::F32 => Ok(Tensor::<WgpuRuntime>::from_slice::<f32>(
-                &[],
-                &[0, 0],
-                device,
-            )),
-            DType::F64 => Ok(Tensor::<WgpuRuntime>::from_slice::<f64>(
-                &[],
-                &[0, 0],
-                device,
-            )),
+            DType::F32 => Tensor::<WgpuRuntime>::try_from_slice::<f32>(&[], &[0, 0], device),
+            DType::F64 => Tensor::<WgpuRuntime>::try_from_slice::<f64>(&[], &[0, 0], device),
             _ => unreachable!(),
         };
     }
@@ -131,8 +123,8 @@ pub fn corrcoef(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<W
     // Compute correlation: corr = cov / std_outer
     // But handle zero-variance (std_outer == 0) case
     let eps = match dtype {
-        DType::F32 => Tensor::<WgpuRuntime>::from_slice(&[f32::EPSILON], &[], device),
-        DType::F64 => Tensor::<WgpuRuntime>::from_slice(&[f64::EPSILON], &[], device),
+        DType::F32 => Tensor::<WgpuRuntime>::try_from_slice(&[f32::EPSILON], &[], device)?,
+        DType::F64 => Tensor::<WgpuRuntime>::try_from_slice(&[f64::EPSILON], &[], device)?,
         _ => unreachable!(),
     };
 
@@ -149,8 +141,8 @@ pub fn corrcoef(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<W
 
     // Zero out entries where std_outer <= eps
     let zero = match dtype {
-        DType::F32 => Tensor::<WgpuRuntime>::from_slice(&[0.0f32], &[], device),
-        DType::F64 => Tensor::<WgpuRuntime>::from_slice(&[0.0f64], &[], device),
+        DType::F32 => Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32], &[], device)?,
+        DType::F64 => Tensor::<WgpuRuntime>::try_from_slice(&[0.0f64], &[], device)?,
         _ => unreachable!(),
     };
     let corr_masked = client.where_cond(&mask, &corr_clamped, &zero)?;
@@ -164,8 +156,8 @@ pub fn corrcoef(client: &WgpuClient, a: &Tensor<WgpuRuntime>) -> Result<Tensor<W
 
     // Create diagonal ones: diag_vals[i,i] = 1.0 if std_devs[i] > 0
     let one = match dtype {
-        DType::F32 => Tensor::<WgpuRuntime>::from_slice(&[1.0f32], &[], device),
-        DType::F64 => Tensor::<WgpuRuntime>::from_slice(&[1.0f64], &[], device),
+        DType::F32 => Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32], &[], device)?,
+        DType::F64 => Tensor::<WgpuRuntime>::try_from_slice(&[1.0f64], &[], device)?,
         _ => unreachable!(),
     };
     let diag_ones = client.where_cond(&std_positive, &one, &zero)?; // [n_features]

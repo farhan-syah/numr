@@ -38,10 +38,10 @@ impl CudaClient {
 
         // Step 1: Allocate temporary arrays for sorting (use i32 for permutation indices)
         // Note: Thrust sort requires i32 permutation array (limits nnz to 2^31-1)
-        let perm_indices = Tensor::<CudaRuntime>::zeros(&[nnz], DType::I32, device);
-        let sorted_rows = Tensor::<CudaRuntime>::zeros(&[nnz], DType::I64, device);
-        let sorted_cols = Tensor::<CudaRuntime>::zeros(&[nnz], DType::I64, device);
-        let sorted_values = Tensor::<CudaRuntime>::zeros(&[nnz], values.dtype(), device);
+        let perm_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz], DType::I32, device)?;
+        let sorted_rows = Tensor::<CudaRuntime>::try_zeros(&[nnz], DType::I64, device)?;
+        let sorted_cols = Tensor::<CudaRuntime>::try_zeros(&[nnz], DType::I64, device)?;
+        let sorted_values = Tensor::<CudaRuntime>::try_zeros(&[nnz], values.dtype(), device)?;
 
         // Step 2: Initialize permutation indices [0, 1, 2, ..., nnz-1]
         unsafe {
@@ -136,7 +136,7 @@ impl CudaClient {
         }
 
         // Step 5: Build row_ptrs from sorted row indices
-        let row_ptrs = Tensor::<CudaRuntime>::zeros(&[nrows + 1], DType::I64, device);
+        let row_ptrs = Tensor::<CudaRuntime>::try_zeros(&[nrows + 1], DType::I64, device)?;
         unsafe {
             kernels::launch_build_ptrs_from_sorted(
                 &self.context,
@@ -185,10 +185,10 @@ impl CudaClient {
 
         // Step 1: Allocate temporary arrays for sorting (use i32 for permutation indices)
         // Note: Thrust sort requires i32 permutation array (limits nnz to 2^31-1)
-        let perm_indices = Tensor::<CudaRuntime>::zeros(&[nnz], DType::I32, device);
-        let sorted_cols = Tensor::<CudaRuntime>::zeros(&[nnz], DType::I64, device);
-        let sorted_rows = Tensor::<CudaRuntime>::zeros(&[nnz], DType::I64, device);
-        let sorted_values = Tensor::<CudaRuntime>::zeros(&[nnz], values.dtype(), device);
+        let perm_indices = Tensor::<CudaRuntime>::try_zeros(&[nnz], DType::I32, device)?;
+        let sorted_cols = Tensor::<CudaRuntime>::try_zeros(&[nnz], DType::I64, device)?;
+        let sorted_rows = Tensor::<CudaRuntime>::try_zeros(&[nnz], DType::I64, device)?;
+        let sorted_values = Tensor::<CudaRuntime>::try_zeros(&[nnz], values.dtype(), device)?;
 
         // Step 2: Initialize permutation indices
         unsafe {
@@ -281,7 +281,7 @@ impl CudaClient {
         }
 
         // Step 5: Build col_ptrs from sorted column indices
-        let col_ptrs = Tensor::<CudaRuntime>::zeros(&[ncols + 1], DType::I64, device);
+        let col_ptrs = Tensor::<CudaRuntime>::try_zeros(&[ncols + 1], DType::I64, device)?;
         unsafe {
             kernels::launch_build_ptrs_from_sorted(
                 &self.context,
@@ -320,7 +320,8 @@ impl CudaClient {
         let _dtype = values.dtype();
 
         // Allocate output row_indices on GPU
-        let row_indices = Tensor::<CudaRuntime>::zeros(&[nnz], crate::dtype::DType::I64, device);
+        let row_indices =
+            Tensor::<CudaRuntime>::try_zeros(&[nnz], crate::dtype::DType::I64, device)?;
 
         // Get device pointers (no data transfer!)
         let row_ptrs_ptr = row_ptrs.ptr();
@@ -366,7 +367,8 @@ impl CudaClient {
         let _dtype = values.dtype();
 
         // Allocate output col_indices on GPU
-        let col_indices = Tensor::<CudaRuntime>::zeros(&[nnz], crate::dtype::DType::I64, device);
+        let col_indices =
+            Tensor::<CudaRuntime>::try_zeros(&[nnz], crate::dtype::DType::I64, device)?;
 
         // Get device pointers (no data transfer!)
         let col_ptrs_ptr = col_ptrs.ptr();
@@ -412,7 +414,8 @@ impl CudaClient {
         let dtype = values.dtype();
 
         // Step 1: Count NNZ per column (histogram)
-        let col_counts = Tensor::<CudaRuntime>::zeros(&[ncols], crate::dtype::DType::I64, device);
+        let col_counts =
+            Tensor::<CudaRuntime>::try_zeros(&[ncols], crate::dtype::DType::I64, device)?;
 
         unsafe {
             kernels::launch_histogram_csr_columns(
@@ -442,8 +445,8 @@ impl CudaClient {
 
         // Step 4: Allocate output arrays
         let row_indices_out =
-            Tensor::<CudaRuntime>::zeros(&[nnz], crate::dtype::DType::I64, device);
-        let values_out = Tensor::<CudaRuntime>::zeros(&[nnz], dtype, device);
+            Tensor::<CudaRuntime>::try_zeros(&[nnz], crate::dtype::DType::I64, device)?;
+        let values_out = Tensor::<CudaRuntime>::try_zeros(&[nnz], dtype, device)?;
 
         // Step 5: Launch scatter kernel with dtype dispatch
         use crate::dtype::DType;
@@ -511,7 +514,8 @@ impl CudaClient {
         let dtype = values.dtype();
 
         // Step 1: Count NNZ per row (histogram)
-        let row_counts = Tensor::<CudaRuntime>::zeros(&[nrows], crate::dtype::DType::I64, device);
+        let row_counts =
+            Tensor::<CudaRuntime>::try_zeros(&[nrows], crate::dtype::DType::I64, device)?;
 
         unsafe {
             kernels::launch_histogram_csc_rows(
@@ -541,8 +545,8 @@ impl CudaClient {
 
         // Step 4: Allocate output arrays
         let col_indices_out =
-            Tensor::<CudaRuntime>::zeros(&[nnz], crate::dtype::DType::I64, device);
-        let values_out = Tensor::<CudaRuntime>::zeros(&[nnz], dtype, device);
+            Tensor::<CudaRuntime>::try_zeros(&[nnz], crate::dtype::DType::I64, device)?;
+        let values_out = Tensor::<CudaRuntime>::try_zeros(&[nnz], dtype, device)?;
 
         // Step 5: Launch scatter kernel with dtype dispatch
         use crate::dtype::DType;

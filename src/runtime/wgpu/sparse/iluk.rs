@@ -297,11 +297,7 @@ fn initialize_combined_values_wgpu(
         })
         .collect();
 
-    Ok(Tensor::<WgpuRuntime>::from_slice(
-        &combined_values_cpu,
-        &[combined_nnz],
-        &client.device_id,
-    ))
+    Tensor::<WgpuRuntime>::try_from_slice(&combined_values_cpu, &[combined_nnz], &client.device_id)
 }
 
 #[cfg(test)]

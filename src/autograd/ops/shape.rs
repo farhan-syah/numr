@@ -511,11 +511,11 @@ where
         if self.start > 0 {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = self.start;
-            parts.push(Tensor::<R>::zeros(
+            parts.push(Tensor::<R>::try_zeros(
                 &pad_shape,
                 grad_output.dtype(),
                 grad_output.device(),
-            ));
+            )?);
         }
 
         // The gradient itself (make contiguous for cat)
@@ -525,11 +525,11 @@ where
         if end < orig_dim_size {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = orig_dim_size - end;
-            parts.push(Tensor::<R>::zeros(
+            parts.push(Tensor::<R>::try_zeros(
                 &pad_shape,
                 grad_output.dtype(),
                 grad_output.device(),
-            ));
+            )?);
         }
 
         let refs: Vec<&Tensor<R>> = parts.iter().collect();
@@ -550,11 +550,11 @@ where
         if self.start > 0 {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = self.start;
-            parts.push(Tensor::<R>::zeros(
+            parts.push(Tensor::<R>::try_zeros(
                 &pad_shape,
                 grad_output.tensor().dtype(),
                 grad_output.tensor().device(),
-            ));
+            )?);
         }
 
         parts.push(grad_output.tensor().contiguous()?);
@@ -562,11 +562,11 @@ where
         if end < orig_dim_size {
             let mut pad_shape = self.input_shape.clone();
             pad_shape[self.dim] = orig_dim_size - end;
-            parts.push(Tensor::<R>::zeros(
+            parts.push(Tensor::<R>::try_zeros(
                 &pad_shape,
                 grad_output.tensor().dtype(),
                 grad_output.tensor().device(),
-            ));
+            )?);
         }
 
         let refs: Vec<&Tensor<R>> = parts.iter().collect();

@@ -76,27 +76,36 @@ pub fn sparse_lu_cuda(
         .iter()
         .map(|&x| x as i32)
         .collect();
-    let a_row_indices_gpu =
-        Tensor::<CudaRuntime>::from_slice(&a_row_indices_i32, &[a_row_indices_i32.len()], &device);
+    let a_row_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
+        &a_row_indices_i32,
+        &[a_row_indices_i32.len()],
+        &device,
+    )?;
 
     // L's row_indices as i32 (from symbolic structure)
     let l_row_indices_i32: Vec<i32> = symbolic.l_row_indices.iter().map(|&x| x as i32).collect();
-    let l_row_indices_gpu =
-        Tensor::<CudaRuntime>::from_slice(&l_row_indices_i32, &[l_row_indices_i32.len()], &device);
+    let l_row_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
+        &l_row_indices_i32,
+        &[l_row_indices_i32.len()],
+        &device,
+    )?;
 
     // U's row_indices as i32 (from symbolic structure)
     let u_row_indices_i32: Vec<i32> = symbolic.u_row_indices.iter().map(|&x| x as i32).collect();
-    let u_row_indices_gpu =
-        Tensor::<CudaRuntime>::from_slice(&u_row_indices_i32, &[u_row_indices_i32.len()], &device);
+    let u_row_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
+        &u_row_indices_i32,
+        &[u_row_indices_i32.len()],
+        &device,
+    )?;
 
     // Pre-allocate L and U values on GPU based on symbolic pattern
     let l_nnz = symbolic.l_row_indices.len();
     let u_nnz = symbolic.u_row_indices.len();
-    let l_values_gpu = Tensor::<CudaRuntime>::zeros(&[l_nnz], dtype, &device);
-    let u_values_gpu = Tensor::<CudaRuntime>::zeros(&[u_nnz], dtype, &device);
+    let l_values_gpu = Tensor::<CudaRuntime>::try_zeros(&[l_nnz], dtype, &device)?;
+    let u_values_gpu = Tensor::<CudaRuntime>::try_zeros(&[u_nnz], dtype, &device)?;
 
     // Work vector on GPU (dense, size n)
-    let work_gpu = Tensor::<CudaRuntime>::zeros(&[n], dtype, &device);
+    let work_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], dtype, &device)?;
 
     // ==========================================================================
     // STEP 2: Run factorization (all computation on GPU)
@@ -741,34 +750,40 @@ pub fn sparse_lu_solve_cuda(
     let l_col_ptrs_i32: Vec<i32> = l_col_ptrs.iter().map(|&x| x as i32).collect();
     let l_row_indices_i32: Vec<i32> = l_row_indices.iter().map(|&x| x as i32).collect();
     let l_col_ptrs_gpu =
-        Tensor::<CudaRuntime>::from_slice(&l_col_ptrs_i32, &[l_col_ptrs_i32.len()], &device);
-    let l_row_indices_gpu =
-        Tensor::<CudaRuntime>::from_slice(&l_row_indices_i32, &[l_row_indices_i32.len()], &device);
+        Tensor::<CudaRuntime>::try_from_slice(&l_col_ptrs_i32, &[l_col_ptrs_i32.len()], &device)?;
+    let l_row_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
+        &l_row_indices_i32,
+        &[l_row_indices_i32.len()],
+        &device,
+    )?;
 
     // U structure on GPU
     let u_col_ptrs_i32: Vec<i32> = u_col_ptrs.iter().map(|&x| x as i32).collect();
     let u_row_indices_i32: Vec<i32> = u_row_indices.iter().map(|&x| x as i32).collect();
     let u_col_ptrs_gpu =
-        Tensor::<CudaRuntime>::from_slice(&u_col_ptrs_i32, &[u_col_ptrs_i32.len()], &device);
-    let u_row_indices_gpu =
-        Tensor::<CudaRuntime>::from_slice(&u_row_indices_i32, &[u_row_indices_i32.len()], &device);
+        Tensor::<CudaRuntime>::try_from_slice(&u_col_ptrs_i32, &[u_col_ptrs_i32.len()], &device)?;
+    let u_row_indices_gpu = Tensor::<CudaRuntime>::try_from_slice(
+        &u_row_indices_i32,
+        &[u_row_indices_i32.len()],
+        &device,
+    )?;
 
     // Level schedule data on GPU
     let l_level_cols_gpu =
-        Tensor::<CudaRuntime>::from_slice(&l_level_cols, &[l_level_cols.len()], &device);
+        Tensor::<CudaRuntime>::try_from_slice(&l_level_cols, &[l_level_cols.len()], &device)?;
     let u_level_cols_gpu =
-        Tensor::<CudaRuntime>::from_slice(&u_level_cols, &[u_level_cols.len()], &device);
+        Tensor::<CudaRuntime>::try_from_slice(&u_level_cols, &[u_level_cols.len()], &device)?;
 
     // Row permutation on GPU
     let row_perm_i32: Vec<i32> = factors.row_perm.iter().map(|&x| x as i32).collect();
     let row_perm_gpu =
-        Tensor::<CudaRuntime>::from_slice(&row_perm_i32, &[row_perm_i32.len()], &device);
+        Tensor::<CudaRuntime>::try_from_slice(&row_perm_i32, &[row_perm_i32.len()], &device)?;
 
     // Diagonal pointer arrays for L and U
     let l_diag_ptr_gpu: Tensor<CudaRuntime> =
-        Tensor::<CudaRuntime>::zeros(&[n], DType::I32, &device);
+        Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, &device)?;
     let u_diag_ptr_gpu: Tensor<CudaRuntime> =
-        Tensor::<CudaRuntime>::zeros(&[n], DType::I32, &device);
+        Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, &device)?;
 
     // Find diagonal indices on GPU
     unsafe {
@@ -798,7 +813,7 @@ pub fn sparse_lu_solve_cuda(
     // ==========================================================================
 
     // y = P * b (apply permutation)
-    let y_gpu: Tensor<CudaRuntime> = Tensor::<CudaRuntime>::zeros(&[n], dtype, &device);
+    let y_gpu: Tensor<CudaRuntime> = Tensor::<CudaRuntime>::try_zeros(&[n], dtype, &device)?;
 
     match dtype {
         DType::F32 => unsafe {

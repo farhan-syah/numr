@@ -47,7 +47,7 @@ pub fn reduce_impl(
         let outer_size = outer_size.max(1);
 
         let out_shape = reduce_output_shape(shape, dims, keepdim);
-        let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+        let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
         let a_ptr = a.ptr();
         let out_ptr = out.ptr();

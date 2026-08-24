@@ -202,7 +202,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         let device = self.values.device();
 
         if n == 0 {
-            return Ok(Tensor::empty(&[0], self.dtype(), device));
+            return Tensor::try_empty(&[0], self.dtype(), device);
         }
 
         // Validate dtype matches T
@@ -235,7 +235,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
         }
 
         // Create result tensor on original device
-        Ok(Tensor::from_slice(&diag_values, &[n], device))
+        Tensor::try_from_slice(&diag_values, &[n], device)
     }
 
     /// Extract diagonal elements using a `SparseOps` client (on-device).
@@ -374,9 +374,9 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
             }
         }
 
-        let row_ptrs_tensor = Tensor::from_slice(row_ptrs, &[row_ptrs.len()], device);
-        let col_indices_tensor = Tensor::from_slice(col_indices, &[col_indices.len()], device);
-        let values_tensor = Tensor::from_slice(values, &[values.len()], device);
+        let row_ptrs_tensor = Tensor::try_from_slice(row_ptrs, &[row_ptrs.len()], device)?;
+        let col_indices_tensor = Tensor::try_from_slice(col_indices, &[col_indices.len()], device)?;
+        let values_tensor = Tensor::try_from_slice(values, &[values.len()], device)?;
 
         Self::new(row_ptrs_tensor, col_indices_tensor, values_tensor, shape)
     }

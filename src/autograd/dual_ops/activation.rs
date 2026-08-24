@@ -17,7 +17,8 @@ where
 
     let tangent = match a.tangent() {
         Some(at) => {
-            let zero = Tensor::zeros(a.primal().shape(), a.primal().dtype(), a.primal().device());
+            let zero =
+                Tensor::try_zeros(a.primal().shape(), a.primal().dtype(), a.primal().device())?;
             let mask = client.gt(a.primal(), &zero)?;
             let mask_typed = client.cast(&mask, at.dtype())?;
             Some(client.mul(&mask_typed, at)?)
@@ -38,7 +39,7 @@ where
 
     let tangent = match a.tangent() {
         Some(at) => {
-            let one = Tensor::ones(primal.shape(), primal.dtype(), primal.device());
+            let one = Tensor::try_ones(primal.shape(), primal.dtype(), primal.device())?;
             let one_minus_sig = client.sub(&one, &primal)?;
             let grad = client.mul(&primal, &one_minus_sig)?;
             Some(client.mul(&grad, at)?)

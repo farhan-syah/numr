@@ -97,7 +97,7 @@ fn pinverse_typed<T: Element + LinalgElement>(
         }
     }
 
-    Ok(Tensor::<CpuRuntime>::from_slice(&pinv, &[n, m], device))
+    Tensor::<CpuRuntime>::try_from_slice(&pinv, &[n, m], device)
 }
 
 /// Condition number via SVD: cond(A) = σ_max / σ_min

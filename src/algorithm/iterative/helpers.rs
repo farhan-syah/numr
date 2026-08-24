@@ -180,7 +180,7 @@ where
     C: BinaryOps<R> + ScalarOps<R>,
 {
     let m = y.len();
-    let mut delta = Tensor::<R>::zeros(x.shape(), x.dtype(), x.device());
+    let mut delta = Tensor::<R>::try_zeros(x.shape(), x.dtype(), x.device())?;
 
     // delta = sum_j y[j] * z[j] (z vectors already preconditioned)
     for j in 0..m {
@@ -230,7 +230,7 @@ where
     R: Runtime<DType = DType>,
     C: BinaryOps<R> + ScalarOps<R>,
 {
-    let mut result = Tensor::<R>::zeros(&[n], dtype, device);
+    let mut result = Tensor::<R>::try_zeros(&[n], dtype, device)?;
     let len = basis.len().min(coefficients.len());
     for (vj, &coeff) in basis.iter().zip(coefficients.iter()).take(len) {
         if coeff.abs() > REORTH_TOL {
@@ -260,7 +260,7 @@ where
     let diag = a.diagonal_with_client(client)?;
 
     // Compute 1/diag on-device: create ones tensor, divide
-    let ones = Tensor::<R>::ones(&[n], dtype, device);
+    let ones = Tensor::<R>::try_ones(&[n], dtype, device)?;
     client.div(&ones, &diag)
 }
 

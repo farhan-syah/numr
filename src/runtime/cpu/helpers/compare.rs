@@ -18,7 +18,7 @@ pub fn compare_op_impl(
 ) -> Result<Tensor<CpuRuntime>> {
     let dtype = validate_binary_dtypes(a, b)?;
     let out_shape = compute_broadcast_shape(a, b)?;
-    let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
     let out_ptr = out.ptr();
 
     // Fast path for same shapes, both contiguous

@@ -35,8 +35,8 @@ pub fn mode_impl(
         let numel = a.numel();
         if numel == 0 {
             let out_shape = if keepdim { vec![1; a.ndim()] } else { vec![] };
-            let values = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
-            let counts = Tensor::<CpuRuntime>::empty(&out_shape, DType::I64, &client.device);
+            let values = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+            let counts = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
             return Ok((values, counts));
         }
 
@@ -50,7 +50,7 @@ pub fn mode_impl(
 
     if ndim == 0 {
         // Scalar input: mode is itself with count 1
-        let counts = Tensor::<CpuRuntime>::full_scalar(&[], DType::I64, 1.0, &client.device);
+        let counts = Tensor::<CpuRuntime>::try_full_scalar(&[], DType::I64, 1.0, &client.device)?;
         return Ok((a.clone(), counts));
     }
 
@@ -59,8 +59,8 @@ pub fn mode_impl(
 
     if dim_size == 0 {
         let out_shape = reduce_dim_output_shape(shape, dim_idx, keepdim);
-        let values = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device);
-        let counts = Tensor::<CpuRuntime>::empty(&out_shape, DType::I64, &client.device);
+        let values = Tensor::<CpuRuntime>::try_empty(&out_shape, dtype, &client.device)?;
+        let counts = Tensor::<CpuRuntime>::try_empty(&out_shape, DType::I64, &client.device)?;
         return Ok((values, counts));
     }
 
@@ -81,8 +81,8 @@ pub fn mode_impl(
             let (mode_values, mode_counts) =
                 compute_mode_strided(&sorted_data, outer_size, reduce_size, inner_size);
             Ok((
-                Tensor::<CpuRuntime>::from_slice(&mode_values, &out_shape, &client.device),
-                Tensor::<CpuRuntime>::from_slice(&mode_counts, &out_shape, &client.device),
+                Tensor::<CpuRuntime>::try_from_slice(&mode_values, &out_shape, &client.device)?,
+                Tensor::<CpuRuntime>::try_from_slice(&mode_counts, &out_shape, &client.device)?,
             ))
         }
         DType::F64 => {
@@ -90,8 +90,8 @@ pub fn mode_impl(
             let (mode_values, mode_counts) =
                 compute_mode_strided(&sorted_data, outer_size, reduce_size, inner_size);
             Ok((
-                Tensor::<CpuRuntime>::from_slice(&mode_values, &out_shape, &client.device),
-                Tensor::<CpuRuntime>::from_slice(&mode_counts, &out_shape, &client.device),
+                Tensor::<CpuRuntime>::try_from_slice(&mode_values, &out_shape, &client.device)?,
+                Tensor::<CpuRuntime>::try_from_slice(&mode_counts, &out_shape, &client.device)?,
             ))
         }
         DType::I32 => {
@@ -99,8 +99,8 @@ pub fn mode_impl(
             let (mode_values, mode_counts) =
                 compute_mode_strided(&sorted_data, outer_size, reduce_size, inner_size);
             Ok((
-                Tensor::<CpuRuntime>::from_slice(&mode_values, &out_shape, &client.device),
-                Tensor::<CpuRuntime>::from_slice(&mode_counts, &out_shape, &client.device),
+                Tensor::<CpuRuntime>::try_from_slice(&mode_values, &out_shape, &client.device)?,
+                Tensor::<CpuRuntime>::try_from_slice(&mode_counts, &out_shape, &client.device)?,
             ))
         }
         DType::I64 => {
@@ -108,8 +108,8 @@ pub fn mode_impl(
             let (mode_values, mode_counts) =
                 compute_mode_strided(&sorted_data, outer_size, reduce_size, inner_size);
             Ok((
-                Tensor::<CpuRuntime>::from_slice(&mode_values, &out_shape, &client.device),
-                Tensor::<CpuRuntime>::from_slice(&mode_counts, &out_shape, &client.device),
+                Tensor::<CpuRuntime>::try_from_slice(&mode_values, &out_shape, &client.device)?,
+                Tensor::<CpuRuntime>::try_from_slice(&mode_counts, &out_shape, &client.device)?,
             ))
         }
         DType::U32 => {
@@ -117,8 +117,8 @@ pub fn mode_impl(
             let (mode_values, mode_counts) =
                 compute_mode_strided(&sorted_data, outer_size, reduce_size, inner_size);
             Ok((
-                Tensor::<CpuRuntime>::from_slice(&mode_values, &out_shape, &client.device),
-                Tensor::<CpuRuntime>::from_slice(&mode_counts, &out_shape, &client.device),
+                Tensor::<CpuRuntime>::try_from_slice(&mode_values, &out_shape, &client.device)?,
+                Tensor::<CpuRuntime>::try_from_slice(&mode_counts, &out_shape, &client.device)?,
             ))
         }
         _ => {

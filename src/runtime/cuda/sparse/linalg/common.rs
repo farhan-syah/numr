@@ -33,7 +33,7 @@ pub fn cast_i64_to_i32_gpu(
     }
 
     let n = tensor.numel() as i32;
-    let output = Tensor::<CudaRuntime>::zeros(&[tensor.numel()], DType::I32, &client.device);
+    let output = Tensor::<CudaRuntime>::try_zeros(&[tensor.numel()], DType::I32, &client.device)?;
 
     unsafe {
         kernels::launch_cast_i64_to_i32(
@@ -60,10 +60,10 @@ pub fn compute_levels_lower_gpu(
     n: usize,
 ) -> Result<(Vec<i32>, Tensor<CudaRuntime>, usize)> {
     // Allocate levels[n] initialized to 0
-    let levels_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, &client.device);
+    let levels_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, &client.device)?;
 
     // Allocate changed flag (atomic integer)
-    let changed_gpu = Tensor::<CudaRuntime>::zeros(&[1], DType::I32, &client.device);
+    let changed_gpu = Tensor::<CudaRuntime>::try_zeros(&[1], DType::I32, &client.device)?;
 
     // Iterative level computation until convergence
     let max_iterations = n as i32 + 10; // Safety limit
@@ -94,7 +94,7 @@ pub fn compute_levels_lower_gpu(
     }
 
     // Find max level (num_levels = max + 1)
-    let max_level_gpu = Tensor::<CudaRuntime>::zeros(&[1], DType::I32, &client.device);
+    let max_level_gpu = Tensor::<CudaRuntime>::try_zeros(&[1], DType::I32, &client.device)?;
     unsafe {
         kernels::launch_reduce_max_i32(
             &client.context,
@@ -111,7 +111,8 @@ pub fn compute_levels_lower_gpu(
     let num_levels = (max_level_vec[0] + 1) as usize;
 
     // Compute histogram of levels
-    let histogram_gpu = Tensor::<CudaRuntime>::zeros(&[num_levels], DType::I32, &client.device);
+    let histogram_gpu =
+        Tensor::<CudaRuntime>::try_zeros(&[num_levels], DType::I32, &client.device)?;
     unsafe {
         kernels::launch_histogram_levels(
             &client.context,
@@ -135,12 +136,12 @@ pub fn compute_levels_lower_gpu(
 
     // Upload level_ptrs to GPU for scatter
     let level_ptrs_gpu =
-        Tensor::<CudaRuntime>::from_slice(&level_ptrs, &[num_levels + 1], &client.device);
+        Tensor::<CudaRuntime>::try_from_slice(&level_ptrs, &[num_levels + 1], &client.device)?;
 
     // Allocate level_rows[n] and level_counters[num_levels]
-    let level_rows_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, &client.device);
+    let level_rows_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, &client.device)?;
     let level_counters_gpu =
-        Tensor::<CudaRuntime>::zeros(&[num_levels], DType::I32, &client.device);
+        Tensor::<CudaRuntime>::try_zeros(&[num_levels], DType::I32, &client.device)?;
 
     // Scatter rows by level
     unsafe {
@@ -169,16 +170,16 @@ pub fn compute_levels_upper_gpu(
     n: usize,
 ) -> Result<(Vec<i32>, Tensor<CudaRuntime>, usize)> {
     // Allocate levels[n] initialized to 0
-    let levels_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, &client.device);
+    let levels_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, &client.device)?;
 
     // Allocate changed flag
-    let changed_gpu = Tensor::<CudaRuntime>::zeros(&[1], DType::I32, &client.device);
+    let changed_gpu = Tensor::<CudaRuntime>::try_zeros(&[1], DType::I32, &client.device)?;
 
     // Iterative level computation until convergence
     let max_iterations = n as i32 + 10;
     for _ in 0..max_iterations {
         // Reset changed flag on GPU
-        let _zero_tensor = Tensor::<CudaRuntime>::from_slice(&[0i32], &[1], &client.device);
+        let _zero_tensor = Tensor::<CudaRuntime>::try_from_slice(&[0i32], &[1], &client.device)?;
 
         // Launch level iteration kernel
         unsafe {
@@ -204,7 +205,7 @@ pub fn compute_levels_upper_gpu(
     }
 
     // Find max level
-    let max_level_gpu = Tensor::<CudaRuntime>::zeros(&[1], DType::I32, &client.device);
+    let max_level_gpu = Tensor::<CudaRuntime>::try_zeros(&[1], DType::I32, &client.device)?;
     unsafe {
         kernels::launch_reduce_max_i32(
             &client.context,
@@ -221,7 +222,8 @@ pub fn compute_levels_upper_gpu(
     let num_levels = (max_level_vec[0] + 1) as usize;
 
     // Compute histogram
-    let histogram_gpu = Tensor::<CudaRuntime>::zeros(&[num_levels], DType::I32, &client.device);
+    let histogram_gpu =
+        Tensor::<CudaRuntime>::try_zeros(&[num_levels], DType::I32, &client.device)?;
     unsafe {
         kernels::launch_histogram_levels(
             &client.context,
@@ -243,12 +245,12 @@ pub fn compute_levels_upper_gpu(
     }
 
     let level_ptrs_gpu =
-        Tensor::<CudaRuntime>::from_slice(&level_ptrs, &[num_levels + 1], &client.device);
+        Tensor::<CudaRuntime>::try_from_slice(&level_ptrs, &[num_levels + 1], &client.device)?;
 
     // Allocate and scatter
-    let level_rows_gpu = Tensor::<CudaRuntime>::zeros(&[n], DType::I32, &client.device);
+    let level_rows_gpu = Tensor::<CudaRuntime>::try_zeros(&[n], DType::I32, &client.device)?;
     let level_counters_gpu =
-        Tensor::<CudaRuntime>::zeros(&[num_levels], DType::I32, &client.device);
+        Tensor::<CudaRuntime>::try_zeros(&[num_levels], DType::I32, &client.device)?;
 
     unsafe {
         kernels::launch_scatter_by_level(
@@ -319,20 +321,22 @@ pub fn split_lu_cuda(
     let u_nnz = u_col_indices.len();
 
     // Create structure tensors on GPU
-    let l_row_ptrs_t = Tensor::<CudaRuntime>::from_slice(&l_row_ptrs, &[n + 1], &client.device);
+    let l_row_ptrs_t =
+        Tensor::<CudaRuntime>::try_from_slice(&l_row_ptrs, &[n + 1], &client.device)?;
     let l_col_indices_t =
-        Tensor::<CudaRuntime>::from_slice(&l_col_indices, &[l_nnz], &client.device);
-    let u_row_ptrs_t = Tensor::<CudaRuntime>::from_slice(&u_row_ptrs, &[n + 1], &client.device);
+        Tensor::<CudaRuntime>::try_from_slice(&l_col_indices, &[l_nnz], &client.device)?;
+    let u_row_ptrs_t =
+        Tensor::<CudaRuntime>::try_from_slice(&u_row_ptrs, &[n + 1], &client.device)?;
     let u_col_indices_t =
-        Tensor::<CudaRuntime>::from_slice(&u_col_indices, &[u_nnz], &client.device);
+        Tensor::<CudaRuntime>::try_from_slice(&u_col_indices, &[u_nnz], &client.device)?;
 
     // Upload mapping arrays to GPU
-    let l_map_gpu = Tensor::<CudaRuntime>::from_slice(&l_map, &[nnz], &client.device);
-    let u_map_gpu = Tensor::<CudaRuntime>::from_slice(&u_map, &[nnz], &client.device);
+    let l_map_gpu = Tensor::<CudaRuntime>::try_from_slice(&l_map, &[nnz], &client.device)?;
+    let u_map_gpu = Tensor::<CudaRuntime>::try_from_slice(&u_map, &[nnz], &client.device)?;
 
     // Allocate output value tensors on GPU
-    let l_values_t = Tensor::<CudaRuntime>::empty(&[l_nnz], dtype, &client.device);
-    let u_values_t = Tensor::<CudaRuntime>::empty(&[u_nnz], dtype, &client.device);
+    let l_values_t = Tensor::<CudaRuntime>::try_empty(&[l_nnz], dtype, &client.device)?;
+    let u_values_t = Tensor::<CudaRuntime>::try_empty(&[u_nnz], dtype, &client.device)?;
 
     // Launch GPU kernel to scatter values
     unsafe {
@@ -413,15 +417,16 @@ pub fn extract_lower_cuda(
     let lower_nnz = new_col_indices.len();
 
     // Create structure tensors on GPU
-    let l_row_ptrs_t = Tensor::<CudaRuntime>::from_slice(&new_row_ptrs, &[n + 1], &client.device);
+    let l_row_ptrs_t =
+        Tensor::<CudaRuntime>::try_from_slice(&new_row_ptrs, &[n + 1], &client.device)?;
     let l_col_indices_t =
-        Tensor::<CudaRuntime>::from_slice(&new_col_indices, &[lower_nnz], &client.device);
+        Tensor::<CudaRuntime>::try_from_slice(&new_col_indices, &[lower_nnz], &client.device)?;
 
     // Upload mapping array to GPU
-    let lower_map_gpu = Tensor::<CudaRuntime>::from_slice(&lower_map, &[nnz], &client.device);
+    let lower_map_gpu = Tensor::<CudaRuntime>::try_from_slice(&lower_map, &[nnz], &client.device)?;
 
     // Allocate output value tensor on GPU
-    let l_values_t = Tensor::<CudaRuntime>::empty(&[lower_nnz], dtype, &client.device);
+    let l_values_t = Tensor::<CudaRuntime>::try_empty(&[lower_nnz], dtype, &client.device)?;
 
     // Launch GPU kernel to scatter values
     unsafe {

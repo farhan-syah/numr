@@ -200,7 +200,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let ndim = shape.len();
 
         if ndim == 0 {
-            return Ok(Tensor::zeros(&[], DType::I32, self.device()));
+            return Tensor::try_zeros(&[], DType::I32, self.device());
         }
 
         let dim_idx = normalize_dim(dim, ndim)?;

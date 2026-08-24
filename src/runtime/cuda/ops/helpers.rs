@@ -60,7 +60,7 @@ pub(crate) fn matmul_native(
     // use gemv_bt kernel directly — avoids copying the entire weight matrix.
     if m <= 16 && is_simple_transpose_2d(b) {
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
         unsafe {
             launch_gemv_kernel_bt_mr(
@@ -86,7 +86,7 @@ pub(crate) fn matmul_native(
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_matmul_kernel(
@@ -146,7 +146,7 @@ pub(crate) fn matmul_batched_native(
     // Fast path: transposed B with small M → gemv_bt
     if m <= 16 && is_batched_transpose_last2(b) {
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
         unsafe {
             launch_gemv_kernel_bt_mr(
@@ -172,7 +172,7 @@ pub(crate) fn matmul_batched_native(
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_matmul_batched_kernel(
@@ -224,7 +224,7 @@ pub(crate) fn matmul_bias_native(
         },
     )?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_matmul_bias_kernel(
@@ -273,7 +273,7 @@ pub(crate) fn matmul_bias_batched_native(
     let (a_contig, b_contig) = operands.contiguous()?;
     let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_matmul_bias_batched_kernel(
@@ -323,7 +323,7 @@ pub(crate) fn native_binary_op(
     if a.shape() == b.shape() {
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
         unsafe {
             launch_binary_op(
@@ -345,7 +345,7 @@ pub(crate) fn native_binary_op(
     // For different shapes, use the broadcast kernel (stays on GPU)
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_broadcast_binary_op(
@@ -457,7 +457,7 @@ pub(crate) fn native_unary_op(
 ) -> Result<Tensor<CudaRuntime>> {
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &client.device)?;
 
     unsafe {
         launch_unary_op(
@@ -491,7 +491,7 @@ pub(crate) fn native_scalar_op(
 ) -> Result<Tensor<CudaRuntime>> {
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(a.shape(), dtype, &client.device)?;
 
     // Check if pow is supported for this dtype (integers don't have pow kernel)
     if op == "pow_scalar" && matches!(dtype, DType::I32 | DType::I64) {
@@ -634,7 +634,7 @@ pub(crate) fn native_reduce_op(
         let inner_size = inner_size.max(1);
 
         let a_contig = ensure_contiguous(a)?;
-        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
         // A zero-size output (some non-reduced dimension is 0) has nothing to
         // compute, and `outer_size`/`inner_size` were floored at 1 above, so
@@ -706,7 +706,7 @@ pub(crate) fn native_compare_op(
     if a.shape() == b.shape() {
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
-        let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+        let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
         unsafe {
             launch_compare_op(
@@ -728,7 +728,7 @@ pub(crate) fn native_compare_op(
     // For different shapes, use the broadcast kernel (stays on GPU)
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_broadcast_compare_op(
@@ -773,7 +773,7 @@ pub(crate) fn semiring_matmul_native(
         got: b.shape().to_vec(),
     })?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_semiring_matmul_kernel(
@@ -817,7 +817,7 @@ pub(crate) fn semiring_matmul_batched_native(
     let (a_contig, b_contig) = operands.contiguous()?;
     let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    let out = Tensor::<CudaRuntime>::try_empty(&out_shape, dtype, &client.device)?;
 
     unsafe {
         launch_semiring_matmul_batched_kernel(

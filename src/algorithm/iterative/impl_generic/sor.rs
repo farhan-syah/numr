@@ -58,7 +58,7 @@ where
 
     let mut x = match x0 {
         Some(x0) => x0.clone(),
-        None => Tensor::<R>::zeros(&[n], dtype, device),
+        None => Tensor::<R>::try_zeros(&[n], dtype, device)?,
     };
 
     if b_norm < options.atol {
@@ -184,9 +184,9 @@ fn build_sor_lower_triangular<R: Runtime<DType = DType>>(
         lt_rp.push(lt_ci.len() as i64);
     }
 
-    let rp_t = Tensor::<R>::from_slice(&lt_rp, &[lt_rp.len()], device);
-    let ci_t = Tensor::<R>::from_slice(&lt_ci, &[lt_ci.len()], device);
-    let vv_t = Tensor::<R>::from_slice(&lt_vv, &[lt_vv.len()], device);
+    let rp_t = Tensor::<R>::try_from_slice(&lt_rp, &[lt_rp.len()], device)?;
+    let ci_t = Tensor::<R>::try_from_slice(&lt_ci, &[lt_ci.len()], device)?;
+    let vv_t = Tensor::<R>::try_from_slice(&lt_vv, &[lt_vv.len()], device)?;
 
     CsrData::new(rp_t, ci_t, vv_t, [n, n])
 }

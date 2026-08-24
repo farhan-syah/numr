@@ -39,7 +39,7 @@ pub fn fused_mul_add_impl(
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
     let c_contig = ensure_contiguous(c)?;
-    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
 
     let len = a.numel();
     let a_ptr = a_contig.ptr();
@@ -94,7 +94,7 @@ pub fn fused_add_mul_impl(
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
     let c_contig = ensure_contiguous(c)?;
-    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
 
     let len = a.numel();
     let a_ptr = a_contig.ptr();
@@ -126,7 +126,7 @@ pub fn fused_mul_add_scalar_impl(
 ) -> Result<Tensor<CpuRuntime>> {
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
-    let out = Tensor::<CpuRuntime>::empty(a.shape(), dtype, &client.device);
+    let out = Tensor::<CpuRuntime>::try_empty(a.shape(), dtype, &client.device)?;
 
     let len = a.numel();
     let a_ptr = a_contig.ptr();

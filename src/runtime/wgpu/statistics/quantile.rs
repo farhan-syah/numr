@@ -55,11 +55,7 @@ pub fn quantile_impl(
         let numel = a.numel();
         if numel == 0 {
             let out_shape = if keepdim { vec![1; a.ndim()] } else { vec![] };
-            return Ok(Tensor::<WgpuRuntime>::empty(
-                &out_shape,
-                dtype,
-                client.device(),
-            ));
+            return Tensor::<WgpuRuntime>::try_empty(&out_shape, dtype, client.device());
         }
 
         let flat = a.reshape(&[numel])?;
@@ -79,11 +75,7 @@ pub fn quantile_impl(
 
     if dim_size == 0 {
         let out_shape = reduce_dim_output_shape(shape, dim_idx, keepdim);
-        return Ok(Tensor::<WgpuRuntime>::empty(
-            &out_shape,
-            dtype,
-            client.device(),
-        ));
+        return Tensor::<WgpuRuntime>::try_empty(&out_shape, dtype, client.device());
     }
 
     // Sort along dimension using WebGPU sort
@@ -99,19 +91,15 @@ pub fn quantile_impl(
     // Check for empty output
     let out_numel = out_shape.iter().product::<usize>();
     if out_numel == 0 {
-        return Ok(Tensor::<WgpuRuntime>::empty(
-            &out_shape,
-            dtype,
-            client.device(),
-        ));
+        return Tensor::<WgpuRuntime>::try_empty(&out_shape, dtype, client.device());
     }
 
     // Gather floor and ceil values using index_select
     // Create index tensors for the floor and ceil positions
     let floor_idx_tensor =
-        Tensor::<WgpuRuntime>::from_slice(&[floor_idx as i32], &[1], client.device());
+        Tensor::<WgpuRuntime>::try_from_slice(&[floor_idx as i32], &[1], client.device())?;
     let ceil_idx_tensor =
-        Tensor::<WgpuRuntime>::from_slice(&[ceil_idx as i32], &[1], client.device());
+        Tensor::<WgpuRuntime>::try_from_slice(&[ceil_idx as i32], &[1], client.device())?;
 
     // Select floor and ceil values along dimension
     let floor_vals = client.index_select(&sorted, dim_idx, &floor_idx_tensor)?;

@@ -72,7 +72,7 @@ where
     let ncv = ncv.max(k + 1).min(min_dim);
 
     // Starting vector: q_1 = [1, 1, ..., 1] / sqrt(n)
-    let ones_n = Tensor::<R>::ones(&[n_cols], dtype, device);
+    let ones_n = Tensor::<R>::try_ones(&[n_cols], dtype, device)?;
     let scale = 1.0 / (n_cols as f64).sqrt();
     let mut q_curr = client.mul_scalar(&ones_n, scale)?;
 
@@ -242,12 +242,12 @@ where
                     let left = client.mul_scalar(&av, 1.0 / sv)?;
                     left_vectors.push(left);
                 } else {
-                    left_vectors.push(Tensor::<R>::zeros(&[m], dtype, device));
+                    left_vectors.push(Tensor::<R>::try_zeros(&[m], dtype, device)?);
                 }
             }
 
             let singular_values =
-                Tensor::<R>::from_slice(&singular_values_data, &[k_actual], device);
+                Tensor::<R>::try_from_slice(&singular_values_data, &[k_actual], device)?;
 
             // Assemble U = [n, k] and Vt = [k, n] on-device via stack
             let u = assemble_column_matrix(client, &left_vectors)?;

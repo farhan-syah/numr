@@ -53,7 +53,7 @@ where
 
     let mut x = match x0 {
         Some(x0) => x0.clone(),
-        None => Tensor::<R>::zeros(&[n], dtype, device),
+        None => Tensor::<R>::try_zeros(&[n], dtype, device)?,
     };
 
     let precond = match options.preconditioner {
@@ -96,7 +96,7 @@ where
     }
 
     // Lanczos vectors
-    let mut v_old = Tensor::<R>::zeros(&[n], dtype, device);
+    let mut v_old = Tensor::<R>::try_zeros(&[n], dtype, device)?;
     let mut v = client.mul_scalar(&r0, 1.0 / beta1)?;
 
     let mut beta = beta1;
@@ -108,8 +108,8 @@ where
     let mut s2 = 0.0_f64; // s_{k-2}
 
     // Direction vectors for solution update (d_{k-1}, d_{k-2})
-    let mut d1 = Tensor::<R>::zeros(&[n], dtype, device);
-    let mut d2 = Tensor::<R>::zeros(&[n], dtype, device);
+    let mut d1 = Tensor::<R>::try_zeros(&[n], dtype, device)?;
+    let mut d2 = Tensor::<R>::try_zeros(&[n], dtype, device)?;
 
     // Right-hand side of the least-squares problem: Q * (beta1 * e1)
     // We track the last two entries: tau_{k-1} and tau_k

@@ -78,7 +78,7 @@ where
 
     // Handle edge cases
     if n_a == 0 || n_b == 0 {
-        return Ok(Tensor::zeros(&[0], dtype, device));
+        return Tensor::try_zeros(&[0], dtype, device);
     }
 
     // Select algorithm based on size
@@ -149,7 +149,7 @@ where
     let indices_flat = out_indices.reshape(&[n_a * n_b])?;
 
     // Create output tensor of zeros
-    let output = Tensor::zeros(&[out_len], dtype, device);
+    let output = Tensor::try_zeros(&[out_len], dtype, device)?;
 
     // Use scatter_reduce with Sum to accumulate products at correct positions
     client.scatter_reduce(

@@ -245,7 +245,7 @@ where
         };
 
         let result_data: Vec<T> = result_cpu.to_vec();
-        return Ok(Tensor::<R>::from_slice(&result_data, &out_shape, device));
+        return Tensor::<R>::try_from_slice(&result_data, &out_shape, device);
     }, op_name);
 
     unreachable!()
@@ -303,7 +303,7 @@ where
         };
 
         let result_data: Vec<T> = result_cpu.to_vec();
-        return Ok(Tensor::<R>::from_slice(&result_data, a.shape(), device));
+        return Tensor::<R>::try_from_slice(&result_data, a.shape(), device);
     }, op_name);
 
     unreachable!()
@@ -337,7 +337,7 @@ where
         };
 
         let result_data: Vec<T> = result_cpu.to_vec();
-        return Ok(Tensor::<R>::from_slice(&result_data, a.shape(), device));
+        return Tensor::<R>::try_from_slice(&result_data, a.shape(), device);
     }, op_name);
 
     unreachable!()
@@ -372,7 +372,7 @@ where
         };
 
         let result_data: Vec<T> = result_cpu.to_vec();
-        return Ok(Tensor::<R>::from_slice(&result_data, &out_shape, device));
+        return Tensor::<R>::try_from_slice(&result_data, &out_shape, device);
     }, op_name);
 
     unreachable!()
@@ -400,7 +400,7 @@ where
         let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
         let result_cpu = op_fn(&cpu.client, &a_cpu)?;
         let result_data: Vec<T> = result_cpu.to_vec();
-        return Ok(Tensor::<R>::from_slice(&result_data, a.shape(), device));
+        return Tensor::<R>::try_from_slice(&result_data, a.shape(), device);
     }, op_name);
 
     unreachable!()
@@ -424,7 +424,7 @@ where
         let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
         let result_cpu = cpu.client.softmax(&a_cpu, dim)?;
         let result_data: Vec<T> = result_cpu.to_vec();
-        return Ok(Tensor::<R>::from_slice(&result_data, a.shape(), device));
+        return Tensor::<R>::try_from_slice(&result_data, a.shape(), device);
     }, op_name);
 
     unreachable!()
@@ -452,7 +452,7 @@ where
         let result_cpu = cpu.client.matmul(&a_cpu, &b_cpu)?;
         let result_data: Vec<T> = result_cpu.to_vec();
 
-        return Ok(Tensor::<R>::from_slice(&result_data, out_shape, device));
+        return Tensor::<R>::try_from_slice(&result_data, out_shape, device);
     }, op_name);
 
     unreachable!()
@@ -488,7 +488,7 @@ where
         };
 
         let result_data: Vec<T> = result_cpu.to_vec();
-        return Ok(Tensor::<R>::from_slice(&result_data, &out_shape, device));
+        return Tensor::<R>::try_from_slice(&result_data, &out_shape, device);
     }, op_name);
 
     unreachable!()
@@ -558,7 +558,7 @@ where
 
             // Copy result back to GPU
             let result_data: Vec<T> = result_cpu.to_vec();
-            return Ok(Tensor::<R>::from_slice(&result_data, &out_shape, device));
+            return Tensor::<R>::try_from_slice(&result_data, &out_shape, device);
         }, op_name);
     }, op_name);
 
@@ -628,10 +628,11 @@ where
     let values_data: Vec<T> = result_values_cpu.to_vec();
 
     let result_col_ptrs =
-        Tensor::<R>::from_slice(&col_ptrs_data, result_col_ptrs_cpu.shape(), device);
+        Tensor::<R>::try_from_slice(&col_ptrs_data, result_col_ptrs_cpu.shape(), device)?;
     let result_row_indices =
-        Tensor::<R>::from_slice(&row_indices_data, result_row_indices_cpu.shape(), device);
-    let result_values = Tensor::<R>::from_slice(&values_data, result_values_cpu.shape(), device);
+        Tensor::<R>::try_from_slice(&row_indices_data, result_row_indices_cpu.shape(), device)?;
+    let result_values =
+        Tensor::<R>::try_from_slice(&values_data, result_values_cpu.shape(), device)?;
 
     Ok((result_col_ptrs, result_row_indices, result_values))
 }
@@ -693,10 +694,11 @@ where
     let values_data: Vec<T> = result_values_cpu.to_vec();
 
     let result_row_indices =
-        Tensor::<R>::from_slice(&row_indices_data, result_row_indices_cpu.shape(), device);
+        Tensor::<R>::try_from_slice(&row_indices_data, result_row_indices_cpu.shape(), device)?;
     let result_col_indices =
-        Tensor::<R>::from_slice(&col_indices_data, result_col_indices_cpu.shape(), device);
-    let result_values = Tensor::<R>::from_slice(&values_data, result_values_cpu.shape(), device);
+        Tensor::<R>::try_from_slice(&col_indices_data, result_col_indices_cpu.shape(), device)?;
+    let result_values =
+        Tensor::<R>::try_from_slice(&values_data, result_values_cpu.shape(), device)?;
 
     Ok((result_row_indices, result_col_indices, result_values))
 }
