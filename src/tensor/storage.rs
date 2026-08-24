@@ -264,15 +264,25 @@ impl<R: Runtime> Storage<R> {
     }
 
     /// Copy data from device to host
+    ///
+    /// # Panics
+    /// Panics if the device-to-host copy fails. Use [`Self::try_to_vec`] in
+    /// fallible contexts (long-running loops, servers).
+    #[track_caller]
     pub fn to_vec<T: bytemuck::Pod>(&self) -> Vec<T> {
+        self.try_to_vec()
+            .expect("copy_from_device failed in to_vec()")
+    }
+
+    /// Copy data from device to host (fallible version)
+    pub fn try_to_vec<T: bytemuck::Pod>(&self) -> Result<Vec<T>> {
         // Allocate with correct alignment for T, then cast to bytes for copy.
         // This avoids alignment violations that would occur if we allocated
         // a Vec<u8> and cast to stricter-aligned types like f64/i64.
         let mut result = vec![T::zeroed(); self.inner.len];
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(&mut result);
-        R::copy_from_device(self.inner.ptr, bytes, &self.inner.device)
-            .expect("copy_from_device failed in to_vec()");
-        result
+        R::copy_from_device(self.inner.ptr, bytes, &self.inner.device)?;
+        Ok(result)
     }
 }
 

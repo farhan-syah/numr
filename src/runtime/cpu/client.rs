@@ -157,8 +157,10 @@ fn create_cpu_allocator(device: CpuDevice) -> CpuAllocator {
                 return Ok(0);
             }
             let align = 64; // AVX-512 alignment
-            let layout =
-                AllocLayout::from_size_align(size, align).expect("Invalid allocation layout");
+            // Fails when `size` rounded up to `align` exceeds isize::MAX — an
+            // allocation that can never succeed, so report it as OOM.
+            let layout = AllocLayout::from_size_align(size, align)
+                .map_err(|_| crate::error::Error::OutOfMemory { size })?;
             let ptr = unsafe { alloc_zeroed(layout) };
             if ptr.is_null() {
                 return Err(crate::error::Error::OutOfMemory { size });
@@ -170,8 +172,11 @@ fn create_cpu_allocator(device: CpuDevice) -> CpuAllocator {
                 return;
             }
             let align = 64;
-            let layout =
-                AllocLayout::from_size_align(size, align).expect("Invalid allocation layout");
+            // Unrepresentable layout: the alloc closure above rejected this size,
+            // so no live allocation matches it. Nothing to free.
+            let Ok(layout) = AllocLayout::from_size_align(size, align) else {
+                return;
+            };
             unsafe {
                 dealloc(ptr as *mut u8, layout);
             }
@@ -205,5 +210,28 @@ mod tests {
 
         let zero_chunk = client.with_parallelism(ParallelismConfig::new(Some(2), Some(0)));
         assert_eq!(zero_chunk.rayon_min_len(), 1);
+    }
+
+    /// A size that no `Layout` can represent must be reported as an allocation
+    /// error, not a panic. `AllocLayout::from_size_align` rejects any size that
+    /// exceeds `isize::MAX` once rounded up to the alignment.
+    ///
+    /// Sabotage check: restore
+    /// `.expect("Invalid allocation layout")` in `create_cpu_allocator`'s alloc
+    /// closure and this test aborts with
+    /// `panicked at 'Invalid allocation layout: LayoutError'`.
+    #[test]
+    fn allocating_past_isize_max_returns_out_of_memory() {
+        use crate::runtime::Allocator;
+
+        let allocator = create_cpu_allocator(CpuDevice::new());
+        let err = allocator
+            .allocate(usize::MAX)
+            .expect_err("an unrepresentable layout must not allocate");
+
+        assert!(
+            matches!(err, crate::error::Error::OutOfMemory { size } if size == usize::MAX),
+            "expected OutOfMemory, got {err}"
+        );
     }
 }

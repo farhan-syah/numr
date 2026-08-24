@@ -3,7 +3,7 @@
 use super::{Layout, Storage, TensorId};
 use crate::dtype::{DType, DataType, Element};
 use crate::error::{Error, Result};
-use crate::runtime::Runtime;
+use crate::runtime::{Device, Runtime};
 use std::fmt;
 
 /// N-dimensional array stored on a compute device
@@ -65,10 +65,24 @@ impl<R: Runtime> Tensor<R> {
             .unwrap_or_else(|e| panic!("Tensor::empty failed: {e}"))
     }
 
+    /// Wrap an allocation error with the shape, dtype and device being allocated.
+    ///
+    /// The raw [`Error::OutOfMemory`] carries only a byte count, which forces the
+    /// reader to hand-derive what failed. This attaches the context.
+    fn alloc_failed(shape: &[usize], dtype: R::DType, device: &R::Device, source: Error) -> Error {
+        Error::AllocFailed {
+            shape: shape.to_vec(),
+            dtype: dtype.short_name().to_string(),
+            device: device.name(),
+            source: Box::new(source),
+        }
+    }
+
     /// Create an uninitialized tensor (fallible version)
     pub fn try_empty(shape: &[usize], dtype: R::DType, device: &R::Device) -> Result<Self> {
         let len: usize = shape.iter().product();
-        let storage = Storage::new(len, dtype, device)?;
+        let storage = Storage::new(len, dtype, device)
+            .map_err(|e| Self::alloc_failed(shape, dtype, device, e))?;
         let layout = Layout::contiguous(shape);
 
         Ok(Self {
@@ -594,11 +608,29 @@ impl<R: Runtime> Tensor<R> {
     ///
     /// For contiguous tensors, this copies only the viewed portion of the storage,
     /// respecting the tensor's shape and offset.
+    /// # Panics
+    /// Panics if the tensor is not contiguous, or if the device-to-host copy
+    /// fails. Use [`Self::try_to_vec`] in fallible contexts (training loops,
+    /// servers) where a device error must not abort the process.
+    #[track_caller]
     pub fn to_vec<T: bytemuck::Pod>(&self) -> Vec<T> {
         assert!(
             self.is_contiguous(),
             "Tensor must be contiguous to copy to vec"
         );
+
+        self.try_to_vec()
+            .expect("copy_from_device failed in to_vec()")
+    }
+
+    /// Copy tensor data to a Vec on the host (fallible version)
+    ///
+    /// Returns [`Error::NotContiguous`] if the tensor is not contiguous, and
+    /// propagates any device-to-host copy failure instead of panicking.
+    pub fn try_to_vec<T: bytemuck::Pod>(&self) -> Result<Vec<T>> {
+        if !self.is_contiguous() {
+            return Err(Error::NotContiguous);
+        }
 
         let numel = self.numel();
         let offset = self.layout.offset();
@@ -611,9 +643,8 @@ impl<R: Runtime> Tensor<R> {
         let mut result = vec![T::zeroed(); numel];
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(&mut result);
         let src_ptr = self.storage.ptr() as usize + byte_offset;
-        R::copy_from_device(src_ptr as u64, bytes, self.storage.device())
-            .expect("copy_from_device failed in to_vec()");
-        result
+        R::copy_from_device(src_ptr as u64, bytes, self.storage.device())?;
+        Ok(result)
     }
 
     /// Record an event on the compute stream for this tensor's device.
@@ -737,7 +768,8 @@ impl<R: Runtime> Tensor<R> {
             ))
         })?;
 
-        let storage = Storage::from_bytes(&bytes, dtype, device)?;
+        let storage = Storage::from_bytes(&bytes, dtype, device)
+            .map_err(|e| Self::alloc_failed(shape, dtype, device, e))?;
         let layout = Layout::contiguous(shape);
 
         Ok(Self {
@@ -816,7 +848,8 @@ impl<R: Runtime<DType = DType>> Tensor<R> {
             });
         }
 
-        let storage = Storage::from_slice(data, device)?;
+        let storage = Storage::from_slice(data, device)
+            .map_err(|e| Self::alloc_failed(shape, T::DTYPE, device, e))?;
         let layout = Layout::contiguous(shape);
 
         Ok(Self {
@@ -933,7 +966,8 @@ impl<R: Runtime<DType = DType>> Tensor<R> {
         };
 
         // Allocate and copy to device
-        let storage = Storage::from_bytes(&bytes, dtype, device)?;
+        let storage = Storage::from_bytes(&bytes, dtype, device)
+            .map_err(|e| Self::alloc_failed(shape, dtype, device, e))?;
         let layout = Layout::contiguous(shape);
 
         Ok(Self {
@@ -1206,5 +1240,64 @@ mod tests {
 
         let result: Result<f32> = tensor.item();
         assert!(result.is_err());
+    }
+
+    /// An allocation failure must name what was being allocated.
+    ///
+    /// 2^60 F32 elements is 4 EiB — representable as a `Layout` (under
+    /// `isize::MAX`) so the request reaches the system allocator, which cannot
+    /// satisfy it. The resulting error must carry shape, dtype and device;
+    /// the raw byte count alone forces the reader to hand-derive the tensor.
+    ///
+    /// Sabotage check: drop the `map_err` in `try_empty` so the bare
+    /// `Error::OutOfMemory` propagates. The message becomes
+    /// `Out of memory: failed to allocate 4611686018427387904 bytes` and every
+    /// assertion below fails — it contains no shape, no dtype, no device.
+    #[test]
+    fn alloc_failure_names_shape_dtype_and_device() {
+        let device = CpuDevice::new();
+        let shape = [1usize << 40, 1usize << 20];
+
+        let err = Tensor::<CpuRuntime>::try_empty(&shape, DType::F32, &device)
+            .expect_err("4 EiB must not allocate");
+        let msg = err.to_string();
+
+        assert!(msg.contains("[1099511627776, 1048576]"), "no shape: {msg}");
+        assert!(msg.contains("f32"), "no dtype: {msg}");
+        assert!(msg.contains("cpu"), "no device: {msg}");
+        assert!(
+            matches!(err, Error::AllocFailed { ref source, .. }
+                if matches!(**source, Error::OutOfMemory { .. })),
+            "the underlying OutOfMemory must be preserved as the source: {msg}"
+        );
+    }
+
+    /// `try_to_vec` is the fallible twin of `to_vec`, not a different readback.
+    ///
+    /// Sabotage check: make `try_to_vec` return `Ok(Vec::new())` and both the
+    /// value assertion and the `to_vec` equality assertion fail.
+    #[test]
+    fn try_to_vec_matches_to_vec() {
+        let device = CpuDevice::new();
+        let data = [1.5f32, -2.25, 3.75, 0.0];
+        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device);
+
+        let got: Vec<f32> = tensor.try_to_vec().expect("readback runs");
+        assert_eq!(got, vec![1.5f32, -2.25, 3.75, 0.0]);
+        assert_eq!(got, tensor.to_vec::<f32>());
+    }
+
+    /// A non-contiguous tensor is an error for `try_to_vec`, where `to_vec`
+    /// asserts. Both refuse to read a strided view as if it were packed.
+    #[test]
+    fn try_to_vec_rejects_a_non_contiguous_tensor() {
+        let device = CpuDevice::new();
+        let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let transposed = tensor.transpose(0, 1).expect("transpose runs");
+
+        assert!(matches!(
+            transposed.try_to_vec::<f32>(),
+            Err(Error::NotContiguous)
+        ));
     }
 }

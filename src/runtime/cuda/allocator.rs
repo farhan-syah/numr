@@ -123,6 +123,12 @@ pub struct CudaAllocator {
     /// A global byte cap ([`free_list_cap_bytes`](Self::free_list_cap_bytes))
     /// bounds the total across all buckets so many-shape workloads cannot retain
     /// device memory without bound.
+    ///
+    /// Every lock acquisition recovers from poisoning via `into_inner()`. The
+    /// free list is a cache, not correctness-critical state: a panic mid-mutation
+    /// can only desynchronise `total_bytes` from the bucket contents (over- or
+    /// under-retention), never duplicate a pointer or publish an invalid one.
+    /// Refusing to allocate for the rest of the process is strictly worse.
     free_list: Arc<Mutex<FreeList>>,
     /// Global cap on total bytes retained by `free_list` across all buckets.
     free_list_cap_bytes: usize,
@@ -193,7 +199,7 @@ impl CudaAllocator {
         // reclaim VRAM that our Rust-side cache was holding "live" from the
         // driver's perspective.
         let drained: Vec<u64> = {
-            let mut fl = self.free_list.lock().unwrap();
+            let mut fl = self.free_list.lock().unwrap_or_else(|p| p.into_inner());
             fl.total_bytes = 0;
             fl.map
                 .drain()
@@ -315,7 +321,7 @@ impl Allocator for CudaAllocator {
 
         // Fast path: pop from the free list if a cached buffer exists.
         {
-            let mut fl = self.free_list.lock().unwrap();
+            let mut fl = self.free_list.lock().unwrap_or_else(|p| p.into_inner());
             if let Some(ptr) = fl.pop(size_bytes as u64) {
                 return Ok(ptr);
             }
@@ -351,7 +357,7 @@ impl Allocator for CudaAllocator {
 
         let mut evict: Vec<u64> = Vec::new();
         {
-            let mut fl = self.free_list.lock().unwrap();
+            let mut fl = self.free_list.lock().unwrap_or_else(|p| p.into_inner());
             let size = size_bytes as u64;
             match fl.map.get_mut(&size) {
                 // Per-bucket cap exceeded: evict the oldest of this size and
@@ -407,7 +413,7 @@ impl Allocator for CudaAllocator {
         // non-graph caller while the CUDA graph still owns it — silent
         // graph-state corruption. Panic early so the bug is caught immediately.
         let captured: HashSet<u64> = {
-            let mut set = self.captured_ptrs.lock().unwrap();
+            let mut set = self.captured_ptrs.lock().unwrap_or_else(|p| p.into_inner());
             std::mem::take(&mut *set)
         };
 
@@ -433,7 +439,7 @@ impl Allocator for CudaAllocator {
         // graph-internal address — a definite bug.
         #[cfg(debug_assertions)]
         {
-            let fl = self.free_list.lock().unwrap();
+            let fl = self.free_list.lock().unwrap_or_else(|p| p.into_inner());
             for bucket in fl.map.values() {
                 for &cached_ptr in bucket {
                     debug_assert!(
@@ -456,7 +462,7 @@ impl Allocator for CudaAllocator {
         // Callers must have dropped all live tensors (which call `deallocate`)
         // before calling `reset`, so every pointer here is idle on the stream.
         let drained: Vec<u64> = {
-            let mut fl = self.free_list.lock().unwrap();
+            let mut fl = self.free_list.lock().unwrap_or_else(|p| p.into_inner());
             fl.total_bytes = 0;
             fl.map
                 .drain()
@@ -605,5 +611,51 @@ mod tests {
 
         // frozen flag must be cleared.
         assert!(!alloc.is_frozen(), "allocator must be unfrozen");
+    }
+
+    /// A panic while the free-list mutex is held must not disable the allocator.
+    ///
+    /// Before the fix every `free_list.lock()` was `.unwrap()`, so one poisoned
+    /// lock turned every subsequent allocation into a panic — the exact cascade
+    /// an OOM panic could trigger mid-training. Recovery is sound because the
+    /// free list is a cache: the worst a torn mutation leaves behind is a
+    /// `total_bytes` that disagrees with the bucket contents.
+    ///
+    /// Sabotage check: restore `.unwrap()` on the `free_list` locks and this
+    /// test fails with
+    /// `called `Result::unwrap()` on an `Err` value: PoisonError { .. }`.
+    ///
+    /// `#[ignore]` for the same reason as the tests above — `driver_alloc`
+    /// needs a live CUDA context.
+    #[cfg(feature = "cuda")]
+    #[test]
+    #[ignore = "requires a live CUDA GPU"]
+    fn allocation_survives_a_poisoned_free_list() {
+        let device = CudaDevice { index: 0 };
+        let client =
+            CudaClient::new_uncached(device).expect("CudaClient creation requires a CUDA GPU");
+        let alloc = &client.allocator;
+
+        // Put a buffer in the free list so the poisoned state has real content.
+        let p = alloc.allocate(1024).expect("alloc before poisoning");
+        alloc.deallocate(p, 1024);
+
+        // Poison the mutex: a thread panics while holding the guard.
+        let poisoner = alloc.clone();
+        let handle = std::thread::spawn(move || {
+            let _guard = poisoner.free_list.lock().expect("lock is not yet poisoned");
+            panic!("deliberate panic while holding the free-list lock");
+        });
+        assert!(handle.join().is_err(), "the poisoning thread must panic");
+        assert!(
+            alloc.free_list.is_poisoned(),
+            "the free-list mutex must be poisoned"
+        );
+
+        // Every free-list path must still work.
+        let p2 = alloc.allocate(1024).expect("alloc after poisoning");
+        assert_ne!(p2, 0, "allocation must return a real pointer");
+        alloc.deallocate(p2, 1024);
+        alloc.reset().expect("reset after poisoning");
     }
 }

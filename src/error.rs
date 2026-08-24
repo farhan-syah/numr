@@ -66,6 +66,23 @@ pub enum Error {
         size: usize,
     },
 
+    /// Tensor allocation failed, with the shape/dtype/device context
+    ///
+    /// Wraps the underlying allocation error (usually [`Error::OutOfMemory`])
+    /// so the message names what was being allocated, not only a byte count.
+    #[error("failed to allocate tensor {shape:?} {dtype} on {device}: {source}")]
+    AllocFailed {
+        /// Shape of the tensor that could not be allocated
+        shape: Vec<usize>,
+        /// Element type short name (e.g. "bf16", "q4_0")
+        dtype: String,
+        /// Device name (from [`Device::name`](crate::runtime::Device::name))
+        device: String,
+        /// The underlying allocation error
+        #[source]
+        source: Box<Error>,
+    },
+
     /// Index out of bounds
     #[error("Index {index} out of bounds for dimension of size {size}")]
     IndexOutOfBounds {

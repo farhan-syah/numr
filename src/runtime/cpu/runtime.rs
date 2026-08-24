@@ -51,8 +51,12 @@ impl Runtime for CpuRuntime {
         }
 
         let align = 64;
-        let layout =
-            AllocLayout::from_size_align(size_bytes, align).expect("Invalid allocation layout");
+        // A layout this size could never have been allocated (allocate() rejects
+        // it), so there is nothing to free. Returning is the only sound option —
+        // panicking in a Drop path would abort the process.
+        let Ok(layout) = AllocLayout::from_size_align(size_bytes, align) else {
+            return;
+        };
 
         unsafe {
             dealloc(ptr as *mut u8, layout);
