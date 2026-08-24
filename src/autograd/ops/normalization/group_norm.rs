@@ -195,7 +195,7 @@ mod tests {
                 transposed[c * rows + r] = data[r * cols + c];
             }
         }
-        let src = Tensor::<CpuRuntime>::from_slice(&transposed, &[cols, rows], device);
+        let src = Tensor::<CpuRuntime>::try_from_slice(&transposed, &[cols, rows], device).unwrap();
         let view = src.t().unwrap();
         assert!(!view.is_contiguous());
         assert_eq!(view.shape(), &[rows, cols]);
@@ -210,8 +210,8 @@ mod tests {
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let grad_data = [0.1f32, 0.2, -0.3, 0.4, -0.5, 0.6];
 
-        let input = Tensor::<CpuRuntime>::from_slice(&input_data, &[2, 3], &device);
-        let weight = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &[2, 3], &device).unwrap();
+        let weight = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
 
         let backward = GroupNormBackward::<CpuRuntime>::new(
             TensorId::new(),
@@ -226,7 +226,8 @@ mod tests {
             None,
         );
 
-        let grad_contig = Tensor::<CpuRuntime>::from_slice(&grad_data, &[2, 3], &device);
+        let grad_contig =
+            Tensor::<CpuRuntime>::try_from_slice(&grad_data, &[2, 3], &device).unwrap();
         let grads_contig = backward.backward_all(&grad_contig).unwrap();
 
         let grad_noncontig = non_contiguous_like(&grad_data, 2, 3, &device);
@@ -259,10 +260,12 @@ mod tests {
         let input_data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
         let grad_data = [0.1f32, 0.2, -0.3, 0.4, -0.5, 0.6];
 
-        let weight_contig = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
-        let grad_output = Tensor::<CpuRuntime>::from_slice(&grad_data, &[2, 3], &device);
+        let weight_contig = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
+        let grad_output =
+            Tensor::<CpuRuntime>::try_from_slice(&grad_data, &[2, 3], &device).unwrap();
 
-        let input_contig = Tensor::<CpuRuntime>::from_slice(&input_data, &[2, 3], &device);
+        let input_contig =
+            Tensor::<CpuRuntime>::try_from_slice(&input_data, &[2, 3], &device).unwrap();
         let backward_contig = GroupNormBackward::<CpuRuntime>::new(
             TensorId::new(),
             TensorId::new(),

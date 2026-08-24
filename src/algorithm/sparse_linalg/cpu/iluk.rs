@@ -289,10 +289,12 @@ mod tests {
         }
 
         let row_ptrs_tensor =
-            Tensor::<CpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], device);
+            Tensor::<CpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
         let col_indices_tensor =
-            Tensor::<CpuRuntime>::from_slice(&col_indices, &[col_indices.len()], device);
-        let values_tensor = Tensor::<CpuRuntime>::from_slice(&values, &[values.len()], device);
+            Tensor::<CpuRuntime>::try_from_slice(&col_indices, &[col_indices.len()], device)
+                .unwrap();
+        let values_tensor =
+            Tensor::<CpuRuntime>::try_from_slice(&values, &[values.len()], device).unwrap();
 
         CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, [n, n])
             .expect("CSR creation should succeed")

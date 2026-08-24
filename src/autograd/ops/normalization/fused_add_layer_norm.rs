@@ -167,12 +167,18 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
 
-        let pre_norm = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device);
-        let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device);
-        let bias = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device);
+        let pre_norm =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device)
+                .unwrap();
+        let weight =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
+        let bias =
+            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap();
         let eps = 1e-5f32;
 
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[1, 4], &device);
+        let grad_out =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[1, 4], &device)
+                .unwrap();
 
         let (d_input_residual, d_weight, d_bias) = client
             .fused_add_layer_norm_bwd(&grad_out, &pre_norm, &weight, &bias, eps)
@@ -198,11 +204,15 @@ mod tests {
     fn test_fused_add_layer_norm_backward_shared_gradient() {
         let device = CpuDevice::new();
 
-        let pre_norm = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device);
-        let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device);
-        let bias = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0], &[3], &device);
+        let pre_norm =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
+        let weight =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap();
+        let bias =
+            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0], &[3], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[1, 3], &device);
+        let grad_out =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[1, 3], &device).unwrap();
 
         let backward = FusedAddLayerNormBackward::<CpuRuntime>::new(
             TensorId::new(),

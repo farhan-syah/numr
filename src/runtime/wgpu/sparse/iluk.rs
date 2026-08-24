@@ -316,14 +316,20 @@ mod tests {
         let client = get_client();
         let device = &client.device_id;
 
-        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device);
-        let col_indices =
-            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device);
-        let values = Tensor::<WgpuRuntime>::from_slice(
+        let row_ptrs =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices = Tensor::<WgpuRuntime>::try_from_slice(
+            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
+            &[10],
+            device,
+        )
+        .unwrap();
+        let values = Tensor::<WgpuRuntime>::try_from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,
-        );
+        )
+        .unwrap();
 
         let a = CsrData::new(row_ptrs, col_indices, values, [4, 4])
             .expect("CSR creation should succeed");
@@ -340,14 +346,20 @@ mod tests {
         let client = get_client();
         let device = &client.device_id;
 
-        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device);
-        let col_indices =
-            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device);
-        let values = Tensor::<WgpuRuntime>::from_slice(
+        let row_ptrs =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices = Tensor::<WgpuRuntime>::try_from_slice(
+            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
+            &[10],
+            device,
+        )
+        .unwrap();
+        let values = Tensor::<WgpuRuntime>::try_from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,
-        );
+        )
+        .unwrap();
 
         let a = CsrData::new(row_ptrs, col_indices, values, [4, 4])
             .expect("CSR creation should succeed");
@@ -365,14 +377,20 @@ mod tests {
         let client = get_client();
         let device = &client.device_id;
 
-        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 5, 8, 10], &[5], device);
-        let col_indices =
-            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3], &[10], device);
-        let values = Tensor::<WgpuRuntime>::from_slice(
+        let row_ptrs =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 5, 8, 10], &[5], device).unwrap();
+        let col_indices = Tensor::<WgpuRuntime>::try_from_slice(
+            &[0i64, 1, 0, 1, 2, 1, 2, 3, 2, 3],
+            &[10],
+            device,
+        )
+        .unwrap();
+        let values = Tensor::<WgpuRuntime>::try_from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[10],
             device,
-        );
+        )
+        .unwrap();
 
         let a = CsrData::new(row_ptrs, col_indices, values, [4, 4])
             .expect("CSR creation should succeed");

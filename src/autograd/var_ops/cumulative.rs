@@ -74,7 +74,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap(),
             true,
         );
 
@@ -99,7 +99,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let x = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap(),
             true,
         );
 

@@ -148,12 +148,16 @@ mod tests {
     fn test_dual_add() {
         let (device, client) = setup();
 
-        let a_primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-        let a_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0], &[3], &device);
+        let a_primal =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let a_tangent =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0], &[3], &device).unwrap();
         let a = DualTensor::with_tangent(a_primal, a_tangent);
 
-        let b_primal = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 5.0, 6.0], &[3], &device);
-        let b_tangent = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0, 0.0], &[3], &device);
+        let b_primal =
+            Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 5.0, 6.0], &[3], &device).unwrap();
+        let b_tangent =
+            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0, 0.0], &[3], &device).unwrap();
         let b = DualTensor::with_tangent(b_primal, b_tangent);
 
         let c = dual_add(&a, &b, &client).unwrap();
@@ -167,8 +171,8 @@ mod tests {
         let (device, client) = setup();
 
         // f(x) = x² at x=3, tangent v=1 → df = 2*3*1 = 6
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_mul(&x, &x, &client).unwrap();
@@ -181,16 +185,12 @@ mod tests {
     fn test_dual_constant_no_tangent() {
         let (device, client) = setup();
 
-        let a = DualTensor::constant(Tensor::<CpuRuntime>::from_slice(
-            &[1.0f32, 2.0],
-            &[2],
-            &device,
-        ));
-        let b = DualTensor::constant(Tensor::<CpuRuntime>::from_slice(
-            &[3.0f32, 4.0],
-            &[2],
-            &device,
-        ));
+        let a = DualTensor::constant(
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap(),
+        );
+        let b = DualTensor::constant(
+            Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2], &device).unwrap(),
+        );
 
         let c = dual_add(&a, &b, &client).unwrap();
 

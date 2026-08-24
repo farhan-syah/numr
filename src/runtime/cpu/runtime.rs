@@ -208,12 +208,14 @@ mod tests {
 
         // Allocate a 4-element f32 output tensor.
         let out =
-            crate::tensor::Tensor::<CpuRuntime>::zeros(&[4], crate::dtype::DType::F32, &device);
-        let input = crate::tensor::Tensor::<CpuRuntime>::from_slice(
+            crate::tensor::Tensor::<CpuRuntime>::try_zeros(&[4], crate::dtype::DType::F32, &device)
+                .unwrap();
+        let input = crate::tensor::Tensor::<CpuRuntime>::try_from_slice(
             &[1.0f32, 2.0, 3.0, 4.0],
             &[4],
             &device,
-        );
+        )
+        .unwrap();
 
         let mut closure_ran = false;
         let graph = CpuRuntime::capture_graph_into(&client, &[&input], &[&out], |_c| {

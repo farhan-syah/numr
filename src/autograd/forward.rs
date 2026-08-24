@@ -360,8 +360,8 @@ mod tests {
         let (device, client) = setup();
 
         // f(x) = x² at x=3, tangent v=1 → f(x)=9, df=6
-        let x = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device);
-        let v = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap();
+        let v = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
 
         let (y, dy) = jvp(
             |inputs, c| {
@@ -385,8 +385,8 @@ mod tests {
         // f(x) = sum(x²), x = [1, 2, 3], v = [1, 1, 1]
         // f(x) = 1 + 4 + 9 = 14
         // df = 2*1*1 + 2*2*1 + 2*3*1 = 2 + 4 + 6 = 12
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-        let v = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let v = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap();
 
         let (y, dy) = jvp(
             |inputs, c| {
@@ -411,8 +411,8 @@ mod tests {
         // f(x) = exp(x²) at x=1, v=1
         // f'(x) = exp(x²) * 2x
         // f(1) = e, f'(1) = 2e
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
-        let v = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
+        let v = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
 
         let (y, dy) = jvp(
             |inputs, c| {
@@ -438,10 +438,10 @@ mod tests {
         // f(x, y) = x * y at (2, 3), tangents (1, 0)
         // ∂f/∂x = y = 3, ∂f/∂y = x = 2
         // df = 3*1 + 2*0 = 3
-        let x = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device);
-        let vx = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
-        let vy = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
+        let y = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap();
+        let vx = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
+        let vy = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
 
         let (f, df) = jvp(
             |inputs, c| {
@@ -467,10 +467,10 @@ mod tests {
         // A = [[1, 2]], B = [[1], [1]]
         // A @ B = [[3]]
         // dA = [[1, 0]] (tangent), dA @ B = [[1]]
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2, 1], &device);
-        let da = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[1, 2], &device);
-        let db = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0], &[2, 1], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2, 1], &device).unwrap();
+        let da = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[1, 2], &device).unwrap();
+        let db = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0], &[2, 1], &device).unwrap();
 
         let (y, dy) = jvp(
             |inputs, c| {
@@ -494,7 +494,7 @@ mod tests {
 
         // f(x) = 2*x (linear function)
         // Jacobian = diag([2, 2, 2])
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         let jacobian =
             jacobian_forward(|dual_x, c| dual_mul_scalar(dual_x, 2.0, c), &x, &client).unwrap();
@@ -519,8 +519,8 @@ mod tests {
 
         // f(x) = (x², x³)
         // At x=2: f(2) = (4, 8), df = (4, 12) for v=1
-        let x = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
-        let v = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
+        let v = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
 
         let (ys, dys) = jvp_multi(
             |inputs, c| {

@@ -20,7 +20,7 @@ mod tests {
 
     fn create_test_tensor(data: &[f32], shape: &[usize]) -> Tensor<WgpuRuntime> {
         let device = WgpuDevice::new(0);
-        Tensor::<WgpuRuntime>::from_slice(data, shape, &device)
+        Tensor::<WgpuRuntime>::try_from_slice(data, shape, &device).unwrap()
     }
 
     #[test]

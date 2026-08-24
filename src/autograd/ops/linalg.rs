@@ -706,10 +706,11 @@ mod tests {
 
         // A = [[1, 2], [3, 4]]
         // tr(A) = 5
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], &device)
+            .unwrap();
 
         // dL/dtr = 1 (scalar gradient, 0-dim tensor)
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f64], &[], &device);
+        let grad_out = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64], &[], &device).unwrap();
 
         let backward = TraceBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -726,11 +727,12 @@ mod tests {
 
         // A = [[2, 1], [1, 2]]
         // A^{-1} = [[2/3, -1/3], [-1/3, 2/3]]
-        let a = Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device)
+            .unwrap();
         let inv_a = LinalgOps::inverse(&client, &a).unwrap();
 
         // dL/dB = ones (gradient w.r.t. inverse)
-        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F64, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 2], DType::F64, &device).unwrap();
 
         let backward = InverseBackward::<CpuRuntime>::new(a.id(), inv_a.clone(), None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -757,11 +759,12 @@ mod tests {
 
         // A = [[2, 1], [1, 2]]
         // det(A) = 3
-        let a = Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device)
+            .unwrap();
         let det_output = LinalgOps::det(&client, &a).unwrap(); // Returns tensor with value 3.0
 
         // dL/ddet = 1 (scalar gradient, 0-dim tensor)
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f64], &[], &device);
+        let grad_out = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64], &[], &device).unwrap();
 
         let backward = DetBackward::<CpuRuntime>::new(a.id(), a.clone(), det_output, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -780,12 +783,14 @@ mod tests {
 
         // A = [[2, 1], [1, 2]], b = [[3], [3]]
         // x = solve(A, b) = [[1], [1]]
-        let a = Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[3.0f64, 3.0], &[2, 1], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device)
+            .unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f64, 3.0], &[2, 1], &device).unwrap();
         let x = LinalgOps::solve(&client, &a, &b).unwrap();
 
         // dL/dx = [[1], [1]]
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 1.0], &[2, 1], &device);
+        let grad_out =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 1.0], &[2, 1], &device).unwrap();
 
         let backward =
             SolveBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), x.clone(), None, None);
@@ -811,11 +816,12 @@ mod tests {
 
         // A = [[4, 2], [2, 5]] (positive definite)
         // L = cholesky(A) = [[2, 0], [1, 2]]
-        let a = Tensor::<CpuRuntime>::from_slice(&[4.0f64, 2.0, 2.0, 5.0], &[2, 2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[4.0f64, 2.0, 2.0, 5.0], &[2, 2], &device)
+            .unwrap();
         let l = client.cholesky_decompose(&a).unwrap().l;
 
         // dL/dL = ones
-        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F64, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 2], DType::F64, &device).unwrap();
 
         let backward = CholeskyBackward::<CpuRuntime>::new(a.id(), l.clone(), None);
         let grads = backward.backward_all(&grad_out).unwrap();

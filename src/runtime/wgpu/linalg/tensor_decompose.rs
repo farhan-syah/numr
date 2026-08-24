@@ -139,7 +139,8 @@ mod tests {
     fn test_unfold_fold_roundtrip() {
         let client = get_client();
         let data: Vec<f32> = (0..24).map(|x| x as f32).collect();
-        let tensor = Tensor::<WgpuRuntime>::from_slice(&data, &[2, 3, 4], &client.device_id);
+        let tensor =
+            Tensor::<WgpuRuntime>::try_from_slice(&data, &[2, 3, 4], &client.device_id).unwrap();
 
         // Test all modes
         for mode in 0..3 {
@@ -161,17 +162,19 @@ mod tests {
     fn test_mode_n_product() {
         let client = get_client();
         // Tensor [2, 3]
-        let tensor = Tensor::<WgpuRuntime>::from_slice(
+        let tensor = Tensor::<WgpuRuntime>::try_from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
             &[2, 3],
             &client.device_id,
-        );
+        )
+        .unwrap();
         // Matrix [4, 2] for mode-0 product
-        let matrix = Tensor::<WgpuRuntime>::from_slice(
+        let matrix = Tensor::<WgpuRuntime>::try_from_slice(
             &[1.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, -1.0, 1.0],
             &[4, 2],
             &client.device_id,
-        );
+        )
+        .unwrap();
 
         let result = client
             .mode_n_product(&tensor, &matrix, 0)
@@ -183,7 +186,8 @@ mod tests {
     fn test_hosvd_basic() {
         let client = get_client();
         let data: Vec<f32> = (0..24).map(|x| x as f32).collect();
-        let tensor = Tensor::<WgpuRuntime>::from_slice(&data, &[2, 3, 4], &client.device_id);
+        let tensor =
+            Tensor::<WgpuRuntime>::try_from_slice(&data, &[2, 3, 4], &client.device_id).unwrap();
 
         let decomp = client
             .hosvd(&tensor, &[2, 3, 4])
@@ -216,11 +220,12 @@ mod tests {
     fn test_cp_decompose_basic() {
         let client = get_client();
         // Simple rank-1 tensor: outer product of [1, 2] and [1, 1, 1]
-        let tensor = Tensor::<WgpuRuntime>::from_slice(
+        let tensor = Tensor::<WgpuRuntime>::try_from_slice(
             &[1.0f32, 1.0, 1.0, 2.0, 2.0, 2.0],
             &[2, 3],
             &client.device_id,
-        );
+        )
+        .unwrap();
 
         let decomp = client
             .cp_decompose(&tensor, 1, CpOptions::default())
@@ -251,7 +256,8 @@ mod tests {
     fn test_tensor_train_basic() {
         let client = get_client();
         let data: Vec<f32> = (0..24).map(|x| x as f32).collect();
-        let tensor = Tensor::<WgpuRuntime>::from_slice(&data, &[2, 3, 4], &client.device_id);
+        let tensor =
+            Tensor::<WgpuRuntime>::try_from_slice(&data, &[2, 3, 4], &client.device_id).unwrap();
 
         // Full-rank TT decomposition
         let decomp = client

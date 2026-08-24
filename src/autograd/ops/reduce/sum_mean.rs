@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn test_sum_backward_keepdim() {
         let device = CpuDevice::new();
-        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 1], DType::F32, &device).unwrap();
 
         let backward = SumBackward::<CpuRuntime>::new(TensorId::new(), &[2, 3], &[1], true, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn test_sum_backward_no_keepdim() {
         let device = CpuDevice::new();
-        let grad_out = Tensor::<CpuRuntime>::ones(&[2], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2], DType::F32, &device).unwrap();
 
         let backward = SumBackward::<CpuRuntime>::new(TensorId::new(), &[2, 3], &[1], false, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn test_mean_backward() {
         let device = CpuDevice::new();
-        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 1], DType::F32, &device).unwrap();
 
         let backward = MeanBackward::<CpuRuntime>::new(TensorId::new(), &[2, 3], &[1], true, None);
         let grads = backward.backward_all(&grad_out).unwrap();

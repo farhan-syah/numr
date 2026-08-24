@@ -157,8 +157,8 @@ mod tests {
     #[test]
     fn test_meshgrid_2d_ij() {
         let device = cpu_device();
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 5.0], &[2], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let y = Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 5.0], &[2], &device).unwrap();
 
         let grids = meshgrid_impl(&[&x, &y], MeshgridIndexing::Ij).unwrap();
         assert_eq!(grids.len(), 2);
@@ -176,8 +176,8 @@ mod tests {
     #[test]
     fn test_meshgrid_2d_xy() {
         let device = cpu_device();
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 5.0], &[2], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let y = Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 5.0], &[2], &device).unwrap();
 
         let grids = meshgrid_impl(&[&x, &y], MeshgridIndexing::Xy).unwrap();
         assert_eq!(grids.len(), 2);
@@ -196,9 +196,9 @@ mod tests {
     #[test]
     fn test_meshgrid_3d() {
         let device = cpu_device();
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0, 5.0], &[3], &device);
-        let c = Tensor::<CpuRuntime>::from_slice(&[6.0f32, 7.0], &[2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0, 5.0], &[3], &device).unwrap();
+        let c = Tensor::<CpuRuntime>::try_from_slice(&[6.0f32, 7.0], &[2], &device).unwrap();
 
         let grids = meshgrid_impl(&[&a, &b, &c], MeshgridIndexing::Ij).unwrap();
         assert_eq!(grids.len(), 3);
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn test_meshgrid_single_input() {
         let device = cpu_device();
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         let grids = meshgrid_impl(&[&x], MeshgridIndexing::Ij).unwrap();
         assert_eq!(grids.len(), 1);
@@ -228,7 +228,8 @@ mod tests {
     #[test]
     fn test_meshgrid_non_1d_error() {
         let device = cpu_device();
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
+            .unwrap();
         let result = meshgrid_impl(&[&x], MeshgridIndexing::Ij);
         assert!(result.is_err());
     }

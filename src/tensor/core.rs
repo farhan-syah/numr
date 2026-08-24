@@ -1086,7 +1086,7 @@ mod tests {
     fn test_from_slice() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 3]);
         assert_eq!(tensor.dtype(), DType::F32);
@@ -1101,7 +1101,7 @@ mod tests {
     fn test_transpose() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
 
         let transposed = tensor.transpose(0, 1).unwrap();
 
@@ -1114,7 +1114,7 @@ mod tests {
     fn test_contiguous_already_contiguous() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0];
-        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 2], &device).unwrap();
 
         assert!(tensor.is_contiguous());
         let contiguous = tensor.contiguous().unwrap();
@@ -1129,7 +1129,7 @@ mod tests {
         let device = CpuDevice::new();
         // Create a 2x3 matrix: [[1, 2, 3], [4, 5, 6]]
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
 
         // Transpose to 3x2: [[1, 4], [2, 5], [3, 6]]
         let transposed = tensor.transpose(0, 1).unwrap();
@@ -1150,7 +1150,7 @@ mod tests {
     fn test_reshape() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
 
         let reshaped = tensor.reshape(&[3, 2]).unwrap();
         assert_eq!(reshaped.shape(), &[3, 2]);
@@ -1164,7 +1164,7 @@ mod tests {
     fn test_squeeze_unsqueeze() {
         let device = CpuDevice::new();
         let data = [1.0f32, 2.0, 3.0];
-        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[1, 3, 1], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[1, 3, 1], &device).unwrap();
 
         // Squeeze all dimensions of size 1
         let squeezed = tensor.squeeze(None);
@@ -1178,7 +1178,7 @@ mod tests {
     #[test]
     fn test_zeros() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::zeros(&[2, 3], DType::F32, &device);
+        let tensor = Tensor::<CpuRuntime>::try_zeros(&[2, 3], DType::F32, &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 3]);
         assert_eq!(tensor.dtype(), DType::F32);
@@ -1191,7 +1191,7 @@ mod tests {
     #[test]
     fn test_ones() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device);
+        let tensor = Tensor::<CpuRuntime>::try_ones(&[2, 3], DType::F32, &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 3]);
         assert_eq!(tensor.dtype(), DType::F32);
@@ -1204,7 +1204,8 @@ mod tests {
     #[test]
     fn test_full_scalar() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::full_scalar(&[2, 2], DType::I32, 42.0, &device);
+        let tensor =
+            Tensor::<CpuRuntime>::try_full_scalar(&[2, 2], DType::I32, 42.0, &device).unwrap();
 
         assert_eq!(tensor.shape(), &[2, 2]);
         assert_eq!(tensor.dtype(), DType::I32);
@@ -1218,17 +1219,18 @@ mod tests {
         let device = CpuDevice::new();
 
         // 0-dimensional scalar
-        let tensor = Tensor::<CpuRuntime>::from_slice(&[std::f32::consts::PI], &[], &device);
+        let tensor =
+            Tensor::<CpuRuntime>::try_from_slice(&[std::f32::consts::PI], &[], &device).unwrap();
         let val: f32 = tensor.item().unwrap();
         assert!((val - std::f32::consts::PI).abs() < 1e-6);
 
         // Shape [1] tensor
-        let tensor = Tensor::<CpuRuntime>::from_slice(&[42.0f64], &[1], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&[42.0f64], &[1], &device).unwrap();
         let val: f64 = tensor.item().unwrap();
         assert!((val - 42.0).abs() < 1e-10);
 
         // Shape [1, 1, 1] tensor
-        let tensor = Tensor::<CpuRuntime>::from_slice(&[7i32], &[1, 1, 1], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&[7i32], &[1, 1, 1], &device).unwrap();
         let val: i32 = tensor.item().unwrap();
         assert_eq!(val, 7);
     }
@@ -1236,7 +1238,7 @@ mod tests {
     #[test]
     fn test_item_error_on_multi_element() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
 
         let result: Result<f32> = tensor.item();
         assert!(result.is_err());
@@ -1280,7 +1282,7 @@ mod tests {
     fn try_to_vec_matches_to_vec() {
         let device = CpuDevice::new();
         let data = [1.5f32, -2.25, 3.75, 0.0];
-        let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device);
+        let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 2], &device).unwrap();
 
         let got: Vec<f32> = tensor.try_to_vec().expect("readback runs");
         assert_eq!(got, vec![1.5f32, -2.25, 3.75, 0.0]);
@@ -1292,7 +1294,9 @@ mod tests {
     #[test]
     fn try_to_vec_rejects_a_non_contiguous_tensor() {
         let device = CpuDevice::new();
-        let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let tensor =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
+                .unwrap();
         let transposed = tensor.transpose(0, 1).expect("transpose runs");
 
         assert!(matches!(

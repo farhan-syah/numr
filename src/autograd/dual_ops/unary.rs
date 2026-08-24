@@ -211,8 +211,8 @@ mod tests {
     fn test_dual_exp() {
         let (device, client) = setup();
 
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_exp(&x, &client).unwrap();
@@ -225,8 +225,8 @@ mod tests {
     fn test_dual_sin_cos() {
         let (device, client) = setup();
 
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let sin_x = dual_sin(&x, &client).unwrap();

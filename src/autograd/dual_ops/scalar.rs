@@ -92,8 +92,8 @@ mod tests {
         let (device, client) = setup();
 
         // f(x) = x³ at x=2, tangent v=1 → df = 3*2²*1 = 12
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_pow_scalar(&x, 3.0, &client).unwrap();

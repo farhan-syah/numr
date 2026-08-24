@@ -54,7 +54,8 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
 
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+        let a =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
         let result = client.rsub_scalar(&a, 5.0).unwrap();
         let data: Vec<f32> = result.to_vec();
         assert_eq!(data, vec![4.0, 3.0, 2.0, 1.0]);
@@ -65,7 +66,8 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
 
-        let a = Tensor::<CpuRuntime>::from_slice(&[0.3f64, 0.7, 1.0, 0.0], &[4], &device);
+        let a =
+            Tensor::<CpuRuntime>::try_from_slice(&[0.3f64, 0.7, 1.0, 0.0], &[4], &device).unwrap();
         let result = client.rsub_scalar(&a, 1.0).unwrap();
         let data: Vec<f64> = result.to_vec();
         assert_eq!(data, vec![0.7, 0.30000000000000004, 0.0, 1.0]);
@@ -77,7 +79,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         // Common pattern: 1 - probability
-        let p = Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.5, 0.9], &[3], &device);
+        let p = Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.5, 0.9], &[3], &device).unwrap();
         let complement = client.rsub_scalar(&p, 1.0).unwrap();
         let data: Vec<f32> = complement.to_vec();
         for (a, b) in data.iter().zip([0.9f32, 0.5, 0.1].iter()) {
@@ -90,7 +92,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
 
-        let a = Tensor::<CpuRuntime>::from_slice(&[1i32, 2, 3, 4], &[4], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
         let result = client.rsub_scalar(&a, 10.0).unwrap();
         let data: Vec<i32> = result.to_vec();
         assert_eq!(data, vec![9, 8, 7, 6]);

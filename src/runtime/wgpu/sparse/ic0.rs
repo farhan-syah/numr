@@ -216,14 +216,16 @@ mod tests {
         let client = get_client();
         let device = &client.device_id;
 
-        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 5, 7], &[4], device);
+        let row_ptrs =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
         let col_indices =
-            Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device);
-        let values = Tensor::<WgpuRuntime>::from_slice(
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
+        let values = Tensor::<WgpuRuntime>::try_from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[7],
             device,
-        );
+        )
+        .unwrap();
 
         let a = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");

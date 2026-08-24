@@ -312,8 +312,11 @@ mod tests {
         // A = [10, 0; 0, 20]
         // B = [2, 0; 5, 4]
         let dense_a =
-            Tensor::<CpuRuntime>::from_slice(&[10.0f32, 0.0, 0.0, 20.0], &[2, 2], &device);
-        let dense_b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 0.0, 5.0, 4.0], &[2, 2], &device);
+            Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 0.0, 0.0, 20.0], &[2, 2], &device)
+                .unwrap();
+        let dense_b =
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 0.0, 5.0, 4.0], &[2, 2], &device)
+                .unwrap();
 
         let sparse_a = SparseTensor::from_dense(&client, &dense_a, 1e-10).unwrap();
         let sparse_b = SparseTensor::from_dense(&client, &dense_b, 1e-10).unwrap();

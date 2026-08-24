@@ -991,7 +991,8 @@ mod tests {
         // Create test RHS: b = A * [1, 2, 3, 4]^T
         // b = [4*1+1*2, 1*1+4*2+1*3, 1*2+4*3+1*4, 1*3+4*4] = [6, 12, 18, 19]
         let device = <CpuRuntime as crate::runtime::Runtime>::Device::default();
-        let b = Tensor::<CpuRuntime>::from_slice(&[6.0f64, 12.0, 18.0, 19.0], &[4], &device);
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[6.0f64, 12.0, 18.0, 19.0], &[4], &device)
+            .unwrap();
 
         let x = sparse_lu_solve_cpu(&factors, &b).unwrap();
 
@@ -1113,7 +1114,8 @@ mod tests {
 
         // Solve: b = A * [1, 2, 3, 4]^T = [6, 12, 18, 19]
         let device = <CpuRuntime as crate::runtime::Runtime>::Device::default();
-        let b = Tensor::<CpuRuntime>::from_slice(&[6.0f64, 12.0, 18.0, 19.0], &[4], &device);
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[6.0f64, 12.0, 18.0, 19.0], &[4], &device)
+            .unwrap();
 
         let x = sparse_lu_solve_cpu(&factors, &b).unwrap();
 

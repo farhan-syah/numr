@@ -132,7 +132,8 @@ mod tests {
 
         // A = [[1, 2], [3, 4]], tr(A) = 5
         let a = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], &device)
+                .unwrap(),
             true,
         );
 
@@ -156,7 +157,8 @@ mod tests {
         // A = [[2, 1], [1, 2]]
         // A^{-1} = [[2/3, -1/3], [-1/3, 2/3]]
         let a = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device)
+                .unwrap(),
             true,
         );
 
@@ -209,7 +211,8 @@ mod tests {
 
         // A = [[2, 1], [1, 2]], det(A) = 3
         let a = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device)
+                .unwrap(),
             true,
         );
 
@@ -233,11 +236,12 @@ mod tests {
         // A = [[2, 1], [1, 2]], b = [[3], [3]]
         // x = solve(A, b) = [[1], [1]]
         let a = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], &device)
+                .unwrap(),
             true,
         );
         let b = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[3.0f64, 3.0], &[2, 1], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[3.0f64, 3.0], &[2, 1], &device).unwrap(),
             true,
         );
 
@@ -307,7 +311,7 @@ mod tests {
         // A = [[4, 2], [2, 5]] (positive definite)
         let a_data = [4.0f64, 2.0, 2.0, 5.0];
         let a = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&a_data, &[2, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&a_data, &[2, 2], &device).unwrap(),
             true,
         );
 
@@ -348,8 +352,9 @@ mod tests {
             }
 
             // Compute loss for perturbed matrices
-            let a_plus_t = Tensor::<CpuRuntime>::from_slice(&a_plus, &[2, 2], &device);
-            let a_minus_t = Tensor::<CpuRuntime>::from_slice(&a_minus, &[2, 2], &device);
+            let a_plus_t = Tensor::<CpuRuntime>::try_from_slice(&a_plus, &[2, 2], &device).unwrap();
+            let a_minus_t =
+                Tensor::<CpuRuntime>::try_from_slice(&a_minus, &[2, 2], &device).unwrap();
 
             let l_plus = client.cholesky_decompose(&a_plus_t).unwrap().l;
             let l_minus = client.cholesky_decompose(&a_minus_t).unwrap().l;

@@ -179,11 +179,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let gate = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0, -1.0], &[3], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0, -1.0], &[3], &device).unwrap(),
             false,
         );
         let up = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap(),
             false,
         );
 
@@ -206,11 +206,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let gate = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32, -1.0], &[2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, -1.0], &[2], &device).unwrap(),
             true,
         );
         let up = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device).unwrap(),
             true,
         );
 
@@ -251,11 +251,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let gate = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap(),
             false,
         );
         let up = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap(),
             false,
         );
 

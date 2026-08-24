@@ -83,7 +83,8 @@ mod tests {
         };
 
         // x² - 3x + 2 = (x-1)(x-2), roots: 1, 2
-        let coeffs = Tensor::<CudaRuntime>::from_slice(&[2.0f32, -3.0, 1.0], &[3], &device);
+        let coeffs =
+            Tensor::<CudaRuntime>::try_from_slice(&[2.0f32, -3.0, 1.0], &[3], &device).unwrap();
 
         let roots = client.polyroots(&coeffs).unwrap();
 
@@ -119,8 +120,9 @@ mod tests {
         };
 
         // p(x) = 1 + 2x + 3x² → p(2) = 1 + 4 + 12 = 17
-        let coeffs = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-        let x = Tensor::<CudaRuntime>::from_slice(&[2.0f32], &[1], &device);
+        let coeffs =
+            Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let x = Tensor::<CudaRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
 
         let result = client.polyval(&coeffs, &x).unwrap();
         let data: Vec<f32> = result.to_vec();
@@ -136,8 +138,8 @@ mod tests {
         };
 
         // (1 + x) * (1 + x) = 1 + 2x + x² = [1, 2, 1]
-        let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
-        let b = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
+        let a = Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
+        let b = Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
 
         let c = client.polymul(&a, &b).unwrap();
         let data: Vec<f32> = c.to_vec();
@@ -156,8 +158,10 @@ mod tests {
         };
 
         // Roots: 1, 2 → (x-1)(x-2) = x² - 3x + 2 = [2, -3, 1]
-        let roots_real = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-        let roots_imag = Tensor::<CudaRuntime>::from_slice(&[0.0f32, 0.0], &[2], &device);
+        let roots_real =
+            Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let roots_imag =
+            Tensor::<CudaRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &device).unwrap();
 
         let coeffs = client.polyfromroots(&roots_real, &roots_imag).unwrap();
         let data: Vec<f32> = coeffs.to_vec();
@@ -176,7 +180,8 @@ mod tests {
         };
 
         // x² - 3x + 2, roots: 1, 2
-        let coeffs = Tensor::<CudaRuntime>::from_slice(&[2.0f64, -3.0, 1.0], &[3], &device);
+        let coeffs =
+            Tensor::<CudaRuntime>::try_from_slice(&[2.0f64, -3.0, 1.0], &[3], &device).unwrap();
 
         let roots = client.polyroots(&coeffs).unwrap();
 

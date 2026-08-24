@@ -121,7 +121,8 @@ mod tests {
         let factors =
             sparse_qr_simple_wgpu(&client, &a, &col_ptrs, &row_indices, &options).unwrap();
 
-        let b = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+        let b =
+            Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
         let x = sparse_qr_solve_wgpu(&client, &factors, &b).unwrap();
         let x_vals: Vec<f32> = x.to_vec();
 

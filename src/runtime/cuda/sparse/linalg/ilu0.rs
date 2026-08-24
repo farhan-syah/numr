@@ -266,14 +266,16 @@ mod tests {
         // A = [ 4 -1  0]
         //     [-1  4 -1]
         //     [ 0 -1  4]
-        let row_ptrs = Tensor::<CudaRuntime>::from_slice(&[0i64, 2, 5, 7], &[4], device);
+        let row_ptrs =
+            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 2, 5, 7], &[4], device).unwrap();
         let col_indices =
-            Tensor::<CudaRuntime>::from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device);
-        let values = Tensor::<CudaRuntime>::from_slice(
+            Tensor::<CudaRuntime>::try_from_slice(&[0i64, 1, 0, 1, 2, 1, 2], &[7], device).unwrap();
+        let values = Tensor::<CudaRuntime>::try_from_slice(
             &[4.0f32, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0],
             &[7],
             device,
-        );
+        )
+        .unwrap();
 
         let a = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");

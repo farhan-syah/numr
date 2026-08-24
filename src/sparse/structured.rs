@@ -223,8 +223,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // K=5 should fail
-        let vals = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device);
-        let meta = Tensor::<CpuRuntime>::from_slice(&[0u32], &[1, 1], &device);
+        let vals = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
+        let meta = Tensor::<CpuRuntime>::try_from_slice(&[0u32], &[1, 1], &device).unwrap();
         let result = Sparse24Tensor::new(vals, meta, [1, 5]);
         assert!(result.is_err());
     }

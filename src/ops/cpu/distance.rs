@@ -265,8 +265,10 @@ mod tests {
 
         // X = [[0, 0], [1, 1]]
         // Y = [[1, 0], [2, 2]]
-        let x = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 1.0, 1.0], &[2, 2], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, 2.0, 2.0], &[2, 2], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 1.0, 1.0], &[2, 2], &device)
+            .unwrap();
+        let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, 2.0, 2.0], &[2, 2], &device)
+            .unwrap();
 
         let dist = client.cdist(&x, &y, DistanceMetric::Euclidean).unwrap();
         assert_eq!(dist.shape(), &[2, 2]);
@@ -287,8 +289,12 @@ mod tests {
         let (device, client) = setup();
 
         // X = [[0, 0], [1, 0], [0, 1]] - 3 points
-        let x =
-            Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 1.0, 0.0, 0.0, 1.0], &[3, 2], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(
+            &[0.0f32, 0.0, 1.0, 0.0, 0.0, 1.0],
+            &[3, 2],
+            &device,
+        )
+        .unwrap();
 
         let dist = client.pdist(&x, DistanceMetric::Euclidean).unwrap();
         assert_eq!(dist.shape(), &[3]); // n*(n-1)/2 = 3
@@ -305,7 +311,8 @@ mod tests {
         let (device, client) = setup();
 
         // Create condensed form: [d(0,1), d(0,2), d(1,2)]
-        let condensed = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let condensed =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         // Convert to square
         let square = client.squareform(&condensed, 3).unwrap();
@@ -326,15 +333,15 @@ mod tests {
         let (device, client) = setup();
 
         // Same direction vectors have cosine distance 0
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[1, 2], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 0.0], &[1, 2], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[1, 2], &device).unwrap();
+        let y = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 0.0], &[1, 2], &device).unwrap();
 
         let dist = client.cdist(&x, &y, DistanceMetric::Cosine).unwrap();
         let data: Vec<f32> = dist.to_vec();
         assert!(data[0].abs() < 1e-5);
 
         // Orthogonal vectors have cosine distance 1
-        let y2 = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0], &[1, 2], &device);
+        let y2 = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0], &[1, 2], &device).unwrap();
         let dist2 = client.cdist(&x, &y2, DistanceMetric::Cosine).unwrap();
         let data2: Vec<f32> = dist2.to_vec();
         assert!((data2[0] - 1.0).abs() < 1e-5);
@@ -344,8 +351,10 @@ mod tests {
     fn test_cdist_manhattan() {
         let (device, client) = setup();
 
-        let x = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0], &[1, 3], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device);
+        let x =
+            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0], &[1, 3], &device).unwrap();
+        let y =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
 
         let dist = client.cdist(&x, &y, DistanceMetric::Manhattan).unwrap();
         let data: Vec<f32> = dist.to_vec();
@@ -356,8 +365,10 @@ mod tests {
     fn test_cdist_chebyshev() {
         let (device, client) = setup();
 
-        let x = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0], &[1, 3], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0], &[1, 3], &device);
+        let x =
+            Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0], &[1, 3], &device).unwrap();
+        let y =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0], &[1, 3], &device).unwrap();
 
         let dist = client.cdist(&x, &y, DistanceMetric::Chebyshev).unwrap();
         let data: Vec<f32> = dist.to_vec();
@@ -368,8 +379,8 @@ mod tests {
     fn test_error_on_non_2d() {
         let (device, client) = setup();
 
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
         let result = client.cdist(&x, &y, DistanceMetric::Euclidean);
         assert!(result.is_err());
@@ -379,8 +390,9 @@ mod tests {
     fn test_error_on_dimension_mismatch() {
         let (device, client) = setup();
 
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device);
-        let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device);
+        let x =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
+        let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
 
         let result = client.cdist(&x, &y, DistanceMetric::Euclidean);
         assert!(result.is_err());
@@ -390,7 +402,7 @@ mod tests {
     fn test_pdist_requires_at_least_2_points() {
         let (device, client) = setup();
 
-        let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 2], &device);
+        let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 2], &device).unwrap();
 
         let result = client.pdist(&x, DistanceMetric::Euclidean);
         assert!(result.is_err());

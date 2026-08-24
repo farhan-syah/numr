@@ -25,8 +25,10 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-        let b = Tensor::<CudaRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+        let a = Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
+            .unwrap();
+        let b = Tensor::<CudaRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device)
+            .unwrap();
 
         let c = client.add(&a, &b).unwrap();
 
@@ -43,8 +45,10 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-        let b = Tensor::<CudaRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+        let a = Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
+            .unwrap();
+        let b = Tensor::<CudaRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device)
+            .unwrap();
 
         let c = client.matmul(&a, &b).unwrap();
 
@@ -61,13 +65,18 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let a =
-            Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device);
-        let b = Tensor::<CudaRuntime>::from_slice(
+        let a = Tensor::<CudaRuntime>::try_from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[3, 2],
+            &device,
+        )
+        .unwrap();
+        let b = Tensor::<CudaRuntime>::try_from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
             &[2, 4],
             &device,
-        );
+        )
+        .unwrap();
 
         let c = client.matmul(&a, &b).unwrap();
 
@@ -89,7 +98,8 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let a = Tensor::<CudaRuntime>::from_slice(&[-1.0f32, 0.0, 1.0, -2.0], &[4], &device);
+        let a = Tensor::<CudaRuntime>::try_from_slice(&[-1.0f32, 0.0, 1.0, -2.0], &[4], &device)
+            .unwrap();
         let b = client.relu(&a).unwrap();
 
         let result: Vec<f32> = b.to_vec();
@@ -104,8 +114,12 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let a =
-            Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
+        let a = Tensor::<CudaRuntime>::try_from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 3],
+            &device,
+        )
+        .unwrap();
 
         let b = client.sum(&a, &[1], false).unwrap();
 
@@ -122,7 +136,9 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let a = Tensor::<CudaRuntime>::from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device);
+        let a =
+            Tensor::<CudaRuntime>::try_from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)
+                .unwrap();
         let b = client.silu(&a).unwrap();
 
         let result: Vec<f32> = b.to_vec();
@@ -143,7 +159,9 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let a = Tensor::<CudaRuntime>::from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device);
+        let a =
+            Tensor::<CudaRuntime>::try_from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)
+                .unwrap();
         let b = client.gelu(&a).unwrap();
 
         let result: Vec<f32> = b.to_vec();
@@ -164,12 +182,14 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // Input: 2 rows, 4 features each
-        let input = Tensor::<CudaRuntime>::from_slice(
+        let input = Tensor::<CudaRuntime>::try_from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 2.0, 4.0, 6.0, 8.0],
             &[2, 4],
             &device,
-        );
-        let weight = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device);
+        )
+        .unwrap();
+        let weight =
+            Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
 
         let out = client.rms_norm(&input, &weight, 1e-5).unwrap();
         let result: Vec<f32> = out.to_vec();
@@ -195,13 +215,16 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // Input: 2 rows, 4 features each
-        let input = Tensor::<CudaRuntime>::from_slice(
+        let input = Tensor::<CudaRuntime>::try_from_slice(
             &[1.0f32, 2.0, 3.0, 4.0, 2.0, 4.0, 6.0, 8.0],
             &[2, 4],
             &device,
-        );
-        let weight = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device);
-        let bias = Tensor::<CudaRuntime>::from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device);
+        )
+        .unwrap();
+        let weight =
+            Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
+        let bias =
+            Tensor::<CudaRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap();
 
         let out = client.layer_norm(&input, &weight, &bias, 1e-5).unwrap();
         let result: Vec<f32> = out.to_vec();
@@ -233,8 +256,12 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // 2D tensor: [[1, 5, 3], [4, 2, 6]]
-        let a =
-            Tensor::<CudaRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device);
+        let a = Tensor::<CudaRuntime>::try_from_slice(
+            &[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0],
+            &[2, 3],
+            &device,
+        )
+        .unwrap();
 
         // argmax along dim=1 (find max index in each row)
         let out = client.argmax(&a, 1, false).unwrap();
@@ -264,8 +291,12 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // 2D tensor: [[1, 5, 3], [4, 2, 6]]
-        let a =
-            Tensor::<CudaRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device);
+        let a = Tensor::<CudaRuntime>::try_from_slice(
+            &[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0],
+            &[2, 3],
+            &device,
+        )
+        .unwrap();
 
         // argmin along dim=1 (find min index in each row)
         let out = client.argmin(&a, 1, false).unwrap();

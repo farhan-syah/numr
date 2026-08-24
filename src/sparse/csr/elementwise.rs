@@ -458,17 +458,21 @@ mod tests {
         // Create first matrix (2x2):
         // [1.0, 0.0]
         // [0.0, 2.0]
-        let row_ptrs_a = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2], &[3], &device);
-        let col_indices_a = Tensor::<CpuRuntime>::from_slice(&[0i64, 1], &[2], &device);
-        let values_a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
+        let row_ptrs_a =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let col_indices_a =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1], &[2], &device).unwrap();
+        let values_a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
         let a = CsrData::new(row_ptrs_a, col_indices_a, values_a, [2, 2]).unwrap();
 
         // Create second matrix (2x2):
         // [0.0, 3.0]
         // [4.0, 0.0]
-        let row_ptrs_b = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2], &[3], &device);
-        let col_indices_b = Tensor::<CpuRuntime>::from_slice(&[1i64, 0], &[2], &device);
-        let values_b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0], &[2], &device);
+        let row_ptrs_b =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2], &[3], &device).unwrap();
+        let col_indices_b =
+            Tensor::<CpuRuntime>::try_from_slice(&[1i64, 0], &[2], &device).unwrap();
+        let values_b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2], &device).unwrap();
         let b = CsrData::new(row_ptrs_b, col_indices_b, values_b, [2, 2]).unwrap();
 
         // Add: should get [1, 3], [4, 2]
@@ -487,17 +491,23 @@ mod tests {
         // Create first matrix (2x2):
         // [2.0, 3.0]
         // [0.0, 5.0]
-        let row_ptrs_a = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 3], &[3], &device);
-        let col_indices_a = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 1], &[3], &device);
-        let values_a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0, 5.0], &[3], &device);
+        let row_ptrs_a =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 3], &[3], &device).unwrap();
+        let col_indices_a =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 1], &[3], &device).unwrap();
+        let values_a =
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0, 5.0], &[3], &device).unwrap();
         let a = CsrData::new(row_ptrs_a, col_indices_a, values_a, [2, 2]).unwrap();
 
         // Create second matrix (2x2):
         // [4.0, 0.0]
         // [6.0, 7.0]
-        let row_ptrs_b = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 3], &[3], &device);
-        let col_indices_b = Tensor::<CpuRuntime>::from_slice(&[0i64, 0, 1], &[3], &device);
-        let values_b = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 6.0, 7.0], &[3], &device);
+        let row_ptrs_b =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 3], &[3], &device).unwrap();
+        let col_indices_b =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 0, 1], &[3], &device).unwrap();
+        let values_b =
+            Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 6.0, 7.0], &[3], &device).unwrap();
         let b = CsrData::new(row_ptrs_b, col_indices_b, values_b, [2, 2]).unwrap();
 
         // Mul (Hadamard): only where both non-zero

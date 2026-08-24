@@ -202,11 +202,14 @@ mod tests {
     fn test_layer_norm_backward_uniform_grad() {
         let device = CpuDevice::new();
 
-        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device);
-        let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device);
+        let input =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[1, 4], &device)
+                .unwrap();
+        let weight =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
         let eps = 1e-5f32;
 
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1, 4], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1, 4], DType::F32, &device).unwrap();
 
         let backward = LayerNormBackward::<CpuRuntime>::new(
             input.id(),
@@ -236,10 +239,14 @@ mod tests {
     fn test_layer_norm_backward_bias_grad() {
         let device = CpuDevice::new();
 
-        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-        let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
+        let input =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
+                .unwrap();
+        let weight = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let grad_out =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
+                .unwrap();
 
         let backward = LayerNormBackward::<CpuRuntime>::new(
             input.id(),

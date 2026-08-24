@@ -245,7 +245,8 @@ mod tests {
         use crate::tensor::Tensor;
 
         let device = CpuDevice::new();
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)
+            .unwrap();
         assert!(a.is_contiguous());
         let c = ensure_contiguous(&a).unwrap();
         assert!(c.is_contiguous());

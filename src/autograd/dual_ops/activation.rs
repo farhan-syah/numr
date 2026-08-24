@@ -67,8 +67,8 @@ mod tests {
 
         // At x=2 (positive): relu(2)=2, relu'(2)=1
         // tangent = 1 * v = 1 * 1.0 = 1.0
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_relu(&x, &client).unwrap();
@@ -83,8 +83,8 @@ mod tests {
 
         // At x=-1 (negative): relu(-1)=0, relu'(-1)=0
         // tangent = 0 * v = 0
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[-1.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[-1.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_relu(&x, &client).unwrap();
@@ -98,8 +98,10 @@ mod tests {
         let (device, client) = setup();
 
         // Mixed: [-1, 0, 2] -> relu = [0, 0, 2], gradient mask = [0, 0, 1]
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[-1.0f32, 0.0, 2.0], &[3], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0], &[3], &device);
+        let x_primal =
+            Tensor::<CpuRuntime>::try_from_slice(&[-1.0f32, 0.0, 2.0], &[3], &device).unwrap();
+        let x_tangent =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0], &[3], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_relu(&x, &client).unwrap();
@@ -114,8 +116,8 @@ mod tests {
 
         // At x=0: sigmoid(0)=0.5, sigmoid'(0)=0.5*(1-0.5)=0.25
         // tangent = 0.25 * v = 0.25 * 1.0 = 0.25
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_sigmoid(&x, &client).unwrap();
@@ -129,8 +131,8 @@ mod tests {
         let (device, client) = setup();
 
         // At large x: sigmoid(x) -> 1, sigmoid'(x) -> 0
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[10.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_sigmoid(&x, &client).unwrap();
@@ -146,8 +148,8 @@ mod tests {
         let (device, client) = setup();
 
         // At large negative x: sigmoid(x) -> 0, sigmoid'(x) -> 0
-        let x_primal = Tensor::<CpuRuntime>::from_slice(&[-10.0f32], &[1], &device);
-        let x_tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let x_primal = Tensor::<CpuRuntime>::try_from_slice(&[-10.0f32], &[1], &device).unwrap();
+        let x_tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let x = DualTensor::with_tangent(x_primal, x_tangent);
 
         let y = dual_sigmoid(&x, &client).unwrap();

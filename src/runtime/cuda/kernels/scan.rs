@@ -603,7 +603,8 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // Input: [3, 1, 4, 1, 5]
-        let input = Tensor::<CudaRuntime>::from_slice(&[3i32, 1, 4, 1, 5], &[5], &device);
+        let input =
+            Tensor::<CudaRuntime>::try_from_slice(&[3i32, 1, 4, 1, 5], &[5], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -633,7 +634,7 @@ mod tests {
 
         // Input: 1024 elements, all ones
         let input_vec = vec![1i32; 1024];
-        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[1024], &device);
+        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[1024], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -668,7 +669,7 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let input = Tensor::<CudaRuntime>::from_slice(&[0i32, 0, 0, 0], &[4], &device);
+        let input = Tensor::<CudaRuntime>::try_from_slice(&[0i32, 0, 0, 0], &[4], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -695,7 +696,7 @@ mod tests {
         let device = CudaDevice::new(0);
         let client = CudaRuntime::default_client(&device);
 
-        let input = Tensor::<CudaRuntime>::from_slice(&[42i32], &[1], &device);
+        let input = Tensor::<CudaRuntime>::try_from_slice(&[42i32], &[1], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -726,7 +727,7 @@ mod tests {
 
         let n = 500_000;
         let input_vec = vec![1i32; n];
-        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[n], &device);
+        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[n], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -765,7 +766,7 @@ mod tests {
         // Just above the boundary to trigger recursive path
         let n = 262_145;
         let input_vec = vec![1i32; n];
-        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[n], &device);
+        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[n], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i32_gpu(
@@ -798,7 +799,7 @@ mod tests {
         let n = 100_000;
         // Use large values to test i64 arithmetic
         let input_vec = vec![50_000i64; n];
-        let input = Tensor::<CudaRuntime>::from_slice(&input_vec, &[n], &device);
+        let input = Tensor::<CudaRuntime>::try_from_slice(&input_vec, &[n], &device).unwrap();
 
         let (output, total) = unsafe {
             exclusive_scan_i64_gpu(

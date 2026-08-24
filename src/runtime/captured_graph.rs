@@ -198,7 +198,7 @@ mod tests {
         use crate::tensor::Tensor;
 
         let device = CpuRuntime::default_device();
-        let a = Tensor::<CpuRuntime>::zeros(&[4], crate::dtype::DType::F32, &device);
+        let a = Tensor::<CpuRuntime>::try_zeros(&[4], crate::dtype::DType::F32, &device).unwrap();
         let b = a.clone();
         let c = a.clone();
 

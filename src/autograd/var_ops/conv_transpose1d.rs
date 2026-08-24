@@ -231,12 +231,12 @@ mod tests {
     fn forward_upsamples_by_stride() {
         let (device, client) = setup();
         let input = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[1, 1, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[1, 1, 2], &device).unwrap(),
             false,
         );
         // weight [c_in=1, c_out=1, k=2]
         let weight = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32, 10.0], &[1, 1, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 10.0], &[1, 1, 2], &device).unwrap(),
             false,
         );
         let out = var_conv_transpose1d(
@@ -261,15 +261,15 @@ mod tests {
     fn bias_is_added_per_output_channel() {
         let (device, client) = setup();
         let input = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1, 1, 1], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1, 1, 1], &device).unwrap(),
             false,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[1, 2, 1], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[1, 2, 1], &device).unwrap(),
             false,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[0.5f32, -1.0], &[2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, -1.0], &[2], &device).unwrap(),
             false,
         );
         let out = var_conv_transpose1d(
@@ -294,15 +294,16 @@ mod tests {
     fn backward_reaches_input_weight_and_bias() {
         let (device, client) = setup();
         let input = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[1.0f32, -2.0, 0.5], &[1, 1, 3], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, -2.0, 0.5], &[1, 1, 3], &device)
+                .unwrap(),
             true,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[0.5f32, -1.5], &[1, 1, 2], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[0.5f32, -1.5], &[1, 1, 2], &device).unwrap(),
             true,
         );
         let bias = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&[0.25f32], &[1], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&[0.25f32], &[1], &device).unwrap(),
             true,
         );
 
@@ -343,11 +344,11 @@ mod tests {
     fn same_padding_gives_exact_stride_upsampling() {
         let (device, client) = setup();
         let input = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&vec![0.5f32; 7], &[1, 1, 7], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&vec![0.5f32; 7], &[1, 1, 7], &device).unwrap(),
             false,
         );
         let weight = Var::new(
-            Tensor::<CpuRuntime>::from_slice(&vec![0.1f32; 12], &[1, 1, 12], &device),
+            Tensor::<CpuRuntime>::try_from_slice(&vec![0.1f32; 12], &[1, 1, 12], &device).unwrap(),
             false,
         );
         let out = var_conv_transpose1d(

@@ -288,7 +288,8 @@ mod tests {
         // [0, 0, 3]
         // [4, 5, 0]
         let original_data = vec![1.0f32, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0, 0.0];
-        let original = Tensor::<CpuRuntime>::from_slice(&original_data, &[3, 3], &device);
+        let original =
+            Tensor::<CpuRuntime>::try_from_slice(&original_data, &[3, 3], &device).unwrap();
 
         // Dense -> Sparse -> Dense
         let sparse = SparseTensor::from_dense(&client, &original, 1e-10).unwrap();

@@ -177,10 +177,12 @@ mod tests {
         }
 
         let row_ptrs_tensor =
-            Tensor::<CpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], device);
+            Tensor::<CpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
         let col_indices_tensor =
-            Tensor::<CpuRuntime>::from_slice(&col_indices, &[col_indices.len()], device);
-        let values_tensor = Tensor::<CpuRuntime>::from_slice(&values, &[values.len()], device);
+            Tensor::<CpuRuntime>::try_from_slice(&col_indices, &[col_indices.len()], device)
+                .unwrap();
+        let values_tensor =
+            Tensor::<CpuRuntime>::try_from_slice(&values, &[values.len()], device).unwrap();
 
         CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, [n, n])
             .expect("CSR creation should succeed")
@@ -193,7 +195,8 @@ mod tests {
 
         let n = 5;
         let a = create_1d_laplacian(n, device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 0.0, 1.0], &[n], device);
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 0.0, 1.0], &[n], device)
+            .unwrap();
 
         let options = GmresOptions {
             max_iter: 100,
@@ -236,7 +239,7 @@ mod tests {
         let a = create_1d_laplacian(n, device);
 
         let b_data: Vec<f64> = (0..n).map(|i| (i as f64).sin()).collect();
-        let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device);
+        let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
 
         let options_no_precond = GmresOptions {
             max_iter: 100,
@@ -280,13 +283,16 @@ mod tests {
         let device = &client.device;
 
         let n = 5;
-        let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3, 4, 5], &[n + 1], device);
-        let col_indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3, 4], &[n], device);
-        let values = Tensor::<CpuRuntime>::from_slice(&[1.0f64; 5], &[n], device);
+        let row_ptrs =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3, 4, 5], &[n + 1], device).unwrap();
+        let col_indices =
+            Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3, 4], &[n], device).unwrap();
+        let values = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64; 5], &[n], device).unwrap();
         let a = CsrData::new(row_ptrs, col_indices, values, [n, n])
             .expect("CSR creation should succeed");
 
-        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[n], device);
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[n], device)
+            .unwrap();
 
         let options = GmresOptions::default();
         let result = client
@@ -320,7 +326,8 @@ mod tests {
 
         let n = 5;
         let a = create_1d_laplacian(n, device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 0.0, 1.0], &[n], device);
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 0.0, 1.0], &[n], device)
+            .unwrap();
 
         let options = crate::algorithm::iterative::BiCgStabOptions {
             max_iter: 100,
@@ -355,7 +362,7 @@ mod tests {
 
         let n = 5;
         let a = create_1d_laplacian(n, device);
-        let b = Tensor::<CpuRuntime>::zeros(&[n], crate::dtype::DType::F64, device);
+        let b = Tensor::<CpuRuntime>::try_zeros(&[n], crate::dtype::DType::F64, device).unwrap();
 
         let options = GmresOptions::default();
         let result = client
@@ -378,7 +385,8 @@ mod tests {
 
         let n = 5;
         let a = create_1d_laplacian(n, device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 0.0, 1.0], &[n], device);
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 0.0, 1.0], &[n], device)
+            .unwrap();
 
         let result1 = client
             .gmres(&a, &b, None, GmresOptions::default())

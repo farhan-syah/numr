@@ -308,8 +308,12 @@ mod tests {
         let client = CpuClient::new(device.clone());
 
         // Create sparse matrices from dense
-        let dense_a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0, 0.0, 5.0], &[2, 2], &device);
-        let dense_b = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 0.0, 6.0, 7.0], &[2, 2], &device);
+        let dense_a =
+            Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0, 0.0, 5.0], &[2, 2], &device)
+                .unwrap();
+        let dense_b =
+            Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 0.0, 6.0, 7.0], &[2, 2], &device)
+                .unwrap();
 
         let a = SparseTensor::from_dense(&client, &dense_a, 1e-10).unwrap();
         let b = SparseTensor::from_dense(&client, &dense_b, 1e-10).unwrap();

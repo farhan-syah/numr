@@ -564,10 +564,10 @@ mod tests {
     fn test_add_backward_same_shape() {
         let device = CpuDevice::new();
 
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0], &[2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
+        let grad_out = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
 
         let backward =
             AddBackward::<CpuRuntime>::new(a.id(), b.id(), a.shape(), b.shape(), None, None);
@@ -589,10 +589,10 @@ mod tests {
         // z = a * b where a = 2, b = 3
         // dz/da = b = 3
         // dz/db = a = 2
-        let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[1], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward =
             MulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
@@ -613,10 +613,10 @@ mod tests {
         // z = 3
         // dz/da = 1/b = 0.5
         // dz/db = -a/b² = -6/4 = -1.5
-        let a = Tensor::<CpuRuntime>::from_slice(&[6.0f32], &[1], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[6.0f32], &[1], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward =
             DivBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);

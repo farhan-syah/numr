@@ -557,9 +557,11 @@ mod tests {
         let client = CudaRuntime::default_client(&device);
 
         // Inputs and output allocated OUTSIDE the closure.
-        let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-        let b = Tensor::<CudaRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-        let c = Tensor::<CudaRuntime>::zeros(&[4], DType::F32, &device);
+        let a =
+            Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+        let b = Tensor::<CudaRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device)
+            .unwrap();
+        let c = Tensor::<CudaRuntime>::try_zeros(&[4], DType::F32, &device).unwrap();
 
         // Capture: c = a + b (destination-passing, no allocation inside).
         let captured = CudaRuntime::capture_graph_into(&client, &[&a, &b], &[&c], |cc| {
@@ -587,7 +589,7 @@ mod tests {
         // Drop the captured graph and confirm a subsequent normal allocation
         // does not hit CUDA_ERROR_ILLEGAL_ADDRESS (clean teardown).
         drop(captured);
-        let fresh = Tensor::<CudaRuntime>::zeros(&[4], DType::F32, &device);
+        let fresh = Tensor::<CudaRuntime>::try_zeros(&[4], DType::F32, &device).unwrap();
         client.synchronize();
         assert_eq!(fresh.to_vec::<f32>(), vec![0.0, 0.0, 0.0, 0.0]);
     }

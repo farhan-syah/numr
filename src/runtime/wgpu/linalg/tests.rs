@@ -26,7 +26,8 @@ mod tests {
 
         // 2x2 matrix: [[1, 2], [3, 4]]
         // trace = 1 + 4 = 5
-        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device)
+            .unwrap();
 
         let t = client.trace(&a).unwrap();
         let result: Vec<f32> = t.to_vec();
@@ -45,8 +46,12 @@ mod tests {
         let device = client.device();
 
         // 2x3 matrix
-        let a =
-            Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0],
+            &[2, 3],
+            device,
+        )
+        .unwrap();
 
         let d = client.diag(&a).unwrap();
         let result: Vec<f32> = d.to_vec();
@@ -66,7 +71,7 @@ mod tests {
         let client = create_client();
         let device = client.device();
 
-        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
 
         let m = client.diagflat(&a).unwrap();
         let result: Vec<f32> = m.to_vec();
@@ -90,7 +95,8 @@ mod tests {
         let device = client.device();
 
         // 2x2 matrix: [[4, 3], [6, 3]]
-        let a = Tensor::<WgpuRuntime>::from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[4.0f32, 3.0, 6.0, 3.0], &[2, 2], device)
+            .unwrap();
 
         let lu = client.lu_decompose(&a).unwrap();
 
@@ -109,7 +115,8 @@ mod tests {
         let device = client.device();
 
         // Symmetric positive definite: [[4, 2], [2, 5]]
-        let a = Tensor::<WgpuRuntime>::from_slice(&[4.0f32, 2.0, 2.0, 5.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[4.0f32, 2.0, 2.0, 5.0], &[2, 2], device)
+            .unwrap();
 
         let chol = client.cholesky_decompose(&a).unwrap();
 
@@ -132,7 +139,8 @@ mod tests {
 
         // 2x2 matrix: [[1, 2], [3, 4]]
         // det = 1*4 - 2*3 = -2
-        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device)
+            .unwrap();
 
         let d = client.det(&a).unwrap();
         let result: Vec<f32> = d.to_vec();
@@ -152,8 +160,9 @@ mod tests {
 
         // Solve [[2, 1], [1, 2]] @ x = [3, 3]
         // Solution: x = [1, 1]
-        let a = Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device);
-        let b = Tensor::<WgpuRuntime>::from_slice(&[3.0f32, 3.0], &[2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 1.0, 1.0, 2.0], &[2, 2], device)
+            .unwrap();
+        let b = Tensor::<WgpuRuntime>::try_from_slice(&[3.0f32, 3.0], &[2], device).unwrap();
 
         let x = client.solve(&a, &b).unwrap();
         let result: Vec<f32> = x.to_vec();
@@ -174,7 +183,8 @@ mod tests {
 
         // Test 2x2 matrix: [[4, 7], [2, 6]]
         // Inverse: [[0.6, -0.7], [-0.2, 0.4]]
-        let a = Tensor::<WgpuRuntime>::from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[4.0f32, 7.0, 2.0, 6.0], &[2, 2], device)
+            .unwrap();
 
         let inv = client.inverse(&a).unwrap();
         let result: Vec<f32> = inv.to_vec();
@@ -198,7 +208,8 @@ mod tests {
         let device = client.device();
 
         // Full rank 2x2 matrix
-        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device)
+            .unwrap();
 
         let rank = client.matrix_rank(&a, None).unwrap();
         let result: Vec<i64> = rank.to_vec();
@@ -217,7 +228,8 @@ mod tests {
         let device = client.device();
 
         // Rank-deficient 2x2 matrix (rows are linearly dependent)
-        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 4.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 4.0], &[2, 2], device)
+            .unwrap();
 
         let rank = client.matrix_rank(&a, None).unwrap();
         let result: Vec<i64> = rank.to_vec();
@@ -236,7 +248,8 @@ mod tests {
         let device = client.device();
 
         // Test QR: A = Q @ R
-        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device)
+            .unwrap();
 
         let qr = client.qr_decompose(&a).unwrap();
 
@@ -269,9 +282,13 @@ mod tests {
 
         // Overdetermined system: A is 3x2, b is 3x1
         // A = [[1, 1], [1, 2], [1, 3]], b = [1, 2, 3]
-        let a =
-            Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 2.0, 1.0, 3.0], &[3, 2], device);
-        let b = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(
+            &[1.0f32, 1.0, 1.0, 2.0, 1.0, 3.0],
+            &[3, 2],
+            device,
+        )
+        .unwrap();
+        let b = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], device).unwrap();
 
         let x = client.lstsq(&a, &b).unwrap();
         assert_eq!(x.shape(), &[2]);
@@ -293,8 +310,10 @@ mod tests {
         let device = client.device();
 
         // A = [[1, 2], [3, 4]], B = [[0, 5], [6, 7]]
-        let a = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device);
-        let b = Tensor::<WgpuRuntime>::from_slice(&[0.0f32, 5.0, 6.0, 7.0], &[2, 2], device);
+        let a = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], device)
+            .unwrap();
+        let b = Tensor::<WgpuRuntime>::try_from_slice(&[0.0f32, 5.0, 6.0, 7.0], &[2, 2], device)
+            .unwrap();
 
         let kron = client.kron(&a, &b).unwrap();
         assert_eq!(kron.shape(), &[4, 4]);
@@ -336,7 +355,8 @@ mod tests {
         let device = client.device();
 
         // I₂ ⊗ I₂ = I₄
-        let i2 = Tensor::<WgpuRuntime>::from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], device);
+        let i2 = Tensor::<WgpuRuntime>::try_from_slice(&[1.0f32, 0.0, 0.0, 1.0], &[2, 2], device)
+            .unwrap();
 
         let kron = client.kron(&i2, &i2).unwrap();
         assert_eq!(kron.shape(), &[4, 4]);

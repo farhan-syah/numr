@@ -65,8 +65,8 @@ fn test_rsf2csf_1x1_real_eigenvalue() {
     let client = create_client();
     let device = client.device();
 
-    let t = Tensor::<CpuRuntime>::from_slice(&[3.0f64], &[1, 1], device);
-    let z = Tensor::<CpuRuntime>::from_slice(&[1.0f64], &[1, 1], device);
+    let t = Tensor::<CpuRuntime>::try_from_slice(&[3.0f64], &[1, 1], device).unwrap();
+    let z = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64], &[1, 1], device).unwrap();
     let schur = SchurDecomposition { z, t };
 
     let result = client.rsf2csf(&schur).unwrap();
@@ -84,8 +84,10 @@ fn test_rsf2csf_2x2_complex_block() {
     let device = client.device();
 
     // 2x2 block with complex eigenvalues: eigenvalues are 2 ± i
-    let t = Tensor::<CpuRuntime>::from_slice(&[2.0f64, -1.0, 1.0, 2.0], &[2, 2], device);
-    let z = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], device);
+    let t =
+        Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, -1.0, 1.0, 2.0], &[2, 2], device).unwrap();
+    let z =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], device).unwrap();
     let schur = SchurDecomposition { z, t };
 
     let result = client.rsf2csf(&schur).unwrap();
@@ -109,8 +111,8 @@ fn test_rsf2csf_empty_matrix() {
     let client = create_client();
     let device = client.device();
 
-    let t = Tensor::<CpuRuntime>::from_slice(&[] as &[f64], &[0, 0], device);
-    let z = Tensor::<CpuRuntime>::from_slice(&[] as &[f64], &[0, 0], device);
+    let t = Tensor::<CpuRuntime>::try_from_slice(&[] as &[f64], &[0, 0], device).unwrap();
+    let z = Tensor::<CpuRuntime>::try_from_slice(&[] as &[f64], &[0, 0], device).unwrap();
     let schur = SchurDecomposition { z, t };
 
     let result = client.rsf2csf(&schur).unwrap();
@@ -126,8 +128,10 @@ fn test_qz_identity_matrices() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], device).unwrap();
+    let b =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 1.0], &[2, 2], device).unwrap();
 
     let result = client.qz_decompose(&a, &b).unwrap();
 
@@ -145,8 +149,10 @@ fn test_qz_diagonal_matrices() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f64, 0.0, 0.0, 6.0], &[2, 2], device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 0.0, 0.0, 2.0], &[2, 2], device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 0.0, 0.0, 6.0], &[2, 2], device).unwrap();
+    let b =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 0.0, 0.0, 2.0], &[2, 2], device).unwrap();
 
     let result = client.qz_decompose(&a, &b).unwrap();
 
@@ -164,8 +170,10 @@ fn test_qz_orthogonality() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
+    let b =
+        Tensor::<CpuRuntime>::try_from_slice(&[5.0f64, 6.0, 7.0, 8.0], &[2, 2], device).unwrap();
 
     let result = client.qz_decompose(&a, &b).unwrap();
 
@@ -181,8 +189,8 @@ fn test_qz_empty_matrix() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[] as &[f64], &[0, 0], device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[] as &[f64], &[0, 0], device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[] as &[f64], &[0, 0], device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[] as &[f64], &[0, 0], device).unwrap();
 
     let result = client.qz_decompose(&a, &b).unwrap();
     assert_eq!(result.s.shape(), &[0, 0]);
@@ -207,17 +215,17 @@ fn test_qz_t_upper_triangular() {
 
     // 3×3 non-trivial matrices
     #[rustfmt::skip]
-    let a = Tensor::<CpuRuntime>::from_slice(
+    let a = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f64, 2.0, 3.0,
           4.0, 5.0, 6.0,
           7.0, 8.0, 10.0],
-        &[3, 3], device);
+        &[3, 3], device).unwrap();
     #[rustfmt::skip]
-    let b = Tensor::<CpuRuntime>::from_slice(
+    let b = Tensor::<CpuRuntime>::try_from_slice(
         &[2.0f64, 1.0, 0.0,
           1.0, 3.0, 1.0,
           0.0, 1.0, 2.0],
-        &[3, 3], device);
+        &[3, 3], device).unwrap();
 
     let result = client.qz_decompose(&a, &b).unwrap();
     let t_data: Vec<f64> = result.t.to_vec();
@@ -242,8 +250,8 @@ fn test_qz_factorization_identity() {
                   1.0, 3.0, 1.0,
                   0.0, 1.0, 2.0];
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[3, 3], device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[3, 3], device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[3, 3], device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[3, 3], device).unwrap();
 
     let result = client.qz_decompose(&a, &b).unwrap();
     let q_vec: Vec<f64> = result.q.to_vec();
@@ -297,21 +305,21 @@ fn test_qz_5x5_upper_triangular_t() {
 
     // 5×5 test with a mix of real and potentially complex eigenvalues
     #[rustfmt::skip]
-    let a = Tensor::<CpuRuntime>::from_slice(
+    let a = Tensor::<CpuRuntime>::try_from_slice(
         &[4.0f64, 1.0, 2.0, 0.0, 1.0,
           1.0, 3.0, 1.0, 1.0, 0.0,
           2.0, 1.0, 5.0, 2.0, 1.0,
           0.0, 1.0, 2.0, 6.0, 3.0,
           1.0, 0.0, 1.0, 3.0, 7.0],
-        &[5, 5], device);
+        &[5, 5], device).unwrap();
     #[rustfmt::skip]
-    let b = Tensor::<CpuRuntime>::from_slice(
+    let b = Tensor::<CpuRuntime>::try_from_slice(
         &[2.0f64, 0.5, 0.0, 0.0, 0.0,
           0.5, 3.0, 0.5, 0.0, 0.0,
           0.0, 0.5, 2.0, 0.5, 0.0,
           0.0, 0.0, 0.5, 3.0, 0.5,
           0.0, 0.0, 0.0, 0.5, 2.0],
-        &[5, 5], device);
+        &[5, 5], device).unwrap();
 
     let result = client.qz_decompose(&a, &b).unwrap();
     let t_data: Vec<f64> = result.t.to_vec();
@@ -369,7 +377,7 @@ fn test_polar_orthogonal_input() {
     let angle = std::f64::consts::PI / 4.0;
     let c = angle.cos();
     let s = angle.sin();
-    let a = Tensor::<CpuRuntime>::from_slice(&[c, -s, s, c], &[2, 2], device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[c, -s, s, c], &[2, 2], device).unwrap();
 
     let result = client.polar_decompose(&a).unwrap();
 
@@ -389,7 +397,8 @@ fn test_polar_symmetric_input() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[2.0f64, 1.0, 1.0, 2.0], &[2, 2], device).unwrap();
 
     let result = client.polar_decompose(&a).unwrap();
 
@@ -406,7 +415,7 @@ fn test_polar_reconstruction() {
     let device = client.device();
 
     let a_data = [1.0f64, 2.0, 3.0, 4.0];
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[2, 2], device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[2, 2], device).unwrap();
 
     let result = client.polar_decompose(&a).unwrap();
 
@@ -425,7 +434,8 @@ fn test_polar_p_symmetric() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[2, 2], device).unwrap();
 
     let result = client.polar_decompose(&a).unwrap();
     let p: Vec<f64> = result.p.to_vec();
@@ -438,7 +448,7 @@ fn test_polar_empty_matrix() {
     let client = create_client();
     let device = client.device();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[] as &[f64], &[0, 0], device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[] as &[f64], &[0, 0], device).unwrap();
 
     let result = client.polar_decompose(&a).unwrap();
     assert_eq!(result.u.shape(), &[0, 0]);

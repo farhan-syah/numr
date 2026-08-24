@@ -605,14 +605,18 @@ mod tests {
         // L = [2 0 0]
         //     [1 3 0]
         //     [0 2 4]
-        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 3, 5], &[4], device);
-        let col_indices = Tensor::<WgpuRuntime>::from_slice(&[0i64, 0, 1, 1, 2], &[5], device);
-        let values = Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device);
+        let row_ptrs =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 1, 3, 5], &[4], device).unwrap();
+        let col_indices =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 0, 1, 1, 2], &[5], device).unwrap();
+        let values =
+            Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device)
+                .unwrap();
 
         let l = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");
 
-        let b = Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 4.0, 8.0], &[3], device);
+        let b = Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 4.0, 8.0], &[3], device).unwrap();
 
         let x = client
             .sparse_solve_triangular(&l, &b, true, false)
@@ -632,14 +636,18 @@ mod tests {
         // U = [2 1 0]
         //     [0 3 2]
         //     [0 0 4]
-        let row_ptrs = Tensor::<WgpuRuntime>::from_slice(&[0i64, 2, 4, 5], &[4], device);
-        let col_indices = Tensor::<WgpuRuntime>::from_slice(&[0i64, 1, 1, 2, 2], &[5], device);
-        let values = Tensor::<WgpuRuntime>::from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device);
+        let row_ptrs =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 2, 4, 5], &[4], device).unwrap();
+        let col_indices =
+            Tensor::<WgpuRuntime>::try_from_slice(&[0i64, 1, 1, 2, 2], &[5], device).unwrap();
+        let values =
+            Tensor::<WgpuRuntime>::try_from_slice(&[2.0f32, 1.0, 3.0, 2.0, 4.0], &[5], device)
+                .unwrap();
 
         let u = CsrData::new(row_ptrs, col_indices, values, [3, 3])
             .expect("CSR creation should succeed");
 
-        let b = Tensor::<WgpuRuntime>::from_slice(&[5.0f32, 7.0, 8.0], &[3], device);
+        let b = Tensor::<WgpuRuntime>::try_from_slice(&[5.0f32, 7.0, 8.0], &[3], device).unwrap();
 
         let x = client
             .sparse_solve_triangular(&u, &b, false, false)

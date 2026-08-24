@@ -611,8 +611,9 @@ mod tests {
         let device = CpuDevice::new();
 
         // Input with positive values
-        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
+        let input =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
 
         let backward = ReluBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -629,8 +630,9 @@ mod tests {
         let device = CpuDevice::new();
 
         // Input with mixed values
-        let input = Tensor::<CpuRuntime>::from_slice(&[-1.0f32, 0.0, 2.0], &[3], &device);
-        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
+        let input =
+            Tensor::<CpuRuntime>::try_from_slice(&[-1.0f32, 0.0, 2.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
 
         let backward = ReluBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -651,10 +653,10 @@ mod tests {
 
         // sigmoid(0) = 0.5
         // sigmoid'(0) = 0.5 * (1 - 0.5) = 0.25
-        let input = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
         let output = client.sigmoid(&input).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SigmoidBackward::<CpuRuntime>::new(input.id(), output, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -670,10 +672,10 @@ mod tests {
 
         // silu(0) = 0 * sigmoid(0) = 0 * 0.5 = 0
         // silu'(0) = sigmoid(0) * (1 + 0 * (1 - sigmoid(0))) = 0.5 * 1 = 0.5
-        let input = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
         let output = client.silu(&input).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -690,10 +692,10 @@ mod tests {
         // silu(1) = 1 * sigmoid(1) ≈ 0.7311
         // silu'(1) = sigmoid(1) * (1 + 1 * (1 - sigmoid(1)))
         //          ≈ 0.7311 * (1 + 1 * 0.2689) ≈ 0.7311 * 1.2689 ≈ 0.9277
-        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device).unwrap();
         let output = client.silu(&input).unwrap();
 
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -712,9 +714,9 @@ mod tests {
         // Shape [2, 3] — verifies element-wise gradient correctness on batched tensors.
         // silu'(x) = sigmoid(x) * (1 + x - silu(x))
         let data = [-1.0f32, 0.0, 1.0, 2.0, -2.0, 0.5];
-        let input = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
         let output = client.silu(&input).unwrap();
-        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device);
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 3], DType::F32, &device).unwrap();
 
         let backward =
             SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output.clone(), None);
@@ -740,11 +742,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         // Verify chain rule: grad_output scales the derivative correctly.
-        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, -1.0], &[2], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, -1.0], &[2], &device).unwrap();
         let output = client.silu(&input).unwrap();
 
         // grad_output = [2.0, 3.0] — non-unit upstream gradient
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device);
+        let grad_out = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device).unwrap();
 
         let backward =
             SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output.clone(), None);
@@ -772,8 +774,8 @@ mod tests {
 
         // softplus(0) = log(1 + exp(0)) = log(2) ≈ 0.6931
         // softplus'(0) = sigmoid(0) = 0.5
-        let input = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -787,8 +789,9 @@ mod tests {
         let device = CpuDevice::new();
 
         // softplus'(x) = sigmoid(x)
-        let input = Tensor::<CpuRuntime>::from_slice(&[1.0f32, -1.0, 2.0], &[3], &device);
-        let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
+        let input =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, -1.0, 2.0], &[3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[3], DType::F32, &device).unwrap();
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -810,8 +813,8 @@ mod tests {
 
         // For large positive x, sigmoid(x) → 1.0; must not produce NaN.
         // This exercises the numerical stability of the stable softplus formula.
-        let input = Tensor::<CpuRuntime>::from_slice(&[100.0f32], &[1], &device);
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[100.0f32], &[1], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -834,8 +837,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // For large negative x, sigmoid(x) → 0.0; must not produce NaN.
-        let input = Tensor::<CpuRuntime>::from_slice(&[-100.0f32], &[1], &device);
-        let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[-100.0f32], &[1], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[1], DType::F32, &device).unwrap();
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -859,8 +862,8 @@ mod tests {
 
         // Shape [2, 3] — verifies element-wise gradient on batched tensors.
         let data = [-2.0f32, -1.0, 0.0, 1.0, 2.0, 100.0];
-        let input = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device);
-        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_ones(&[2, 3], DType::F32, &device).unwrap();
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -885,8 +888,8 @@ mod tests {
         let device = CpuDevice::new();
 
         // Verify chain rule: upstream gradient scales local derivative.
-        let input = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0], &[2], &device);
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0], &[2], &device).unwrap();
+        let grad_out = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device).unwrap();
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -910,11 +913,11 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         // Simple 2-element softmax
-        let input = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0], &[2], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &device).unwrap();
         let output = client.softmax(&input, -1).unwrap(); // [0.5, 0.5]
 
         // dL/dz = [1, 0] - only first element contributes to loss
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[2], &device);
+        let grad_out = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[2], &device).unwrap();
 
         let backward = SoftmaxBackward::<CpuRuntime>::new(input.id(), output, -1, None);
         let grads = backward.backward_all(&grad_out).unwrap();
@@ -935,7 +938,7 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         // Simple 2-element log_softmax
-        let input = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0], &[2], &device);
+        let input = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0], &[2], &device).unwrap();
         let output = client.log_softmax(&input, -1).unwrap(); // [ln(0.5), ln(0.5)]
 
         let output_data: Vec<f32> = output.to_vec();
@@ -944,7 +947,7 @@ mod tests {
         assert!((output_data[1] - expected_log).abs() < 1e-6);
 
         // dL/dz = [1, 0]
-        let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[2], &device);
+        let grad_out = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[2], &device).unwrap();
 
         let backward = LogSoftmaxBackward::<CpuRuntime>::new(input.id(), output, -1, None);
         let grads = backward.backward_all(&grad_out).unwrap();

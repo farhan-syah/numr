@@ -58,7 +58,7 @@ mod tests {
     fn test_var_cast_noop_same_dtype() {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
-        let t = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let t = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let v = Var::new(t, true);
         let result = var_cast(&v, DType::F32, &client).unwrap();
         // Same dtype returns clone — data should match
@@ -80,7 +80,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
 
-        let t = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let t = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let x = Var::new(t, true);
 
         // `doubled` carries a grad_fn; `x` alone would not.
@@ -110,7 +110,7 @@ mod tests {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
 
-        let t = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let t = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         let x = Var::new(t, true);
 
         // Cast F32 → F64
@@ -132,7 +132,7 @@ mod tests {
     fn test_var_cast_no_grad() {
         let device = CpuDevice::new();
         let client = CpuRuntime::default_client(&device);
-        let t = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
+        let t = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
         let v = Var::new(t, false);
         let result = var_cast(&v, DType::F64, &client).unwrap();
         assert!(!result.requires_grad());

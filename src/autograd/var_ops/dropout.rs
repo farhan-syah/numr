@@ -157,7 +157,8 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device),
+            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)
+                .unwrap(),
             false,
         );
         let (output, _mask) = var_dropout(&input, 0.0, &client).unwrap();
@@ -178,7 +179,12 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let w = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.5f32, -2.0, 3.0], &[3], &device),
+            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(
+                &[1.5f32, -2.0, 3.0],
+                &[3],
+                &device,
+            )
+            .unwrap(),
             true,
         );
         // An upstream op so the dropout input carries a grad_fn.
@@ -202,7 +208,8 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device),
+            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)
+                .unwrap(),
             false,
         );
         // p=1.0 means drop everything
@@ -221,7 +228,8 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::from_slice(&[1.0f32; 1000], &[1000], &device),
+            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(&[1.0f32; 1000], &[1000], &device)
+                .unwrap(),
             false,
         );
         let (output, _mask) = var_dropout(&input, 0.5, &client).unwrap();
@@ -243,11 +251,12 @@ mod tests {
         let client = CpuRuntime::default_client(&device);
 
         let input = Var::new(
-            crate::tensor::Tensor::<CpuRuntime>::from_slice(
+            crate::tensor::Tensor::<CpuRuntime>::try_from_slice(
                 &[1.0f32, 2.0, 3.0, 4.0],
                 &[4],
                 &device,
-            ),
+            )
+            .unwrap(),
             true,
         );
         let (output, mask) = var_dropout(&input, 0.5, &client).unwrap();

@@ -269,8 +269,8 @@ mod tests {
         let (client, device) = create_client();
 
         // (1 + x) * (1 + x) = 1 + 2x + x²
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
 
         let c = convolve_direct(&client, &a, &b, DTypeSupport::FULL).unwrap();
         let data: Vec<f32> = c.to_vec();
@@ -286,8 +286,8 @@ mod tests {
         let (client, device) = create_client();
 
         // (1 + 2x) * (3 + 4x) = 3 + 10x + 8x²
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0], &[2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2], &device).unwrap();
 
         let c = convolve_direct(&client, &a, &b, DTypeSupport::FULL).unwrap();
         let data: Vec<f32> = c.to_vec();
@@ -304,8 +304,8 @@ mod tests {
 
         // (1 + x) * (1 + x) = 1 + 2x + x²
         // Need size >= FFT_THRESHOLD to use FFT path
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0], &[2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0], &[2], &device).unwrap();
 
         let c = convolve_fft(&client, &a, &b, DTypeSupport::FULL).unwrap();
         let data: Vec<f32> = c.to_vec();
@@ -322,8 +322,8 @@ mod tests {
 
         // Small inputs should use direct convolution
         // 2 * 2 = 4 < FFT_THRESHOLD
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0], &[2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2], &device).unwrap();
 
         let c = convolve_impl(&client, &a, &b, DTypeSupport::FULL).unwrap();
         let data: Vec<f32> = c.to_vec();
@@ -343,8 +343,8 @@ mod tests {
         let a_data: Vec<f32> = (0..10).map(|i| i as f32).collect();
         let b_data: Vec<f32> = (0..10).map(|i| i as f32 + 1.0).collect();
 
-        let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[10], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[10], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[10], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[10], &device).unwrap();
 
         let c = convolve_impl(&client, &a, &b, DTypeSupport::FULL).unwrap();
 
@@ -357,8 +357,10 @@ mod tests {
         let (client, device) = create_client();
 
         // Test that direct and FFT give the same results
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[4], &device);
+        let a =
+            Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+        let b =
+            Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[4], &device).unwrap();
 
         let c_direct = convolve_direct(&client, &a, &b, DTypeSupport::FULL).unwrap();
         let c_fft = convolve_fft(&client, &a, &b, DTypeSupport::FULL).unwrap();
@@ -384,8 +386,8 @@ mod tests {
         let (client, device) = create_client();
 
         // Test F64 convolution
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0], &[3], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[4.0f64, 5.0], &[2], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0], &[3], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[4.0f64, 5.0], &[2], &device).unwrap();
 
         // (1 + 2x + 3x²) * (4 + 5x) = 4 + 13x + 22x² + 15x³
         let c = convolve_impl(&client, &a, &b, DTypeSupport::FULL).unwrap();
@@ -402,8 +404,8 @@ mod tests {
     fn test_convolve_empty() {
         let (client, device) = create_client();
 
-        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-        let b = Tensor::<CpuRuntime>::from_slice(&[] as &[f32], &[0], &device);
+        let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+        let b = Tensor::<CpuRuntime>::try_from_slice(&[] as &[f32], &[0], &device).unwrap();
 
         let c = convolve_impl(&client, &a, &b, DTypeSupport::FULL).unwrap();
         assert_eq!(c.shape()[0], 0);

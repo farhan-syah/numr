@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn alias_preserves_id_but_clone_does_not() {
         let device = <CpuRuntime as Runtime>::default_device();
-        let t = Tensor::<CpuRuntime>::zeros(&[2, 3], DType::F32, &device);
+        let t = Tensor::<CpuRuntime>::try_zeros(&[2, 3], DType::F32, &device).unwrap();
         let v = Var::new(t, true);
 
         let aliased = v.alias();
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn alias_preserves_requires_grad_false() {
         let device = <CpuRuntime as Runtime>::default_device();
-        let t = Tensor::<CpuRuntime>::zeros(&[4], DType::F32, &device);
+        let t = Tensor::<CpuRuntime>::try_zeros(&[4], DType::F32, &device).unwrap();
         let v = Var::new(t, false);
         let aliased = v.alias();
         assert!(!aliased.requires_grad());

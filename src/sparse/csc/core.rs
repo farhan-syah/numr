@@ -622,7 +622,7 @@ mod tests {
 
         // Update values - double them
         let new_values = vec![2.0f32, 8.0, 10.0, 4.0, 6.0];
-        let new_values_tensor = Tensor::from_slice(&new_values, &[5], &device);
+        let new_values_tensor = Tensor::try_from_slice(&new_values, &[5], &device).unwrap();
         csc.update_values(new_values_tensor).unwrap();
 
         // Verify values changed but structure unchanged
@@ -649,7 +649,7 @@ mod tests {
                 .unwrap();
 
         // Try to update with wrong size
-        let wrong_size = Tensor::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+        let wrong_size = Tensor::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
         assert!(csc.update_values(wrong_size).is_err());
     }
 
@@ -666,7 +666,8 @@ mod tests {
                 .unwrap();
 
         // Try to update with wrong dtype (f64 instead of f32)
-        let wrong_dtype = Tensor::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[5], &device);
+        let wrong_dtype =
+            Tensor::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[5], &device).unwrap();
         assert!(csc.update_values(wrong_dtype).is_err());
     }
 
