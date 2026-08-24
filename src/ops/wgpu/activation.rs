@@ -2,7 +2,9 @@
 
 use crate::error::Result;
 use crate::ops::ActivationOps;
-use crate::ops::impl_generic::activation::{dropout_impl, log_softmax_impl, softplus_impl};
+use crate::ops::impl_generic::activation::{
+    dropout_impl, log_softmax_impl, softmax_with_bias_impl, softplus_impl,
+};
 use crate::runtime::wgpu::WgpuClient;
 use crate::runtime::wgpu::WgpuRuntime;
 use crate::runtime::wgpu::ops::native::{
@@ -22,6 +24,21 @@ impl ActivationOps<WgpuRuntime> for WgpuClient {
 
     fn softmax(&self, a: &Tensor<WgpuRuntime>, dim: isize) -> Result<Tensor<WgpuRuntime>> {
         native_softmax(self, a, dim)
+    }
+
+    /// `softmax(a + bias, dim)` via the shared generic implementation, as CPU
+    /// does. Without this override wgpu inherited the trait's default, which
+    /// returns `NotImplemented` — a silent backend gap, since every primitive
+    /// the generic implementation needs (broadcast `add`, `softmax`) already
+    /// exists here. CUDA additionally has a fused kernel; wgpu does not need
+    /// one to be correct.
+    fn softmax_with_bias(
+        &self,
+        a: &Tensor<WgpuRuntime>,
+        bias: &Tensor<WgpuRuntime>,
+        dim: isize,
+    ) -> Result<Tensor<WgpuRuntime>> {
+        softmax_with_bias_impl(self, a, bias, dim)
     }
 
     fn softmax_bwd(

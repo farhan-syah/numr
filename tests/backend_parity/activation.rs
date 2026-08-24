@@ -646,6 +646,34 @@ fn test_softmax_with_bias_parity_for_dtype(dtype: DType) {
                 );
             });
         }
+
+        #[cfg(feature = "wgpu")]
+        if is_dtype_supported("wgpu", dtype) {
+            with_wgpu_backend(|wgpu_client, wgpu_device| {
+                let a_wgpu =
+                    tensor_from_f64(&case.a, &case.a_shape, dtype, &wgpu_device, &wgpu_client)
+                        .unwrap();
+                let bias_wgpu = tensor_from_f64(
+                    &case.bias,
+                    &case.bias_shape,
+                    dtype,
+                    &wgpu_device,
+                    &wgpu_client,
+                )
+                .unwrap();
+                let result_wgpu = wgpu_client
+                    .softmax_with_bias(&a_wgpu, &bias_wgpu, case.dim)
+                    .unwrap()
+                    .contiguous()
+                    .unwrap();
+                assert_tensor_allclose(
+                    &result_wgpu,
+                    &result_cpu,
+                    dtype,
+                    &format!("softmax_with_bias wgpu vs cpu [{}]", case.label),
+                );
+            });
+        }
     }
 }
 
