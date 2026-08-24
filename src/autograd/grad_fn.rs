@@ -35,7 +35,15 @@ use super::Var;
 /// }
 ///
 /// impl<R: Runtime> GradFn<R> for MyOpBackward<R> {
-///     fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+///     fn backward(
+///         &self,
+///         grad_output: &Tensor<R>,
+///         needed: &[bool],
+///     ) -> Result<Vec<Option<Tensor<R>>>> {
+///         // Skip any slot the caller will discard
+///         if !needed[0] {
+///             return Ok(vec![None]);
+///         }
 ///         // Compute gradients using tensor ops
 ///         // let grad = client.mul(grad_output, &self.saved_tensor)?;
 ///         Ok(vec![Some(grad_output.clone())])
@@ -51,8 +59,41 @@ pub trait GradFn<R: Runtime>: Send + Sync {
     /// Compute gradients for input tensors given the gradient of the output
     ///
     /// Returns a vector of optional gradients - one per input.
-    /// `None` indicates that input doesn't need a gradient.
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>>;
+    /// `None` indicates no gradient is produced for that input.
+    ///
+    /// # The `needed` mask
+    ///
+    /// `needed[i]` corresponds to `self.inputs()[i]` and tells the op whether
+    /// the driver will keep that slot's gradient. The driver guarantees
+    /// `needed.len() == self.inputs().len()`, so indexing it by input position
+    /// is always in bounds.
+    ///
+    /// The contract:
+    ///
+    /// - An op **must** return the correct gradient for every slot where
+    ///   `needed[i]` is true.
+    /// - An op **must** return `None` for any slot where `needed[i]` is false,
+    ///   **or may** return `Some`. Returning `Some` for an unneeded slot is pure
+    ///   waste: the driver discards it.
+    ///
+    /// Guard a slot when its gradient costs an independent kernel launch — the
+    /// two matmuls of `MatmulBackward`, a conv weight gradient, a per-operand
+    /// broadcast reduction. Where every slot falls out of one shared
+    /// intermediate, guarding buys nothing and the mask is ignored.
+    ///
+    /// Under [`crate::autograd::backward`] every entry is true, so a masked op
+    /// takes exactly the branches it took before the mask existed.
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>>;
+
+    /// Compute every input gradient, as if the caller wanted all of them.
+    ///
+    /// Convenience wrapper over [`GradFn::backward`] with an all-true mask.
+    /// Use it when there is no pruning context — tests, and re-entrant callers
+    /// that pass gradients straight through.
+    fn backward_all(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+        let needed = vec![true; self.inputs().len()];
+        self.backward(grad_output, &needed)
+    }
 
     /// Compute gradients as Vars for second-order differentiation
     ///
@@ -74,7 +115,7 @@ pub trait GradFn<R: Runtime>: Send + Sync {
     ///
     /// # Default Behavior
     ///
-    /// The default implementation calls `backward()` and wraps results in Vars
+    /// The default implementation calls `backward_all()` and wraps results in Vars
     /// with `requires_grad=true` but `grad_fn=None`. This is suitable for:
     ///
     /// - Operations that don't need second-order derivatives
@@ -93,7 +134,8 @@ pub trait GradFn<R: Runtime>: Send + Sync {
         // Default: compute tensor gradients and wrap in detached Vars.
         // WARNING: This breaks second-order derivatives. Override this method
         // if you need Hessians or HVPs to work correctly through this operation.
-        let tensor_grads = self.backward(grad_output.tensor())?;
+        // Second-order traversal keeps every node, so ask for every gradient.
+        let tensor_grads = self.backward_all(grad_output.tensor())?;
         Ok(tensor_grads
             .into_iter()
             .map(|opt| opt.map(|t| Var::new(t, true)))

@@ -46,7 +46,13 @@ impl<R: Runtime> ReshapeBackward<R> {
 }
 
 impl<R: Runtime> GradFn<R> for ReshapeBackward<R> {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input: the driver already skipped this node if its one
+        // gradient were unwanted, so the mask carries no extra information.
         // Reshape gradient back to input shape. grad_output may be a
         // non-contiguous view (e.g. after a transpose/permute), and
         // `reshape` requires contiguity.
@@ -113,7 +119,12 @@ impl<R: Runtime> TransposeBackward<R> {
 }
 
 impl<R: Runtime> GradFn<R> for TransposeBackward<R> {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         // Transpose gradient back
         let grad = grad_output.t()?;
         Ok(vec![Some(grad)])
@@ -200,7 +211,12 @@ impl<R: Runtime> PermuteBackward<R> {
 }
 
 impl<R: Runtime> GradFn<R> for PermuteBackward<R> {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         // Apply inverse permutation
         let grad = grad_output.permute(&self.inverse_dims)?;
         Ok(vec![Some(grad)])
@@ -271,7 +287,12 @@ impl<R: Runtime> GradFn<R> for ExpandBackward<R>
 where
     R::Client: RuntimeClient<R> + crate::ops::TensorOps<R> + ReduceOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // Find dimensions that were broadcast and need to be summed
@@ -470,7 +491,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for NarrowBackward<R>
 where
     R::Client: RuntimeClient<R> + crate::ops::TensorOps<R> + ShapeOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // Pad gradient back to original size along the narrowed dimension.
@@ -600,13 +626,21 @@ impl<R: Runtime> CatBackward<R> {
 }
 
 impl<R: Runtime> GradFn<R> for CatBackward<R> {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
+        // Each slot is an independent `contiguous()` copy of its slice, so an
+        // unwanted operand costs nothing. Concatenating a trainable tensor onto
+        // a frozen one — a KV cache appended to cached history — skips the
+        // frozen half's copy entirely.
         let mut grads = Vec::with_capacity(self.split_sizes.len());
         let mut offset = 0;
-        for &size in &self.split_sizes {
-            let grad_slice = grad_output.narrow(self.dim as isize, offset, size)?;
-            // Make contiguous so downstream ops get clean data
-            grads.push(Some(grad_slice.contiguous()?));
+        for (i, &size) in self.split_sizes.iter().enumerate() {
+            if needed[i] {
+                let grad_slice = grad_output.narrow(self.dim as isize, offset, size)?;
+                // Make contiguous so downstream ops get clean data
+                grads.push(Some(grad_slice.contiguous()?));
+            } else {
+                grads.push(None);
+            }
             offset += size;
         }
         Ok(grads)
@@ -737,7 +771,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3, 2], DType::F32, &device);
 
         let backward = ReshapeBackward::<CpuRuntime>::new(input.id(), vec![2, 3], None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[2, 3]);
@@ -755,7 +789,7 @@ mod tests {
         assert!(!grad_out.is_contiguous());
 
         let backward = ReshapeBackward::<CpuRuntime>::new(TensorId::new(), vec![2, 3], None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[2, 3]);
@@ -795,7 +829,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3, 2], DType::F32, &device);
 
         let backward = TransposeBackward::<CpuRuntime>::new(input.id(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[2, 3]);
@@ -842,7 +876,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3, 4, 2], DType::F32, &device);
 
         let backward = PermuteBackward::<CpuRuntime>::new(input.id(), &[1, 2, 0], None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         // Inverse permutation of [1, 2, 0] is [2, 0, 1]
@@ -874,7 +908,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device);
 
         let backward = ExpandBackward::<CpuRuntime>::new(input.id(), vec![1, 3], None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[1, 3]);
@@ -914,7 +948,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = ReshapeBackward::<CpuRuntime>::new(input.id(), vec![], None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[] as &[usize]);
@@ -929,7 +963,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 4, 3], DType::F32, &device);
 
         let backward = TransposeBackward::<CpuRuntime>::new(input.id(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[2, 3, 4]);
@@ -944,7 +978,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3, 4], DType::F32, &device);
 
         let backward = ExpandBackward::<CpuRuntime>::new(input.id(), vec![1, 1], None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[1, 1]);
@@ -952,6 +986,37 @@ mod tests {
         // Sum over both dimensions: 3 * 4 = 12
         let grad_data: Vec<f32> = grad.to_vec();
         assert_eq!(grad_data, vec![12.0]);
+    }
+
+    /// `CatBackward` slices its gradient once per input. An unwanted operand's
+    /// slice-and-copy must not happen, and the wanted ones must be unchanged.
+    #[test]
+    fn test_cat_backward_skips_unneeded_operands() {
+        let device = CpuDevice::new();
+
+        let ids = vec![TensorId::new(), TensorId::new(), TensorId::new()];
+        let backward =
+            CatBackward::<CpuRuntime>::new(ids, vec![1, 2, 1], 0, vec![None, None, None]);
+
+        let grad_out = Tensor::<CpuRuntime>::from_slice(
+            &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            &[4, 2],
+            &device,
+        );
+
+        let all = backward.backward_all(&grad_out).unwrap();
+        let masked = backward.backward(&grad_out, &[false, true, false]).unwrap();
+
+        assert_eq!(masked.len(), 3, "one slot per input");
+        assert!(masked[0].is_none(), "first operand is dead");
+        assert!(masked[2].is_none(), "third operand is dead");
+
+        // The kept slice must come from the right offset — a skipped operand
+        // must not shift the ones after it.
+        let want: Vec<f32> = all[1].as_ref().unwrap().to_vec();
+        let got: Vec<f32> = masked[1].as_ref().unwrap().to_vec();
+        assert_eq!(want, vec![3.0f32, 4.0, 5.0, 6.0]);
+        assert_eq!(want, got);
     }
 
     #[test]
@@ -964,7 +1029,7 @@ mod tests {
             Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
 
         let backward = PermuteBackward::<CpuRuntime>::new(input.id(), &[0, 1], None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad = grads[0].as_ref().unwrap();
         assert_eq!(grad.shape(), &[2, 3]);

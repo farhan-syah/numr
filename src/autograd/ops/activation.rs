@@ -45,7 +45,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for ReluBackward<R>
 where
     R::Client: TensorOps<R> + CompareOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // ReLU derivative: relu'(x) = 1 if x > 0, 0 otherwise
@@ -136,7 +141,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for SigmoidBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // sigmoid'(x) = sigmoid(x) * (1 - sigmoid(x))
@@ -233,7 +243,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for SiluBackward<R>
 where
     R::Client: TensorOps<R> + ActivationOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // silu'(x) = sigmoid(x) + x * sigmoid(x) * (1 - sigmoid(x))
@@ -322,7 +337,12 @@ impl<R: Runtime> GradFn<R> for SoftmaxBackward<R>
 where
     R::Client: TensorOps<R> + ReduceOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // Normalize dim
@@ -431,7 +451,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for LogSoftmaxBackward<R>
 where
     R::Client: TensorOps<R> + UnaryOps<R> + ReduceOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         let ndim = self.saved_output.ndim();
@@ -530,7 +555,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for SoftplusBackward<R>
 where
     R::Client: TensorOps<R> + ActivationOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // softplus'(x) = sigmoid(x)
@@ -585,7 +615,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = ReluBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         // All positive inputs, so gradient passes through
@@ -603,7 +633,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = ReluBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         // grad[0] should be ~0 (negative input)
@@ -627,7 +657,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SigmoidBackward::<CpuRuntime>::new(input.id(), output, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_data[0] - 0.25).abs() < 1e-6);
@@ -646,7 +676,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_data[0] - 0.5).abs() < 1e-6);
@@ -666,7 +696,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         let sigmoid_1 = 1.0f32 / (1.0 + (-1.0f32).exp());
@@ -688,7 +718,7 @@ mod tests {
 
         let backward =
             SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         let out_data: Vec<f32> = output.to_vec();
@@ -718,7 +748,7 @@ mod tests {
 
         let backward =
             SiluBackward::<CpuRuntime>::new(input.id(), input.clone(), output.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         let out_data: Vec<f32> = output.to_vec();
@@ -746,7 +776,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_data[0] - 0.5).abs() < 1e-6);
@@ -761,7 +791,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         for (i, &x) in [1.0f32, -1.0, 2.0].iter().enumerate() {
@@ -784,7 +814,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!(
@@ -808,7 +838,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!(
@@ -833,7 +863,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 3], DType::F32, &device);
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         for (i, &x) in data.iter().enumerate() {
@@ -859,7 +889,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device);
 
         let backward = SoftplusBackward::<CpuRuntime>::new(input.id(), input, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         let upstream = [2.0f32, 3.0];
@@ -887,7 +917,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[2], &device);
 
         let backward = SoftmaxBackward::<CpuRuntime>::new(input.id(), output, -1, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         // For softmax, when z = [0.5, 0.5] and dy = [1, 0]:
@@ -917,7 +947,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[2], &device);
 
         let backward = LogSoftmaxBackward::<CpuRuntime>::new(input.id(), output, -1, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_data: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         // log_softmax gradient: grad = dy - exp(z) * sum(dy, dim)

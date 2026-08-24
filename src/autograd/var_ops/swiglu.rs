@@ -94,22 +94,35 @@ where
     fn backward(
         &self,
         grad_output: &crate::tensor::Tensor<R>,
+        needed: &[bool],
     ) -> Result<Vec<Option<crate::tensor::Tensor<R>>>> {
         let client = R::default_client(grad_output.device());
 
-        // d_up = grad_output * silu(gate)
-        let d_up = client.mul(grad_output, &self.saved_silu_gate)?;
+        // The two slots share only `grad_output`. d_gate costs five extra
+        // elementwise passes that d_up never touches, so each is guarded.
+        // Returned order is [gate, up].
 
         // d_gate = grad_output * up * silu'(gate)
         // silu'(x) = sigmoid(x) * (1 + x - silu(x))
-        let sigmoid_gate = client.sigmoid(&self.saved_gate)?;
-        let one_plus_gate = client.add_scalar(&self.saved_gate, 1.0)?;
-        let one_plus_gate_minus_silu = client.sub(&one_plus_gate, &self.saved_silu_gate)?;
-        let silu_deriv = client.mul(&sigmoid_gate, &one_plus_gate_minus_silu)?;
-        let grad_times_up = client.mul(grad_output, &self.saved_up)?;
-        let d_gate = client.mul(&grad_times_up, &silu_deriv)?;
+        let d_gate = if needed[0] {
+            let sigmoid_gate = client.sigmoid(&self.saved_gate)?;
+            let one_plus_gate = client.add_scalar(&self.saved_gate, 1.0)?;
+            let one_plus_gate_minus_silu = client.sub(&one_plus_gate, &self.saved_silu_gate)?;
+            let silu_deriv = client.mul(&sigmoid_gate, &one_plus_gate_minus_silu)?;
+            let grad_times_up = client.mul(grad_output, &self.saved_up)?;
+            Some(client.mul(&grad_times_up, &silu_deriv)?)
+        } else {
+            None
+        };
 
-        Ok(vec![Some(d_gate), Some(d_up)])
+        // d_up = grad_output * silu(gate)
+        let d_up = if needed[1] {
+            Some(client.mul(grad_output, &self.saved_silu_gate)?)
+        } else {
+            None
+        };
+
+        Ok(vec![d_gate, d_up])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>>

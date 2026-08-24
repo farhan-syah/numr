@@ -41,7 +41,12 @@ impl<R: Runtime> GradFn<R> for NegBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let grad = client.neg(grad_output)?;
         Ok(vec![Some(grad)])
@@ -98,7 +103,12 @@ impl<R: Runtime> GradFn<R> for ExpBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz * exp(a) = grad_output * saved_output
         let grad = client.mul(grad_output, &self.saved_output)?;
@@ -163,7 +173,12 @@ impl<R: Runtime> GradFn<R> for LogBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz / a
         let grad = client.div(grad_output, &self.saved_input)?;
@@ -228,7 +243,12 @@ impl<R: Runtime> GradFn<R> for SqrtBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz / (2 * sqrt(a))
         // = grad_output / (2 * saved_output)
@@ -296,7 +316,12 @@ impl<R: Runtime> GradFn<R> for SinBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let cos_a = client.cos(&self.saved_input)?;
         let grad = client.mul(grad_output, &cos_a)?;
@@ -362,7 +387,12 @@ impl<R: Runtime> GradFn<R> for CosBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let sin_a = client.sin(&self.saved_input)?;
         let neg_sin = client.neg(&sin_a)?;
@@ -430,7 +460,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for TanhBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz * (1 - tanh²(a))
         let tanh_squared = client.square(&self.saved_output)?;
@@ -510,7 +545,12 @@ impl<R: Runtime> GradFn<R> for SquareBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz * 2 * a
         let two_a = client.mul_scalar(&self.saved_input, 2.0)?;
@@ -577,7 +617,12 @@ impl<R: Runtime> GradFn<R> for RecipBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = -dL/dz * z²
         let z_squared = client.square(&self.saved_output)?;
@@ -646,7 +691,12 @@ impl<R: Runtime> GradFn<R> for TanBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz / cos²(a)
         let cos_a = client.cos(&self.saved_input)?;
@@ -716,7 +766,12 @@ impl<R: Runtime> GradFn<R> for AbsBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // Compute sign(a) by dividing a by |a|
@@ -796,7 +851,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for ClampBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + CompareOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         // Create mask where min < a < max (gradient flows through)
@@ -896,7 +956,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = NegBackward::<CpuRuntime>::new(a.id(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert_eq!(grad_a, vec![-1.0, -1.0, -1.0]);
@@ -914,7 +974,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = ExpBackward::<CpuRuntime>::new(a.id(), output, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_a[0] - 1.0).abs() < 1e-6); // exp(0) = 1
@@ -930,7 +990,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = LogBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_a[0] - 0.5).abs() < 1e-6); // 1/2 = 0.5
@@ -948,7 +1008,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SqrtBackward::<CpuRuntime>::new(a.id(), output, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_a[0] - 0.25).abs() < 1e-6); // 1/(2*2) = 0.25
@@ -967,7 +1027,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = TanhBackward::<CpuRuntime>::new(a.id(), output, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_a[0] - 1.0).abs() < 1e-6);
@@ -983,7 +1043,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = SquareBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_a[0] - 6.0).abs() < 1e-6); // 2 * 3 = 6
@@ -1000,7 +1060,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1], DType::F32, &device);
 
         let backward = TanBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert!((grad_a[0] - 1.0).abs() < 1e-6); // 1/cos²(0) = 1/1 = 1

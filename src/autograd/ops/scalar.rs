@@ -33,7 +33,12 @@ impl<R: Runtime> AddScalarBackward<R> {
 }
 
 impl<R: Runtime> GradFn<R> for AddScalarBackward<R> {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         // Gradient passes through unchanged
         Ok(vec![Some(grad_output.clone())])
     }
@@ -81,7 +86,12 @@ impl<R: Runtime> SubScalarBackward<R> {
 }
 
 impl<R: Runtime> GradFn<R> for SubScalarBackward<R> {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         // Gradient passes through unchanged
         Ok(vec![Some(grad_output.clone())])
     }
@@ -138,7 +148,12 @@ impl<R: Runtime> GradFn<R> for MulScalarBackward<R>
 where
     R::Client: ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz * scalar
         let grad = client.mul_scalar(grad_output, self.scalar)?;
@@ -201,7 +216,12 @@ impl<R: Runtime> GradFn<R> for DivScalarBackward<R>
 where
     R::Client: ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz / scalar
         let grad = client.div_scalar(grad_output, self.scalar)?;
@@ -267,7 +287,12 @@ impl<R: Runtime> GradFn<R> for PowScalarBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         // dL/da = dL/dz * scalar * a^(scalar-1)
         // = grad_output * scalar * a^(scalar-1)
@@ -332,7 +357,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = AddScalarBackward::<CpuRuntime>::new(a.id(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert_eq!(grad_a, vec![1.0, 1.0, 1.0]);
@@ -347,7 +372,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = MulScalarBackward::<CpuRuntime>::new(a.id(), 3.0, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert_eq!(grad_a, vec![3.0, 3.0, 3.0]);
@@ -362,7 +387,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = DivScalarBackward::<CpuRuntime>::new(a.id(), 2.0, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         assert_eq!(grad_a, vec![0.5, 0.5, 0.5]);
@@ -377,7 +402,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[3], DType::F32, &device);
 
         let backward = PowScalarBackward::<CpuRuntime>::new(a.id(), a.clone(), 2.0, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         // dz/da = 2 * a = [4, 6, 8]

@@ -51,13 +51,22 @@ impl<R: Runtime> GradFn<R> for AddBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
         // For add, gradients are just the output gradient, possibly reduced
-        // if broadcasting occurred
-        let grad_a = reduce_grad_for_broadcast::<R>(grad_output, &self.a_shape)?;
-        let grad_b = reduce_grad_for_broadcast::<R>(grad_output, &self.b_shape)?;
+        // if broadcasting occurred. Each operand's reduction is its own pass
+        // over the gradient, so each is guarded separately.
+        let grad_a = if needed[0] {
+            Some(reduce_grad_for_broadcast::<R>(grad_output, &self.a_shape)?)
+        } else {
+            None
+        };
+        let grad_b = if needed[1] {
+            Some(reduce_grad_for_broadcast::<R>(grad_output, &self.b_shape)?)
+        } else {
+            None
+        };
 
-        Ok(vec![Some(grad_a), Some(grad_b)])
+        Ok(vec![grad_a, grad_b])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
@@ -123,17 +132,26 @@ impl<R: Runtime> GradFn<R> for SubBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
         let client = R::default_client(grad_output.device());
 
         // grad_a = grad_output
-        let grad_a = reduce_grad_for_broadcast::<R>(grad_output, &self.a_shape)?;
+        let grad_a = if needed[0] {
+            Some(reduce_grad_for_broadcast::<R>(grad_output, &self.a_shape)?)
+        } else {
+            None
+        };
 
-        // grad_b = -grad_output
-        let neg_grad = client.neg(grad_output)?;
-        let grad_b = reduce_grad_for_broadcast::<R>(&neg_grad, &self.b_shape)?;
+        // grad_b = -grad_output. The negation is a full elementwise pass that
+        // only this slot uses, so it lives inside the guard.
+        let grad_b = if needed[1] {
+            let neg_grad = client.neg(grad_output)?;
+            Some(reduce_grad_for_broadcast::<R>(&neg_grad, &self.b_shape)?)
+        } else {
+            None
+        };
 
-        Ok(vec![Some(grad_a), Some(grad_b)])
+        Ok(vec![grad_a, grad_b])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
@@ -199,20 +217,36 @@ impl<R: Runtime> GradFn<R> for MulBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
         let client = R::default_client(grad_output.device());
         let saved_a = &self.saved_tensors[0];
         let saved_b = &self.saved_tensors[1];
 
+        // Each operand's gradient is its own elementwise multiply against the
+        // other operand — nothing is shared, so each is guarded separately.
         // grad_a = grad_output * b
-        let grad_a_full = client.mul(grad_output, saved_b)?;
-        let grad_a = reduce_grad_for_broadcast::<R>(&grad_a_full, saved_a.shape())?;
+        let grad_a = if needed[0] {
+            let grad_a_full = client.mul(grad_output, saved_b)?;
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_a_full,
+                saved_a.shape(),
+            )?)
+        } else {
+            None
+        };
 
         // grad_b = grad_output * a
-        let grad_b_full = client.mul(grad_output, saved_a)?;
-        let grad_b = reduce_grad_for_broadcast::<R>(&grad_b_full, saved_b.shape())?;
+        let grad_b = if needed[1] {
+            let grad_b_full = client.mul(grad_output, saved_a)?;
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_b_full,
+                saved_b.shape(),
+            )?)
+        } else {
+            None
+        };
 
-        Ok(vec![Some(grad_a), Some(grad_b)])
+        Ok(vec![grad_a, grad_b])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
@@ -306,24 +340,38 @@ impl<R: Runtime> GradFn<R> for DivBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
         let client = R::default_client(grad_output.device());
         let saved_a = &self.saved_tensors[0];
         let saved_b = &self.saved_tensors[1];
 
         // grad_a = grad_output / b
-        let grad_a_full = client.div(grad_output, saved_b)?;
-        let grad_a = reduce_grad_for_broadcast::<R>(&grad_a_full, saved_a.shape())?;
+        let grad_a = if needed[0] {
+            let grad_a_full = client.div(grad_output, saved_b)?;
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_a_full,
+                saved_a.shape(),
+            )?)
+        } else {
+            None
+        };
 
-        // grad_b = -grad_output * a / b²
-        // = -grad_output * a / (b * b)
-        let neg_grad = client.neg(grad_output)?;
-        let neg_grad_a = client.mul(&neg_grad, saved_a)?;
-        let b_squared = client.mul(saved_b, saved_b)?;
-        let grad_b_full = client.div(&neg_grad_a, &b_squared)?;
-        let grad_b = reduce_grad_for_broadcast::<R>(&grad_b_full, saved_b.shape())?;
+        // grad_b = -grad_output * a / b² — four elementwise passes that only
+        // this slot uses.
+        let grad_b = if needed[1] {
+            let neg_grad = client.neg(grad_output)?;
+            let neg_grad_a = client.mul(&neg_grad, saved_a)?;
+            let b_squared = client.mul(saved_b, saved_b)?;
+            let grad_b_full = client.div(&neg_grad_a, &b_squared)?;
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_b_full,
+                saved_b.shape(),
+            )?)
+        } else {
+            None
+        };
 
-        Ok(vec![Some(grad_a), Some(grad_b)])
+        Ok(vec![grad_a, grad_b])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
@@ -413,7 +461,7 @@ impl<R: Runtime> GradFn<R> for PowBackward<R>
 where
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
         let client = R::default_client(grad_output.device());
         let saved_a = &self.saved_tensors[0];
         let saved_b = &self.saved_tensors[1];
@@ -422,19 +470,35 @@ where
         // grad_a = grad_output * b * a^(b-1)
         // = grad_output * b * (a^b / a)
         // = grad_output * b * output / a
-        let grad_a_temp = client.mul(grad_output, saved_b)?;
-        let grad_a_temp2 = client.mul(&grad_a_temp, saved_output)?;
-        let grad_a_full = client.div(&grad_a_temp2, saved_a)?;
-        let grad_a = reduce_grad_for_broadcast::<R>(&grad_a_full, saved_a.shape())?;
+        let grad_a = if needed[0] {
+            let grad_a_temp = client.mul(grad_output, saved_b)?;
+            let grad_a_temp2 = client.mul(&grad_a_temp, saved_output)?;
+            let grad_a_full = client.div(&grad_a_temp2, saved_a)?;
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_a_full,
+                saved_a.shape(),
+            )?)
+        } else {
+            None
+        };
 
         // grad_b = grad_output * a^b * ln(a)
         // = grad_output * output * ln(a)
-        let ln_a = client.log(saved_a)?;
-        let grad_b_temp = client.mul(grad_output, saved_output)?;
-        let grad_b_full = client.mul(&grad_b_temp, &ln_a)?;
-        let grad_b = reduce_grad_for_broadcast::<R>(&grad_b_full, saved_b.shape())?;
+        // The `log` is the expensive part and only this slot uses it — a
+        // constant exponent is the common case, so this guard usually fires.
+        let grad_b = if needed[1] {
+            let ln_a = client.log(saved_a)?;
+            let grad_b_temp = client.mul(grad_output, saved_output)?;
+            let grad_b_full = client.mul(&grad_b_temp, &ln_a)?;
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_b_full,
+                saved_b.shape(),
+            )?)
+        } else {
+            None
+        };
 
-        Ok(vec![Some(grad_a), Some(grad_b)])
+        Ok(vec![grad_a, grad_b])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>> {
@@ -507,7 +571,7 @@ mod tests {
 
         let backward =
             AddBackward::<CpuRuntime>::new(a.id(), b.id(), a.shape(), b.shape(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         assert_eq!(grads.len(), 2);
 
@@ -532,7 +596,7 @@ mod tests {
 
         let backward =
             MulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         let grad_b: Vec<f32> = grads[1].as_ref().unwrap().to_vec();
@@ -556,7 +620,7 @@ mod tests {
 
         let backward =
             DivBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
         let grad_b: Vec<f32> = grads[1].as_ref().unwrap().to_vec();

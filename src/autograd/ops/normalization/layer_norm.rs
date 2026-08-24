@@ -50,7 +50,14 @@ impl<R: Runtime> GradFn<R> for LayerNormBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + BinaryOps<R> + ReduceOps<R> + UnaryOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
+        // `x_norm` and `rstd` are shared, so they are recomputed unguarded.
+        // d_input, d_weight and d_bias each cost their own extra passes on top,
+        // and a frozen norm wants only d_input — so those three are guarded.
+        if !needed.iter().any(|&n| n) {
+            return Ok(vec![None, None, None]);
+        }
+
         let client = R::default_client(grad_output.device());
         let saved_input = &self.saved_tensors[0];
         let saved_weight = &self.saved_tensors[1];
@@ -67,33 +74,46 @@ where
         let rstd = client.recip(&std)?;
         let x_norm = client.mul(&x_centered, &rstd)?;
 
+        let batch_dims: Vec<usize> = (0..last_dim).collect();
+
         // d_input = rstd * (gw - mean(gw) - x_norm * mean(gw * x_norm))
-        let gw = client.mul(grad_output, saved_weight)?;
-        let mean_gw = client.mean(&gw, &[last_dim], true)?;
-        let gw_xn = client.mul(&gw, &x_norm)?;
-        let mean_gw_xn = client.mean(&gw_xn, &[last_dim], true)?;
-        let xn_mean_gw_xn = client.mul(&x_norm, &mean_gw_xn)?;
-        let inner = client.sub(&gw, &mean_gw)?;
-        let inner = client.sub(&inner, &xn_mean_gw_xn)?;
-        let d_input = client.mul(&inner, &rstd)?;
+        let d_input = if needed[0] {
+            let gw = client.mul(grad_output, saved_weight)?;
+            let mean_gw = client.mean(&gw, &[last_dim], true)?;
+            let gw_xn = client.mul(&gw, &x_norm)?;
+            let mean_gw_xn = client.mean(&gw_xn, &[last_dim], true)?;
+            let xn_mean_gw_xn = client.mul(&x_norm, &mean_gw_xn)?;
+            let inner = client.sub(&gw, &mean_gw)?;
+            let inner = client.sub(&inner, &xn_mean_gw_xn)?;
+            Some(client.mul(&inner, &rstd)?)
+        } else {
+            None
+        };
 
         // d_weight = sum(grad_output * x_norm, batch_dims)
-        let g_xn = client.mul(grad_output, &x_norm)?;
-        let batch_dims: Vec<usize> = (0..last_dim).collect();
-        let d_weight = if batch_dims.is_empty() {
-            g_xn
+        let d_weight = if needed[1] {
+            let g_xn = client.mul(grad_output, &x_norm)?;
+            if batch_dims.is_empty() {
+                Some(g_xn)
+            } else {
+                Some(client.sum(&g_xn, &batch_dims, false)?)
+            }
         } else {
-            client.sum(&g_xn, &batch_dims, false)?
+            None
         };
 
         // d_bias = sum(grad_output, batch_dims)
-        let d_bias = if batch_dims.is_empty() {
-            grad_output.clone()
+        let d_bias = if needed[2] {
+            if batch_dims.is_empty() {
+                Some(grad_output.clone())
+            } else {
+                Some(client.sum(grad_output, &batch_dims, false)?)
+            }
         } else {
-            client.sum(grad_output, &batch_dims, false)?
+            None
         };
 
-        Ok(vec![Some(d_input), Some(d_weight), Some(d_bias)])
+        Ok(vec![d_input, d_weight, d_bias])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>>
@@ -199,7 +219,7 @@ mod tests {
             None,
             None,
         );
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         assert_eq!(grads.len(), 3);
         let d_input: Vec<f32> = grads[0].as_ref().unwrap().to_vec();
@@ -232,7 +252,7 @@ mod tests {
             None,
             None,
         );
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let d_bias: Vec<f32> = grads[2].as_ref().unwrap().to_vec();
 

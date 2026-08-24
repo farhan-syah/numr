@@ -50,7 +50,7 @@ impl<R: Runtime> GradFn<R> for MatmulBackward<R>
 where
     R::Client: MatmulOps<R> + TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
         let client = R::default_client(grad_output.device());
         let saved_a = &self.saved_tensors[0];
         let saved_b = &self.saved_tensors[1];
@@ -58,21 +58,37 @@ where
         // C = A @ B
         // dL/dA = dL/dC @ B^T
         // dL/dB = A^T @ dL/dC
+        //
+        // The two are separate matmuls sharing nothing but `grad_output`, so
+        // each is guarded on its own. A frozen `Linear` wants only dL/dA; the
+        // dL/dB matmul below is the full-size wasted GEMM this skips.
+        let grad_a = if needed[0] {
+            // Transpose B: swap last two dimensions
+            let b_t = saved_b.t()?;
+            let grad_a_full = client.matmul(grad_output, &b_t)?;
+            // Batch dims may have been broadcast during forward: sum the
+            // gradient back over the dims where A had extent 1.
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_a_full,
+                saved_a.shape(),
+            )?)
+        } else {
+            None
+        };
 
-        // Transpose B: swap last two dimensions
-        let b_t = saved_b.t()?;
-        let grad_a_full = client.matmul(grad_output, &b_t)?;
+        let grad_b = if needed[1] {
+            // Transpose A: swap last two dimensions
+            let a_t = saved_a.t()?;
+            let grad_b_full = client.matmul(&a_t, grad_output)?;
+            Some(reduce_grad_for_broadcast::<R>(
+                &grad_b_full,
+                saved_b.shape(),
+            )?)
+        } else {
+            None
+        };
 
-        // Transpose A: swap last two dimensions
-        let a_t = saved_a.t()?;
-        let grad_b_full = client.matmul(&a_t, grad_output)?;
-
-        // Batch dims may have been broadcast during forward: sum each operand's
-        // gradient back over the dims where that operand had extent 1.
-        let grad_a = reduce_grad_for_broadcast::<R>(&grad_a_full, saved_a.shape())?;
-        let grad_b = reduce_grad_for_broadcast::<R>(&grad_b_full, saved_b.shape())?;
-
-        Ok(vec![Some(grad_a), Some(grad_b)])
+        Ok(vec![grad_a, grad_b])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>>
@@ -147,6 +163,102 @@ mod tests {
     use crate::dtype::DType;
     use crate::runtime::cpu::{CpuDevice, CpuRuntime};
 
+    /// Raw bit pattern of every element — no tolerance, no rounding.
+    fn bits(tensor: &Tensor<CpuRuntime>) -> Vec<u32> {
+        tensor
+            .contiguous()
+            .expect("contiguous")
+            .to_vec::<f32>()
+            .iter()
+            .map(|v| v.to_bits())
+            .collect()
+    }
+
+    /// The frozen-`Linear` case: only operand A is wanted.
+    ///
+    /// The dead slot must come back `None` — in the guarded impl the `Some`
+    /// value has no producer outside the branch, so `None` means the
+    /// `A^T @ dL/dC` matmul never ran. The wanted gradient must be bit-identical
+    /// to the all-true run, since guarding must not perturb the kept path.
+    #[test]
+    fn test_matmul_backward_skips_unneeded_operand() {
+        let device = CpuDevice::new();
+
+        // A: [2, 3], B: [3, 4], C: [2, 4]
+        let a = Tensor::<CpuRuntime>::from_slice(
+            &[1.5f32, -2.25, 0.75, 3.0, -0.5, 4.25],
+            &[2, 3],
+            &device,
+        );
+        let b = Tensor::<CpuRuntime>::from_slice(
+            &[
+                0.5f32, 1.25, -2.0, 3.5, -1.75, 0.25, 2.75, -0.125, 4.0, -3.25, 1.0, 0.625,
+            ],
+            &[3, 4],
+            &device,
+        );
+        let grad_out = Tensor::<CpuRuntime>::from_slice(
+            &[1.0f32, -2.0, 0.5, 3.25, -1.5, 2.5, -0.75, 0.125],
+            &[2, 4],
+            &device,
+        );
+
+        let backward =
+            MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
+
+        let all = backward.backward_all(&grad_out).unwrap();
+        let only_a = backward.backward(&grad_out, &[true, false]).unwrap();
+
+        assert_eq!(only_a.len(), 2, "one slot per input");
+        assert!(
+            only_a[1].is_none(),
+            "the unwanted operand's gradient must not be produced"
+        );
+
+        let want = all[0].as_ref().expect("all-true grad for A");
+        let got = only_a[0].as_ref().expect("masked grad for A");
+        assert_eq!(bits(want), bits(got), "wanted gradient must not shift");
+    }
+
+    /// The mirror case: only operand B is wanted, so `dL/dC @ B^T` is skipped.
+    #[test]
+    fn test_matmul_backward_skips_unneeded_activation() {
+        let device = CpuDevice::new();
+
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F32, &device);
+
+        let backward =
+            MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
+
+        let all = backward.backward_all(&grad_out).unwrap();
+        let only_b = backward.backward(&grad_out, &[false, true]).unwrap();
+
+        assert!(only_b[0].is_none(), "A's gradient must not be produced");
+
+        let want = all[1].as_ref().expect("all-true grad for B");
+        let got = only_b[1].as_ref().expect("masked grad for B");
+        assert_eq!(bits(want), bits(got));
+    }
+
+    /// An all-false mask produces nothing and touches no operand.
+    #[test]
+    fn test_matmul_backward_all_false_produces_nothing() {
+        let device = CpuDevice::new();
+
+        let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+        let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+        let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F32, &device);
+
+        let backward =
+            MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
+
+        let grads = backward.backward(&grad_out, &[false, false]).unwrap();
+        assert_eq!(grads.len(), 2);
+        assert!(grads.iter().all(|g| g.is_none()));
+    }
+
     #[test]
     fn test_matmul_backward_2x2() {
         let device = CpuDevice::new();
@@ -162,7 +274,7 @@ mod tests {
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // dL/dA = dL/dC @ B^T
         // B^T = [[5, 7], [6, 8]]
@@ -192,7 +304,7 @@ mod tests {
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // dL/dA = dL/dC @ B^T = [[1]] @ [[4, 5, 6]] = [[4, 5, 6]]
         let grad_a = grads[0].as_ref().unwrap();
@@ -220,7 +332,7 @@ mod tests {
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // dL/dA = dL/dC @ B^T: each entry sums over N=6 ones.
         let grad_a = grads[0].as_ref().unwrap();
@@ -261,7 +373,7 @@ mod tests {
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a = grads[0].as_ref().unwrap();
         assert_eq!(grad_a.shape(), &[2, 2, 1, 2]);
@@ -331,7 +443,7 @@ mod tests {
 
         let backward =
             MatmulBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), b.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // dL/dA = ones[1,2] @ B^T[2,3]; row sums of B: [3, 7, 11], same for both batches.
         let grad_a = grads[0].as_ref().unwrap();

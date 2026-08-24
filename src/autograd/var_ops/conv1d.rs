@@ -328,35 +328,48 @@ where
     fn backward(
         &self,
         grad_output: &crate::tensor::Tensor<R>,
+        needed: &[bool],
     ) -> Result<Vec<Option<crate::tensor::Tensor<R>>>> {
         let client = R::default_client(grad_output.device());
 
+        // The input gradient and the weight gradient are separate convolutions
+        // sharing nothing but `grad_output`, so each is guarded. A frozen conv
+        // layer skips the whole cross-correlation that builds d_weight.
+
         // d_input via transposed convolution
-        let d_input = conv1d_input_backward::<R, _>(
-            &client,
-            grad_output,
-            &self.saved_weight,
-            &self.input_shape,
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.groups,
-        )?;
+        let d_input = if needed[0] {
+            Some(conv1d_input_backward::<R, _>(
+                &client,
+                grad_output,
+                &self.saved_weight,
+                &self.input_shape,
+                self.stride,
+                self.padding,
+                self.dilation,
+                self.groups,
+            )?)
+        } else {
+            None
+        };
 
         // d_weight via cross-correlation
-        let d_weight = conv1d_weight_backward::<R, _>(
-            &client,
-            grad_output,
-            &self.saved_input,
-            self.saved_weight.shape(),
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.groups,
-        )?;
+        let d_weight = if needed[1] {
+            Some(conv1d_weight_backward::<R, _>(
+                &client,
+                grad_output,
+                &self.saved_input,
+                self.saved_weight.shape(),
+                self.stride,
+                self.padding,
+                self.dilation,
+                self.groups,
+            )?)
+        } else {
+            None
+        };
 
         // d_bias = sum over batch and length dims
-        let d_bias = if self.input_ids.len() > 2 {
+        let d_bias = if self.input_ids.len() > 2 && needed[2] {
             // grad_output shape: [batch, c_out, output_len]
             // sum over dim 0 (batch) and dim 2 (length) → [c_out]
             let summed = client.sum(grad_output, &[0, 2], false)?;
@@ -365,7 +378,7 @@ where
             None
         };
 
-        Ok(vec![Some(d_input), Some(d_weight), d_bias])
+        Ok(vec![d_input, d_weight, d_bias])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>>
@@ -378,7 +391,8 @@ where
             + ScalarOps<R>,
     {
         // First-order only for conv — second-order conv is rarely needed
-        let grads = self.backward(grad_output.tensor())?;
+        // Second-order traversal keeps every node, so ask for every gradient.
+        let grads = self.backward_all(grad_output.tensor())?;
         Ok(grads
             .into_iter()
             .map(|g| g.map(|t| Var::new(t, true)))

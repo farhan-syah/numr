@@ -47,7 +47,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for GatherBackward<R>
 where
     R::Client: IndexingOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let zeros =
             Tensor::<R>::zeros(&self.input_shape, grad_output.dtype(), grad_output.device());
@@ -163,7 +168,13 @@ impl<R: Runtime<DType = DType>> GradFn<R> for EmbeddingLookupBackward<R>
 where
     R::Client: IndexingOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input (the embedding table) — nothing to skip. A frozen table
+        // is pruned one level up: the driver never enters this node.
         Ok(vec![Some(self.weight_grad(grad_output)?)])
     }
 

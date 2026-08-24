@@ -108,7 +108,12 @@ impl<R: Runtime<DType = DType>> GradFn<R> for TraceBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + LinearAlgebraAlgorithms<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let saved_a = &self.saved_tensors[0];
         let n = saved_a.shape()[0];
         let client = R::default_client(saved_a.device());
@@ -201,7 +206,12 @@ impl<R: Runtime> GradFn<R> for InverseBackward<R>
 where
     R::Client: MatmulOps<R> + TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let inv_a = &self.saved_tensors[0];
 
@@ -299,9 +309,14 @@ impl<R: Runtime> GradFn<R> for DetBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + LinearAlgebraAlgorithms<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
         use crate::error::Error;
 
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let saved_a = &self.saved_tensors[0];
         let det_output = &self.saved_tensors[1];
@@ -415,7 +430,13 @@ impl<R: Runtime> GradFn<R> for SolveBackward<R>
 where
     R::Client: MatmulOps<R> + TensorOps<R> + LinearAlgebraAlgorithms<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
+        // Both slots share the triangular-ish solve for `v`, but dL/dA costs a
+        // further matmul and negation on top, so that slot is guarded.
+        if !needed.iter().any(|&n| n) {
+            return Ok(vec![None, None]);
+        }
+
         let client = R::default_client(grad_output.device());
         let saved_a = &self.saved_tensors[0];
         let saved_x = &self.saved_tensors[1];
@@ -425,15 +446,19 @@ where
         let a_t = saved_a.t()?.contiguous()?;
         let v = LinalgOps::solve(&client, &a_t, grad_output)?;
 
-        // dL/db = v = solve(A^T, dL/dx)
-        let grad_b = v.clone();
-
         // dL/dA = -v @ x^T
-        let x_t = saved_x.t()?;
-        let grad_a = client.matmul(&v, &x_t)?;
-        let grad_a = client.neg(&grad_a)?;
+        let grad_a = if needed[0] {
+            let x_t = saved_x.t()?;
+            let grad_a = client.matmul(&v, &x_t)?;
+            Some(client.neg(&grad_a)?)
+        } else {
+            None
+        };
 
-        Ok(vec![Some(grad_a), Some(grad_b)])
+        // dL/db = v = solve(A^T, dL/dx)
+        let grad_b = if needed[1] { Some(v) } else { None };
+
+        Ok(vec![grad_a, grad_b])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>>
@@ -531,9 +556,14 @@ impl<R: Runtime<DType = DType>> GradFn<R> for CholeskyBackward<R>
 where
     R::Client: MatmulOps<R> + TensorOps<R> + ScalarOps<R> + LinearAlgebraAlgorithms<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
         use crate::error::Error;
 
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let l = &self.saved_tensors[0];
 
@@ -682,7 +712,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f64], &[], &device);
 
         let backward = TraceBackward::<CpuRuntime>::new(a.id(), a.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // dL/dA should be identity matrix
         let grad_a: Vec<f64> = grads[0].as_ref().unwrap().to_vec();
@@ -703,7 +733,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F64, &device);
 
         let backward = InverseBackward::<CpuRuntime>::new(a.id(), inv_a.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // dL/dA = -B^T @ dL/dB @ B^T
         // Verify shape is correct
@@ -734,7 +764,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::from_slice(&[1.0f64], &[], &device);
 
         let backward = DetBackward::<CpuRuntime>::new(a.id(), a.clone(), det_output, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // dL/dA = det(A) * A^{-T}
         // A^{-1} = [[2/3, -1/3], [-1/3, 2/3]]
@@ -759,7 +789,7 @@ mod tests {
 
         let backward =
             SolveBackward::<CpuRuntime>::new(a.id(), b.id(), a.clone(), x.clone(), None, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // Verify shapes
         let grad_a = grads[0].as_ref().unwrap();
@@ -788,7 +818,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 2], DType::F64, &device);
 
         let backward = CholeskyBackward::<CpuRuntime>::new(a.id(), l.clone(), None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         // Verify shape
         let grad_a = grads[0].as_ref().unwrap();

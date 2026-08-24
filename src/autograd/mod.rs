@@ -13,6 +13,7 @@
 //! - [`GradStore`]: Storage for accumulated gradients (first-order)
 //! - [`VarGradStore`]: Storage for gradient Vars (second-order)
 //! - [`backward`]: Function to compute gradients via reverse-mode AD
+//! - [`backward_wrt`]: Backward that prunes to a wanted set of tensor ids
 //! - [`backward_with_graph`]: Backward with graph retention for Hessians
 //!
 //! ## Forward-Mode AD (JVP)
@@ -123,7 +124,10 @@ pub mod ops;
 
 // Reverse-mode exports
 pub use crate::tensor::id::TensorId;
-pub use backward::{BackwardHook, NoOpHook, backward, backward_with_graph, backward_with_hooks};
+pub use backward::{
+    BackwardHook, NoOpHook, backward, backward_with_graph, backward_with_hooks, backward_wrt,
+    backward_wrt_with_hooks,
+};
 pub use checkpoint::checkpoint;
 pub use grad_fn::GradFn;
 pub use grad_store::GradStore;

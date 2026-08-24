@@ -54,7 +54,13 @@ impl<R: Runtime> GradFn<R> for GroupNormBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + ReduceOps<R> + BinaryOps<R> + UnaryOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
+        // `x_norm_flat` and `rstd` are shared. d_input, d_weight and d_bias
+        // each cost their own extra passes on top, so each is guarded.
+        if !needed.iter().any(|&n| n) {
+            return Ok(vec![None, None, None]);
+        }
+
         let client = R::default_client(grad_output.device());
         let input = &self.saved_input;
         let weight = &self.saved_weight;
@@ -85,39 +91,57 @@ where
         let rstd = client.recip(&std)?;
         let x_norm_flat = client.mul(&x_centered, &rstd)?;
 
-        // Reshape weight [C] → [1, G, cpg, 1] → broadcast → [1, G, cpg, spatial] → [1, G, group_size]
-        // `weight` (saved_weight) is a clone of whatever the caller passed
-        // in, so it may be a sliced/transposed view.
-        let weight_contig = super::super::ensure_contiguous(weight)?;
-        let weight_4d = weight_contig.reshape(&[1, self.num_groups, cpg, 1])?;
-        let weight_bcast = weight_4d
-            .broadcast_to(&[1, self.num_groups, cpg, spatial])?
-            .contiguous()?;
-        let weight_flat = weight_bcast.reshape(&[1, self.num_groups, group_size])?;
+        // d_input (per-group layer norm backward). The weight broadcast below
+        // feeds this slot only, so it lives inside the guard.
+        let d_input = if needed[0] {
+            // Reshape weight [C] → [1, G, cpg, 1] → broadcast → [1, G, cpg, spatial] → [1, G, group_size]
+            // `weight` (saved_weight) is a clone of whatever the caller passed
+            // in, so it may be a sliced/transposed view.
+            let weight_contig = super::super::ensure_contiguous(weight)?;
+            let weight_4d = weight_contig.reshape(&[1, self.num_groups, cpg, 1])?;
+            let weight_bcast = weight_4d
+                .broadcast_to(&[1, self.num_groups, cpg, spatial])?
+                .contiguous()?;
+            let weight_flat = weight_bcast.reshape(&[1, self.num_groups, group_size])?;
 
-        // d_input (per-group layer norm backward)
-        let gw = client.mul(&grad_flat, &weight_flat)?;
-        let mean_gw = client.mean(&gw, &[2], true)?;
-        let gw_xn = client.mul(&gw, &x_norm_flat)?;
-        let mean_gw_xn = client.mean(&gw_xn, &[2], true)?;
-        let xn_correction = client.mul(&x_norm_flat, &mean_gw_xn)?;
-        let inner = client.sub(&gw, &mean_gw)?;
-        let inner = client.sub(&inner, &xn_correction)?;
-        let d_input_flat = client.mul(&inner, &rstd)?;
-        let d_input = d_input_flat.reshape(shape)?;
+            let gw = client.mul(&grad_flat, &weight_flat)?;
+            let mean_gw = client.mean(&gw, &[2], true)?;
+            let gw_xn = client.mul(&gw, &x_norm_flat)?;
+            let mean_gw_xn = client.mean(&gw_xn, &[2], true)?;
+            let xn_correction = client.mul(&x_norm_flat, &mean_gw_xn)?;
+            let inner = client.sub(&gw, &mean_gw)?;
+            let inner = client.sub(&inner, &xn_correction)?;
+            let d_input_flat = client.mul(&inner, &rstd)?;
+            Some(d_input_flat.reshape(shape)?)
+        } else {
+            None
+        };
 
-        // x_norm reshaped back to [B, C, spatial]
-        let x_norm_bcs = x_norm_flat.reshape(&[batch, channels, spatial])?;
-        let grad_bcs = grad_output_contig.reshape(&[batch, channels, spatial])?;
+        // Both parameter gradients read the gradient in [B, C, spatial] layout.
+        let grad_bcs = if needed[1] || needed[2] {
+            Some(grad_output_contig.reshape(&[batch, channels, spatial])?)
+        } else {
+            None
+        };
 
         // d_weight = sum(grad * x_norm, dims=[0, 2]) → [C]
-        let gxn = client.mul(&grad_bcs, &x_norm_bcs)?;
-        let d_weight = client.sum(&gxn, &[0, 2], false)?;
+        let d_weight = match (needed[1], &grad_bcs) {
+            (true, Some(grad_bcs)) => {
+                // x_norm reshaped back to [B, C, spatial]
+                let x_norm_bcs = x_norm_flat.reshape(&[batch, channels, spatial])?;
+                let gxn = client.mul(grad_bcs, &x_norm_bcs)?;
+                Some(client.sum(&gxn, &[0, 2], false)?)
+            }
+            _ => None,
+        };
 
         // d_bias = sum(grad, dims=[0, 2]) → [C]
-        let d_bias = client.sum(&grad_bcs, &[0, 2], false)?;
+        let d_bias = match (needed[2], &grad_bcs) {
+            (true, Some(grad_bcs)) => Some(client.sum(grad_bcs, &[0, 2], false)?),
+            _ => None,
+        };
 
-        Ok(vec![Some(d_input), Some(d_weight), Some(d_bias)])
+        Ok(vec![d_input, d_weight, d_bias])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>>
@@ -125,7 +149,8 @@ where
         R::Client: RuntimeClient<R> + TensorOps<R> + ScalarOps<R>,
     {
         // For higher-order gradients, fall back to tensor backward wrapped in Var
-        let grads = self.backward(grad_output.tensor())?;
+        // Second-order traversal keeps every node, so ask for every gradient.
+        let grads = self.backward_all(grad_output.tensor())?;
         Ok(grads
             .into_iter()
             .map(|g| g.map(|t| Var::new(t, false)))
@@ -202,10 +227,10 @@ mod tests {
         );
 
         let grad_contig = Tensor::<CpuRuntime>::from_slice(&grad_data, &[2, 3], &device);
-        let grads_contig = backward.backward(&grad_contig).unwrap();
+        let grads_contig = backward.backward_all(&grad_contig).unwrap();
 
         let grad_noncontig = non_contiguous_like(&grad_data, 2, 3, &device);
-        let grads_noncontig = backward.backward(&grad_noncontig).unwrap();
+        let grads_noncontig = backward.backward_all(&grad_noncontig).unwrap();
 
         for (a, b) in grads_contig.iter().zip(grads_noncontig.iter()) {
             let a = a.as_ref().unwrap().contiguous().unwrap();
@@ -250,7 +275,7 @@ mod tests {
             None,
             None,
         );
-        let grads_contig = backward_contig.backward(&grad_output).unwrap();
+        let grads_contig = backward_contig.backward_all(&grad_output).unwrap();
 
         let input_noncontig = non_contiguous_like(&input_data, 2, 3, &device);
         let backward_noncontig = GroupNormBackward::<CpuRuntime>::new(
@@ -265,7 +290,7 @@ mod tests {
             None,
             None,
         );
-        let grads_noncontig = backward_noncontig.backward(&grad_output).unwrap();
+        let grads_noncontig = backward_noncontig.backward_all(&grad_output).unwrap();
 
         for (a, b) in grads_contig.iter().zip(grads_noncontig.iter()) {
             let a = a.as_ref().unwrap().contiguous().unwrap();

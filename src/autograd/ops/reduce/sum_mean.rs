@@ -49,7 +49,12 @@ impl<R: Runtime> SumBackward<R> {
 }
 
 impl<R: Runtime> GradFn<R> for SumBackward<R> {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let mut grad = grad_output.clone();
 
         if !self.keepdim {
@@ -133,7 +138,12 @@ impl<R: Runtime> GradFn<R> for MeanBackward<R>
 where
     R::Client: ScalarOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         let count: usize = self.dims.iter().map(|&d| self.input_shape[d]).product();
@@ -208,7 +218,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device);
 
         let backward = SumBackward::<CpuRuntime>::new(TensorId::new(), &[2, 3], &[1], true, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a = grads[0].as_ref().unwrap();
         assert_eq!(grad_a.shape(), &[2, 3]);
@@ -223,7 +233,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2], DType::F32, &device);
 
         let backward = SumBackward::<CpuRuntime>::new(TensorId::new(), &[2, 3], &[1], false, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a = grads[0].as_ref().unwrap();
         assert_eq!(grad_a.shape(), &[2, 3]);
@@ -238,7 +248,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device);
 
         let backward = MeanBackward::<CpuRuntime>::new(TensorId::new(), &[2, 3], &[1], true, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a = grads[0].as_ref().unwrap();
         assert_eq!(grad_a.shape(), &[2, 3]);

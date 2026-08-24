@@ -47,7 +47,14 @@ impl<R: Runtime> GradFn<R> for FusedAddRmsNormBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + BinaryOps<R> + ReduceOps<R> + UnaryOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // One fused kernel produces all three gradients in a single pass, so no
+        // slot has a cost of its own to skip. Guarding would need the kernel
+        // itself to take the mask.
         let client = R::default_client(grad_output.device());
         let pre_norm = &self.saved_tensors[0];
         let weight = &self.saved_tensors[1];
@@ -183,7 +190,7 @@ mod tests {
             None,
             None,
         );
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         assert_eq!(grads.len(), 3);
         // x and residual gradients should be identical

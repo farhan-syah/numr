@@ -46,7 +46,15 @@ where
     R::Client:
         TensorOps<R> + ScalarOps<R> + BinaryOps<R> + ReduceOps<R> + UnaryOps<R> + MatmulOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
+        // `grad_pre` is shared by all three slots, but each slot's own work —
+        // two independent matmuls and a reduction — is not, so each is guarded.
+        // A frozen fused Linear wants only d_a and skips the `A^T @ grad_pre`
+        // matmul, the same saving as `MatmulBackward`.
+        if !needed.iter().any(|&n| n) {
+            return Ok(vec![None, None, None]);
+        }
+
         let client = R::default_client(grad_output.device());
         let a = &self.saved_tensors[0];
         let b = &self.saved_tensors[1];
@@ -59,29 +67,38 @@ where
         // Compute activation gradient: grad_pre = grad_output * activation'(pre_act)
         let grad_pre = apply_activation_grad(&client, grad_output, &pre_act, self.activation)?;
 
-        // d_a = grad_pre @ B^T
-        let b_t = b.transpose(-2, -1)?;
-        let d_a_full = client.matmul(&grad_pre, &b_t)?;
-
-        // d_b = A^T @ grad_pre
-        let a_t = a.transpose(-2, -1)?;
-        let d_b_full = client.matmul(&a_t, &grad_pre)?;
-
-        // Batch dims may have been broadcast during forward: sum each operand's
-        // gradient back over the dims where that operand had extent 1.
-        let d_a = reduce_grad_for_broadcast::<R>(&d_a_full, a.shape())?;
-        let d_b = reduce_grad_for_broadcast::<R>(&d_b_full, b.shape())?;
-
-        // d_bias = sum(grad_pre, batch_and_row_dims)
-        let ndim = grad_output.ndim();
-        let batch_dims: Vec<usize> = (0..ndim - 1).collect();
-        let d_bias = if batch_dims.is_empty() {
-            grad_pre
+        // d_a = grad_pre @ B^T, summed back over any broadcast batch dims.
+        let d_a = if needed[0] {
+            let b_t = b.transpose(-2, -1)?;
+            let d_a_full = client.matmul(&grad_pre, &b_t)?;
+            Some(reduce_grad_for_broadcast::<R>(&d_a_full, a.shape())?)
         } else {
-            client.sum(&grad_pre, &batch_dims, false)?
+            None
         };
 
-        Ok(vec![Some(d_a), Some(d_b), Some(d_bias)])
+        // d_b = A^T @ grad_pre, summed back over any broadcast batch dims.
+        let d_b = if needed[1] {
+            let a_t = a.transpose(-2, -1)?;
+            let d_b_full = client.matmul(&a_t, &grad_pre)?;
+            Some(reduce_grad_for_broadcast::<R>(&d_b_full, b.shape())?)
+        } else {
+            None
+        };
+
+        // d_bias = sum(grad_pre, batch_and_row_dims)
+        let d_bias = if needed[2] {
+            let ndim = grad_output.ndim();
+            let batch_dims: Vec<usize> = (0..ndim - 1).collect();
+            if batch_dims.is_empty() {
+                Some(grad_pre)
+            } else {
+                Some(client.sum(&grad_pre, &batch_dims, false)?)
+            }
+        } else {
+            None
+        };
+
+        Ok(vec![d_a, d_b, d_bias])
     }
 
     fn backward_var(&self, grad_output: &Var<R>) -> Result<Vec<Option<Var<R>>>>
@@ -295,7 +312,7 @@ mod tests {
             None,
             None,
         );
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let d_a = grads[0].as_ref().unwrap();
         assert_eq!(d_a.shape(), &[2, 2, 1, 2]);

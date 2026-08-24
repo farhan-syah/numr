@@ -138,7 +138,12 @@ impl<R: Runtime> GradFn<R> for MaxBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + CompareOps<R> + ReduceOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let grad_input = extremum_backward(
             &self.saved_input,
             grad_output,
@@ -219,7 +224,12 @@ impl<R: Runtime> GradFn<R> for MinBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + CompareOps<R> + ReduceOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let grad_input = extremum_backward(
             &self.saved_input,
             grad_output,
@@ -277,7 +287,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device);
 
         let backward = MaxBackward::<CpuRuntime>::new(a.id(), a.clone(), &[1], true, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a = grads[0].as_ref().unwrap();
         assert_eq!(grad_a.shape(), &[2, 3]);
@@ -296,7 +306,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[2, 1], DType::F32, &device);
 
         let backward = MinBackward::<CpuRuntime>::new(a.id(), a.clone(), &[1], true, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a = grads[0].as_ref().unwrap();
         assert_eq!(grad_a.shape(), &[2, 3]);
@@ -314,7 +324,7 @@ mod tests {
         let grad_out = Tensor::<CpuRuntime>::ones(&[1, 1], DType::F32, &device);
 
         let backward = MaxBackward::<CpuRuntime>::new(a.id(), a.clone(), &[1], true, None);
-        let grads = backward.backward(&grad_out).unwrap();
+        let grads = backward.backward_all(&grad_out).unwrap();
 
         let grad_a = grads[0].as_ref().unwrap();
         assert_eq!(grad_a.shape(), &[1, 3]);

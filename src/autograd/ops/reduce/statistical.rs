@@ -55,7 +55,12 @@ impl<R: Runtime> GradFn<R> for VarBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + ReduceOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         let n: usize = self
@@ -192,7 +197,12 @@ impl<R: Runtime> GradFn<R> for StdBackward<R>
 where
     R::Client: TensorOps<R> + ScalarOps<R> + ReduceOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
 
         let n: usize = self

@@ -232,7 +232,11 @@ where
     fn backward(
         &self,
         grad_output: &crate::tensor::Tensor<R>,
+        _needed: &[bool],
     ) -> Result<Vec<Option<crate::tensor::Tensor<R>>>> {
+        // One fused kernel returns both gradients together, so neither slot has
+        // a cost of its own to skip. Guarding would need the kernel to take the
+        // mask.
         let client = R::default_client(grad_output.device());
 
         // Delegate to fused backward trait method — allows backends (e.g. CUDA)

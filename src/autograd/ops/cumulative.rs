@@ -37,7 +37,12 @@ impl<R: Runtime> GradFn<R> for CumsumBackward<R>
 where
     R::Client: CumulativeOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let flipped = grad_output.flip(self.dim as isize)?;
         let cumsum_flipped = client.cumsum(&flipped, self.dim as isize)?;
@@ -105,7 +110,12 @@ impl<R: Runtime> GradFn<R> for CumprodBackward<R>
 where
     R::Client: CumulativeOps<R> + BinaryOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(
+        &self,
+        grad_output: &Tensor<R>,
+        _needed: &[bool],
+    ) -> Result<Vec<Option<Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let grad_times_output = client.mul(grad_output, &self.output)?;
 

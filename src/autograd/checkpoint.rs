@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use crate::autograd::{GradFn, Var, backward, var_mul, var_sum};
+use crate::autograd::{GradFn, Var, backward_wrt, var_mul, var_sum};
 use crate::dtype::DType;
 use crate::error::Result;
 use crate::ops::TensorOps;
@@ -93,7 +93,14 @@ where
     R: Runtime<DType = DType>,
     R::Client: TensorOps<R>,
 {
-    fn backward(&self, grad_output: &Tensor<R>) -> Result<Vec<Option<Tensor<R>>>> {
+    fn backward(&self, grad_output: &Tensor<R>, needed: &[bool]) -> Result<Vec<Option<Tensor<R>>>> {
+        // The mask narrows the re-entrant pass below: only the wanted segment
+        // inputs are asked for, so the recomputed graph prunes to them and the
+        // rest of the segment's backward work is never run.
+        if !needed.iter().any(|&n| n) {
+            return Ok(vec![None; self.input_ids.len()]);
+        }
+
         let client = R::default_client(grad_output.device());
 
         // Reconstruct input Vars as LEAF nodes with original IDs.
@@ -116,12 +123,22 @@ where
         let product = var_mul(&recomputed_output, &grad_output_var, &client)?;
         let loss = var_sum(&product, &[], false, &client)?;
 
-        let grads = backward(&loss, &client)?;
+        // Only the wanted segment inputs are read back below, so prune the
+        // re-entrant pass to exactly those — the recomputed intermediates never
+        // enter the store, and an unwanted input's cone is never walked.
+        let wanted: Vec<TensorId> = self
+            .input_ids
+            .iter()
+            .zip(needed)
+            .filter_map(|(id, &want)| want.then_some(*id))
+            .collect();
+        let grads = backward_wrt(&loss, &wanted, &client)?;
 
         Ok(self
             .input_ids
             .iter()
-            .map(|id| grads.get(*id).cloned())
+            .zip(needed)
+            .map(|(id, &want)| want.then(|| grads.get(*id).cloned()).flatten())
             .collect())
     }
 

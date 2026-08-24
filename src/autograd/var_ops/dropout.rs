@@ -110,7 +110,9 @@ where
     fn backward(
         &self,
         grad_output: &crate::tensor::Tensor<R>,
+        _needed: &[bool],
     ) -> Result<Vec<Option<crate::tensor::Tensor<R>>>> {
+        // Single input — nothing to skip.
         let client = R::default_client(grad_output.device());
         let grad = client.mul(grad_output, &self.saved_mask)?;
         Ok(vec![Some(grad)])
