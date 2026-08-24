@@ -14,11 +14,12 @@ fn test_sqrtm_identity() {
     // sqrt(I) = I
     let (client, device) = create_cpu_client();
 
-    let identity = Tensor::<CpuRuntime>::from_slice(
+    let identity = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         &[3, 3],
         &device,
-    );
+    )
+    .unwrap();
     let result = client.sqrtm(&identity).expect("sqrtm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -32,11 +33,12 @@ fn test_sqrtm_diagonal() {
     // sqrt(diag([a, b, c])) = diag([sqrt(a), sqrt(b), sqrt(c)])
     let (client, device) = create_cpu_client();
 
-    let diag_matrix = Tensor::<CpuRuntime>::from_slice(
+    let diag_matrix = Tensor::<CpuRuntime>::try_from_slice(
         &[4.0, 0.0, 0.0, 0.0, 9.0, 0.0, 0.0, 0.0, 16.0],
         &[3, 3],
         &device,
-    );
+    )
+    .unwrap();
     let result = client.sqrtm(&diag_matrix).expect("sqrtm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -49,7 +51,7 @@ fn test_sqrtm_diagonal() {
 fn test_sqrtm_1x1() {
     let (client, device) = create_cpu_client();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[9.0], &[1, 1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[9.0], &[1, 1], &device).unwrap();
     let result = client.sqrtm(&a).expect("sqrtm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -64,7 +66,7 @@ fn test_sqrtm_verify_squared() {
     let (client, device) = create_cpu_client();
 
     // Positive definite matrix
-    let a = Tensor::<CpuRuntime>::from_slice(&[4.0, 2.0, 2.0, 5.0], &[2, 2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[4.0, 2.0, 2.0, 5.0], &[2, 2], &device).unwrap();
 
     let sqrt_a = client.sqrtm(&a).expect("sqrtm should succeed");
 
@@ -84,7 +86,7 @@ fn test_sqrtm_negative_eigenvalue_error() {
     let (client, device) = create_cpu_client();
 
     // Matrix with negative eigenvalue
-    let a = Tensor::<CpuRuntime>::from_slice(&[-4.0], &[1, 1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-4.0], &[1, 1], &device).unwrap();
 
     let result = client.sqrtm(&a);
     assert!(result.is_err(), "sqrtm of negative should fail");
@@ -94,7 +96,7 @@ fn test_sqrtm_negative_eigenvalue_error() {
 fn test_sqrtm_empty() {
     let (client, device) = create_cpu_client();
 
-    let empty = Tensor::<CpuRuntime>::zeros(&[0, 0], DType::F64, &device);
+    let empty = Tensor::<CpuRuntime>::try_zeros(&[0, 0], DType::F64, &device).unwrap();
     let result = client.sqrtm(&empty).expect("sqrtm of empty should succeed");
 
     assert_eq!(result.shape(), &[0, 0]);
@@ -104,7 +106,8 @@ fn test_sqrtm_empty() {
 fn test_sqrtm_f32() {
     let (client, device) = create_cpu_client();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[4.0_f32, 0.0, 0.0, 9.0], &[2, 2], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[4.0_f32, 0.0, 0.0, 9.0], &[2, 2], &device).unwrap();
     let result = client.sqrtm(&a).expect("sqrtm f32 should succeed");
 
     let result_data: Vec<f32> = result.to_vec();

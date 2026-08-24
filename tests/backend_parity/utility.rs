@@ -318,15 +318,20 @@ fn test_one_hot_parity() {
 
     for (data, shape, num_classes) in &cases {
         let cpu_indices =
-            Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(data, shape, &cpu_device);
+            Tensor::<numr::runtime::cpu::CpuRuntime>::try_from_slice(data, shape, &cpu_device)
+                .unwrap();
         let cpu_result = cpu_client
             .one_hot(&cpu_indices, *num_classes)
             .expect("CPU one_hot failed");
 
         #[cfg(feature = "cuda")]
         with_cuda_backend(|cuda_client, cuda_device| {
-            let indices =
-                Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(data, shape, &cuda_device);
+            let indices = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
+                data,
+                shape,
+                &cuda_device,
+            )
+            .unwrap();
             let result = cuda_client
                 .one_hot(&indices, *num_classes)
                 .expect("CUDA one_hot failed");
@@ -340,8 +345,12 @@ fn test_one_hot_parity() {
 
         #[cfg(feature = "wgpu")]
         with_wgpu_backend(|wgpu_client, wgpu_device| {
-            let indices =
-                Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(data, shape, &wgpu_device);
+            let indices = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
+                data,
+                shape,
+                &wgpu_device,
+            )
+            .unwrap();
             let result = wgpu_client
                 .one_hot(&indices, *num_classes)
                 .expect("WebGPU one_hot failed");

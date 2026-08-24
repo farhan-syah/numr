@@ -39,7 +39,7 @@ fn rand_complex(n: usize, device: &CpuDevice) -> Tensor<CpuRuntime> {
 
 fn rand_indices(n: usize, max_val: i32, device: &CpuDevice) -> Tensor<CpuRuntime> {
     let data: Vec<i32> = (0..n).map(|i| (i as i32) % max_val).collect();
-    Tensor::<CpuRuntime>::from_slice(&data, &[n], device)
+    Tensor::<CpuRuntime>::try_from_slice(&data, &[n], device).unwrap()
 }
 
 // ---------------------------------------------------------------------------

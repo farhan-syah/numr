@@ -31,8 +31,8 @@ fn main() -> Result<()> {
     let x_data = client.randn(&[n_samples, n_features], DType::F32)?;
 
     // True weights [3.0, 2.0] and bias 1.0
-    let true_w = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 2.0], &[n_features, 1], &device);
-    let true_b = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[1], &device);
+    let true_w = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 2.0], &[n_features, 1], &device)?;
+    let true_b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[1], &device)?;
 
     // y = X @ W_true + b_true + noise
     let noise = client.randn(&[n_samples, 1], DType::F32)?;
@@ -51,7 +51,10 @@ fn main() -> Result<()> {
         client.randn(&[n_features, 1], DType::F32)?,
         true, // requires_grad
     );
-    let mut b = Var::new(Tensor::<CpuRuntime>::zeros(&[1], DType::F32, &device), true);
+    let mut b = Var::new(
+        Tensor::<CpuRuntime>::try_zeros(&[1], DType::F32, &device)?,
+        true,
+    );
 
     // Wrap immutable inputs as Var with requires_grad=false.
     let x_var = Var::new(x_data.clone(), false);

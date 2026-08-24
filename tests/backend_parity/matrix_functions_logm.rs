@@ -13,11 +13,12 @@ fn test_logm_identity() {
     // log(I) = 0
     let (client, device) = create_cpu_client();
 
-    let identity = Tensor::<CpuRuntime>::from_slice(
+    let identity = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
         &[3, 3],
         &device,
-    );
+    )
+    .unwrap();
     let result = client.logm(&identity).expect("logm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -32,11 +33,12 @@ fn test_logm_diagonal() {
     let (client, device) = create_cpu_client();
 
     let e = std::f64::consts::E;
-    let diag_matrix = Tensor::<CpuRuntime>::from_slice(
+    let diag_matrix = Tensor::<CpuRuntime>::try_from_slice(
         &[e, 0.0, 0.0, 0.0, e * e, 0.0, 0.0, 0.0, e * e * e],
         &[3, 3],
         &device,
-    );
+    )
+    .unwrap();
     let result = client.logm(&diag_matrix).expect("logm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -49,7 +51,7 @@ fn test_logm_diagonal() {
 fn test_logm_1x1() {
     let (client, device) = create_cpu_client();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[std::f64::consts::E], &[1, 1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[std::f64::consts::E], &[1, 1], &device).unwrap();
     let result = client.logm(&a).expect("logm should succeed");
 
     let result_data: Vec<f64> = result.to_vec();
@@ -63,7 +65,7 @@ fn test_logm_nonpositive_error() {
     let (client, device) = create_cpu_client();
 
     // Matrix with non-positive eigenvalue
-    let a = Tensor::<CpuRuntime>::from_slice(&[0.0], &[1, 1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0], &[1, 1], &device).unwrap();
 
     let result = client.logm(&a);
     assert!(result.is_err(), "logm of zero should fail");
@@ -75,7 +77,8 @@ fn test_logm_expm_inverse() {
     let (client, device) = create_cpu_client();
 
     // Small matrix to avoid numerical issues
-    let a = Tensor::<CpuRuntime>::from_slice(&[0.1, 0.05, 0.05, 0.2], &[2, 2], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[0.1, 0.05, 0.05, 0.2], &[2, 2], &device).unwrap();
 
     let exp_a = client.expm(&a).expect("expm should succeed");
     let log_exp_a = client.logm(&exp_a).expect("logm should succeed");
@@ -90,7 +93,7 @@ fn test_logm_expm_inverse() {
 fn test_logm_empty() {
     let (client, device) = create_cpu_client();
 
-    let empty = Tensor::<CpuRuntime>::zeros(&[0, 0], DType::F64, &device);
+    let empty = Tensor::<CpuRuntime>::try_zeros(&[0, 0], DType::F64, &device).unwrap();
     let result = client.logm(&empty).expect("logm of empty should succeed");
 
     assert_eq!(result.shape(), &[0, 0]);
@@ -102,7 +105,7 @@ fn test_expm_logm_roundtrip() {
     let (client, device) = create_cpu_client();
 
     // Positive definite matrix
-    let a = Tensor::<CpuRuntime>::from_slice(&[2.0, 0.5, 0.5, 3.0], &[2, 2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0, 0.5, 0.5, 3.0], &[2, 2], &device).unwrap();
 
     let log_a = client.logm(&a).expect("logm should succeed");
     let exp_log_a = client.expm(&log_a).expect("expm should succeed");
@@ -118,7 +121,7 @@ fn test_logm_f32() {
     let (client, device) = create_cpu_client();
 
     let e = std::f32::consts::E;
-    let a = Tensor::<CpuRuntime>::from_slice(&[e, 0.0, 0.0, e * e], &[2, 2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[e, 0.0, 0.0, e * e], &[2, 2], &device).unwrap();
     let result = client.logm(&a).expect("logm f32 should succeed");
 
     let result_data: Vec<f32> = result.to_vec();

@@ -29,7 +29,7 @@ fn test_masked_select_parity() {
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let mask_row_cpu = Tensor::from_slice(&[1u8, 0, 1], &[1, 3], &cpu_device);
+        let mask_row_cpu = Tensor::try_from_slice(&[1u8, 0, 1], &[1, 3], &cpu_device).unwrap();
 
         let cpu_result = cpu_client
             .masked_select(&a_cpu, &mask_row_cpu)
@@ -40,7 +40,7 @@ fn test_masked_select_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask_row = Tensor::from_slice(&[1u8, 0, 1], &[1, 3], &cuda_device);
+                let mask_row = Tensor::try_from_slice(&[1u8, 0, 1], &[1, 3], &cuda_device).unwrap();
 
                 let result = cuda_client
                     .masked_select(&a, &mask_row)
@@ -60,7 +60,8 @@ fn test_masked_select_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask_row = Tensor::from_slice(&[1u32, 0, 1], &[1, 3], &wgpu_device);
+                let mask_row =
+                    Tensor::try_from_slice(&[1u32, 0, 1], &[1, 3], &wgpu_device).unwrap();
 
                 let result = wgpu_client
                     .masked_select(&a, &mask_row)
@@ -85,7 +86,7 @@ fn test_masked_select_column_parity() {
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let mask_col_cpu = Tensor::from_slice(&[1u8, 0], &[2, 1], &cpu_device);
+        let mask_col_cpu = Tensor::try_from_slice(&[1u8, 0], &[2, 1], &cpu_device).unwrap();
 
         let cpu_result = cpu_client
             .masked_select(&a_cpu, &mask_col_cpu)
@@ -96,7 +97,7 @@ fn test_masked_select_column_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask_col = Tensor::from_slice(&[1u8, 0], &[2, 1], &cuda_device);
+                let mask_col = Tensor::try_from_slice(&[1u8, 0], &[2, 1], &cuda_device).unwrap();
 
                 let result = cuda_client
                     .masked_select(&a, &mask_col)
@@ -116,7 +117,7 @@ fn test_masked_select_column_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask_col = Tensor::from_slice(&[1u32, 0], &[2, 1], &wgpu_device);
+                let mask_col = Tensor::try_from_slice(&[1u32, 0], &[2, 1], &wgpu_device).unwrap();
 
                 let result = wgpu_client
                     .masked_select(&a, &mask_col)
@@ -141,7 +142,7 @@ fn test_masked_select_3d_parity() {
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 2, 2], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let mask_cpu = Tensor::from_slice(&[1u8, 0], &[1, 2, 1], &cpu_device);
+        let mask_cpu = Tensor::try_from_slice(&[1u8, 0], &[1, 2, 1], &cpu_device).unwrap();
 
         let cpu_result = cpu_client
             .masked_select(&a_cpu, &mask_cpu)
@@ -152,7 +153,7 @@ fn test_masked_select_3d_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 2, 2], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask = Tensor::from_slice(&[1u8, 0], &[1, 2, 1], &cuda_device);
+                let mask = Tensor::try_from_slice(&[1u8, 0], &[1, 2, 1], &cuda_device).unwrap();
 
                 let result = cuda_client
                     .masked_select(&a, &mask)
@@ -172,7 +173,7 @@ fn test_masked_select_3d_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 2, 2], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask = Tensor::from_slice(&[1u32, 0], &[1, 2, 1], &wgpu_device);
+                let mask = Tensor::try_from_slice(&[1u32, 0], &[1, 2, 1], &wgpu_device).unwrap();
 
                 let result = wgpu_client
                     .masked_select(&a, &mask)
@@ -197,7 +198,7 @@ fn test_masked_fill_parity() {
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let mask_cpu = Tensor::from_slice(&[1u8, 0, 1], &[1, 3], &cpu_device);
+        let mask_cpu = Tensor::try_from_slice(&[1u8, 0, 1], &[1, 3], &cpu_device).unwrap();
 
         let cpu_result = cpu_client
             .masked_fill(&a_cpu, &mask_cpu, -1.0)
@@ -208,7 +209,7 @@ fn test_masked_fill_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask = Tensor::from_slice(&[1u8, 0, 1], &[1, 3], &cuda_device);
+                let mask = Tensor::try_from_slice(&[1u8, 0, 1], &[1, 3], &cuda_device).unwrap();
 
                 let result = cuda_client
                     .masked_fill(&a, &mask, -1.0)
@@ -228,7 +229,7 @@ fn test_masked_fill_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask = Tensor::from_slice(&[1u32, 0, 1], &[1, 3], &wgpu_device);
+                let mask = Tensor::try_from_slice(&[1u32, 0, 1], &[1, 3], &wgpu_device).unwrap();
 
                 let result = wgpu_client
                     .masked_fill(&a, &mask, -1.0)
@@ -253,7 +254,7 @@ fn test_masked_fill_column_parity() {
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let mask_cpu = Tensor::from_slice(&[1u8, 0], &[2, 1], &cpu_device);
+        let mask_cpu = Tensor::try_from_slice(&[1u8, 0], &[2, 1], &cpu_device).unwrap();
 
         let cpu_result = cpu_client
             .masked_fill(&a_cpu, &mask_cpu, 99.0)
@@ -264,7 +265,7 @@ fn test_masked_fill_column_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask = Tensor::from_slice(&[1u8, 0], &[2, 1], &cuda_device);
+                let mask = Tensor::try_from_slice(&[1u8, 0], &[2, 1], &cuda_device).unwrap();
 
                 let result = cuda_client
                     .masked_fill(&a, &mask, 99.0)
@@ -284,7 +285,7 @@ fn test_masked_fill_column_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let mask = Tensor::from_slice(&[1u32, 0], &[2, 1], &wgpu_device);
+                let mask = Tensor::try_from_slice(&[1u32, 0], &[2, 1], &wgpu_device).unwrap();
 
                 let result = wgpu_client
                     .masked_fill(&a, &mask, 99.0)
@@ -313,7 +314,7 @@ fn test_take_parity() {
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let idx_cpu = Tensor::from_slice(&[5i32, 0, 2, 4], &[2, 2], &cpu_device);
+        let idx_cpu = Tensor::try_from_slice(&[5i32, 0, 2, 4], &[2, 2], &cpu_device).unwrap();
 
         let cpu_result = cpu_client
             .take(&a_cpu, &idx_cpu)
@@ -324,7 +325,7 @@ fn test_take_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i32, 0, 2, 4], &[2, 2], &cuda_device);
+                let idx = Tensor::try_from_slice(&[5i32, 0, 2, 4], &[2, 2], &cuda_device).unwrap();
 
                 let result = cuda_client
                     .take(&a, &idx)
@@ -344,7 +345,7 @@ fn test_take_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i32, 0, 2, 4], &[2, 2], &wgpu_device);
+                let idx = Tensor::try_from_slice(&[5i32, 0, 2, 4], &[2, 2], &wgpu_device).unwrap();
 
                 let result = wgpu_client
                     .take(&a, &idx)
@@ -369,7 +370,7 @@ fn test_put_parity() {
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let idx_cpu = Tensor::from_slice(&[5i32, 0, 2, 4], &[2, 2], &cpu_device);
+        let idx_cpu = Tensor::try_from_slice(&[5i32, 0, 2, 4], &[2, 2], &cpu_device).unwrap();
         let put_values_data = vec![1.0, 2.0, 3.0, 4.0];
         let put_values_cpu =
             tensor_from_f64(&put_values_data, &[2, 2], dtype, &cpu_device, &cpu_client)
@@ -384,7 +385,7 @@ fn test_put_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i32, 0, 2, 4], &[2, 2], &cuda_device);
+                let idx = Tensor::try_from_slice(&[5i32, 0, 2, 4], &[2, 2], &cuda_device).unwrap();
                 let put_values =
                     tensor_from_f64(&put_values_data, &[2, 2], dtype, &cuda_device, &cuda_client)
                         .unwrap_or_else(|e| {
@@ -409,7 +410,7 @@ fn test_put_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i32, 0, 2, 4], &[2, 2], &wgpu_device);
+                let idx = Tensor::try_from_slice(&[5i32, 0, 2, 4], &[2, 2], &wgpu_device).unwrap();
                 let put_values =
                     tensor_from_f64(&put_values_data, &[2, 2], dtype, &wgpu_device, &wgpu_client)
                         .unwrap_or_else(|e| {
@@ -443,7 +444,7 @@ fn test_take_i64_indices_parity() {
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let idx_cpu = Tensor::from_slice(&[5i64, 0, 2, 4], &[2, 2], &cpu_device);
+        let idx_cpu = Tensor::try_from_slice(&[5i64, 0, 2, 4], &[2, 2], &cpu_device).unwrap();
 
         let cpu_result = cpu_client
             .take(&a_cpu, &idx_cpu)
@@ -454,7 +455,7 @@ fn test_take_i64_indices_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i64, 0, 2, 4], &[2, 2], &cuda_device);
+                let idx = Tensor::try_from_slice(&[5i64, 0, 2, 4], &[2, 2], &cuda_device).unwrap();
 
                 let result = cuda_client
                     .take(&a, &idx)
@@ -474,7 +475,7 @@ fn test_take_i64_indices_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i64, 0, 2, 4], &[2, 2], &wgpu_device);
+                let idx = Tensor::try_from_slice(&[5i64, 0, 2, 4], &[2, 2], &wgpu_device).unwrap();
 
                 let result = wgpu_client
                     .take(&a, &idx)
@@ -499,7 +500,7 @@ fn test_put_i64_indices_parity() {
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
         let a_cpu = tensor_from_f64(&a_data, &[2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        let idx_cpu = Tensor::from_slice(&[5i64, 0, 2, 4], &[2, 2], &cpu_device);
+        let idx_cpu = Tensor::try_from_slice(&[5i64, 0, 2, 4], &[2, 2], &cpu_device).unwrap();
         let put_values_data = vec![1.0, 2.0, 3.0, 4.0];
         let put_values_cpu =
             tensor_from_f64(&put_values_data, &[2, 2], dtype, &cpu_device, &cpu_client)
@@ -514,7 +515,7 @@ fn test_put_i64_indices_parity() {
             with_cuda_backend(|cuda_client, cuda_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i64, 0, 2, 4], &[2, 2], &cuda_device);
+                let idx = Tensor::try_from_slice(&[5i64, 0, 2, 4], &[2, 2], &cuda_device).unwrap();
                 let put_values =
                     tensor_from_f64(&put_values_data, &[2, 2], dtype, &cuda_device, &cuda_client)
                         .unwrap_or_else(|e| {
@@ -539,7 +540,7 @@ fn test_put_i64_indices_parity() {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
                 let a = tensor_from_f64(&a_data, &[2, 3], dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
-                let idx = Tensor::from_slice(&[5i64, 0, 2, 4], &[2, 2], &wgpu_device);
+                let idx = Tensor::try_from_slice(&[5i64, 0, 2, 4], &[2, 2], &wgpu_device).unwrap();
                 let put_values =
                     tensor_from_f64(&put_values_data, &[2, 2], dtype, &wgpu_device, &wgpu_client)
                         .unwrap_or_else(|e| {
@@ -568,13 +569,14 @@ fn test_put_i64_indices_parity() {
 #[test]
 fn test_take_put_reject_non_integer_indices() {
     let (cpu_client, cpu_device) = create_cpu_client();
-    let a_cpu = Tensor::from_slice(
+    let a_cpu = Tensor::try_from_slice(
         &[10.0f32, 20.0, 30.0, 40.0, 50.0, 60.0],
         &[2, 3],
         &cpu_device,
-    );
-    let idx_cpu = Tensor::from_slice(&[0.0f32, 2.0], &[2], &cpu_device);
-    let put_values_cpu = Tensor::from_slice(&[1.0f32, 2.0], &[2], &cpu_device);
+    )
+    .unwrap();
+    let idx_cpu = Tensor::try_from_slice(&[0.0f32, 2.0], &[2], &cpu_device).unwrap();
+    let put_values_cpu = Tensor::try_from_slice(&[1.0f32, 2.0], &[2], &cpu_device).unwrap();
 
     let take_err = cpu_client.take(&a_cpu, &idx_cpu).unwrap_err();
     match take_err {

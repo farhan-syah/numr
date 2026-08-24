@@ -37,10 +37,12 @@ pub fn create_1d_laplacian(
         row_ptrs.push(col_indices.len() as i64);
     }
 
-    let row_ptrs_tensor = Tensor::<CpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], device);
+    let row_ptrs_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
     let col_indices_tensor =
-        Tensor::<CpuRuntime>::from_slice(&col_indices, &[col_indices.len()], device);
-    let values_tensor = Tensor::<CpuRuntime>::from_slice(&values, &[values.len()], device);
+        Tensor::<CpuRuntime>::try_from_slice(&col_indices, &[col_indices.len()], device).unwrap();
+    let values_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&values, &[values.len()], device).unwrap();
 
     CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, [n, n])
         .expect("CSR creation should succeed")
@@ -71,10 +73,12 @@ pub fn create_nonsymmetric(
         row_ptrs.push(col_indices.len() as i64);
     }
 
-    let row_ptrs_tensor = Tensor::<CpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], device);
+    let row_ptrs_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
     let col_indices_tensor =
-        Tensor::<CpuRuntime>::from_slice(&col_indices, &[col_indices.len()], device);
-    let values_tensor = Tensor::<CpuRuntime>::from_slice(&values, &[values.len()], device);
+        Tensor::<CpuRuntime>::try_from_slice(&col_indices, &[col_indices.len()], device).unwrap();
+    let values_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&values, &[values.len()], device).unwrap();
 
     CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, [n, n])
         .expect("CSR creation should succeed")
@@ -92,7 +96,7 @@ fn test_cg_laplacian() {
     let n = 10;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device);
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .cg(&a, &b, None, CgOptions::default())
@@ -122,7 +126,7 @@ fn test_cg_with_preconditioner() {
     let n = 20;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64).sin()).collect();
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device);
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
 
     let result_plain = client
         .cg(&a, &b, None, CgOptions::default())
@@ -156,12 +160,15 @@ fn test_cg_identity() {
     let device = &CpuRuntime::default_device();
 
     let n = 5;
-    let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3, 4, 5], &[n + 1], device);
-    let col_indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3, 4], &[n], device);
-    let values = Tensor::<CpuRuntime>::from_slice(&[1.0f64; 5], &[n], device);
+    let row_ptrs =
+        Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3, 4, 5], &[n + 1], device).unwrap();
+    let col_indices =
+        Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3, 4], &[n], device).unwrap();
+    let values = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64; 5], &[n], device).unwrap();
     let a = CsrData::new(row_ptrs, col_indices, values, [n, n]).unwrap();
 
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[n], device);
+    let b =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0], &[n], device).unwrap();
 
     let result = client
         .cg(&a, &b, None, CgOptions::default())
@@ -188,7 +195,7 @@ fn test_cgs_nonsymmetric() {
     let n = 10;
     let a = create_nonsymmetric(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device);
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .cgs(&a, &b, None, CgsOptions::default())
@@ -218,11 +225,12 @@ fn test_cgs_laplacian() {
 
     let n = 10;
     let a = create_1d_laplacian(n, device);
-    let b = Tensor::<CpuRuntime>::from_slice(
+    let b = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f64, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
         &[n],
         device,
-    );
+    )
+    .unwrap();
 
     let result = client
         .cgs(&a, &b, None, CgsOptions::default())
@@ -243,7 +251,7 @@ fn test_minres_laplacian() {
     let n = 10;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device);
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
 
     let result = client
         .minres(&a, &b, None, MinresOptions::default())
@@ -273,12 +281,13 @@ fn test_minres_symmetric_indefinite() {
     let device = &CpuRuntime::default_device();
 
     let n = 2;
-    let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 4], &[3], device);
-    let col_indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 0, 1], &[4], device);
-    let values = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 2.0, -1.0], &[4], device);
+    let row_ptrs = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 4], &[3], device).unwrap();
+    let col_indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 0, 1], &[4], device).unwrap();
+    let values =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 2.0, -1.0], &[4], device).unwrap();
     let a = CsrData::new(row_ptrs, col_indices, values, [n, n]).unwrap();
 
-    let b = Tensor::<CpuRuntime>::from_slice(&[3.0f64, 1.0], &[n], device);
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f64, 1.0], &[n], device).unwrap();
 
     let result = client
         .minres(&a, &b, None, MinresOptions::default())
@@ -311,7 +320,7 @@ fn test_cg_vs_gmres_on_spd() {
     let n = 10;
     let a = create_1d_laplacian(n, device);
     let b_data: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0).sin()).collect();
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[n], device);
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[n], device).unwrap();
 
     let cg_result = client
         .cg(&a, &b, None, CgOptions::default())

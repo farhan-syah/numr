@@ -168,8 +168,10 @@ fn test_semiring_or_and_parity() {
     let a: Vec<u8> = vec![1, 0, 1, 0, 1, 1, 0, 0, 1];
     let b: Vec<u8> = vec![0, 1, 0, 1, 0, 1, 1, 1, 0];
 
-    let cpu_a = Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(&a, &[3, 3], &cpu_device);
-    let cpu_b = Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(&b, &[3, 3], &cpu_device);
+    let cpu_a =
+        Tensor::<numr::runtime::cpu::CpuRuntime>::try_from_slice(&a, &[3, 3], &cpu_device).unwrap();
+    let cpu_b =
+        Tensor::<numr::runtime::cpu::CpuRuntime>::try_from_slice(&b, &[3, 3], &cpu_device).unwrap();
     #[allow(unused_variables)]
     let cpu_result = cpu_client
         .semiring_matmul(&cpu_a, &cpu_b, SemiringOp::OrAnd)
@@ -180,8 +182,12 @@ fn test_semiring_or_and_parity() {
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
         let cpu_vals = cpu_result.to_vec::<u8>();
-        let ca = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&a, &[3, 3], &cuda_device);
-        let cb = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&b, &[3, 3], &cuda_device);
+        let ca =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(&a, &[3, 3], &cuda_device)
+                .unwrap();
+        let cb =
+            Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(&b, &[3, 3], &cuda_device)
+                .unwrap();
         let result = cuda_client
             .semiring_matmul(&ca, &cb, SemiringOp::OrAnd)
             .expect("CUDA OrAnd failed");

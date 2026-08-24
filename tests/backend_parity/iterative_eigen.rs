@@ -33,10 +33,12 @@ fn create_1d_laplacian(n: usize, device: &<CpuRuntime as Runtime>::Device) -> Cs
         row_ptrs.push(col_indices.len() as i64);
     }
 
-    let row_ptrs_tensor = Tensor::<CpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], device);
+    let row_ptrs_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
     let col_indices_tensor =
-        Tensor::<CpuRuntime>::from_slice(&col_indices, &[col_indices.len()], device);
-    let values_tensor = Tensor::<CpuRuntime>::from_slice(&values, &[values.len()], device);
+        Tensor::<CpuRuntime>::try_from_slice(&col_indices, &[col_indices.len()], device).unwrap();
+    let values_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&values, &[values.len()], device).unwrap();
 
     CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, [n, n])
         .expect("CSR creation should succeed")
@@ -62,10 +64,12 @@ fn create_nonsymmetric(n: usize, device: &<CpuRuntime as Runtime>::Device) -> Cs
         row_ptrs.push(col_indices.len() as i64);
     }
 
-    let row_ptrs_tensor = Tensor::<CpuRuntime>::from_slice(&row_ptrs, &[row_ptrs.len()], device);
+    let row_ptrs_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
     let col_indices_tensor =
-        Tensor::<CpuRuntime>::from_slice(&col_indices, &[col_indices.len()], device);
-    let values_tensor = Tensor::<CpuRuntime>::from_slice(&values, &[values.len()], device);
+        Tensor::<CpuRuntime>::try_from_slice(&col_indices, &[col_indices.len()], device).unwrap();
+    let values_tensor =
+        Tensor::<CpuRuntime>::try_from_slice(&values, &[values.len()], device).unwrap();
 
     CsrData::new(row_ptrs_tensor, col_indices_tensor, values_tensor, [n, n])
         .expect("CSR creation should succeed")
@@ -116,9 +120,10 @@ fn test_lanczos_identity_eigenvalues() {
     let device = &CpuRuntime::default_device();
 
     let n = 4;
-    let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3, 4], &[n + 1], device);
-    let col_indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3], &[n], device);
-    let values = Tensor::<CpuRuntime>::from_slice(&[1.0f64; 4], &[n], device);
+    let row_ptrs =
+        Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3, 4], &[n + 1], device).unwrap();
+    let col_indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3], &[n], device).unwrap();
+    let values = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64; 4], &[n], device).unwrap();
     let a = CsrData::new(row_ptrs, col_indices, values, [n, n]).unwrap();
 
     let result = client
@@ -273,9 +278,11 @@ fn test_svds_identity() {
     let device = &CpuRuntime::default_device();
 
     let n = 5;
-    let row_ptrs = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3, 4, 5], &[n + 1], device);
-    let col_indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 3, 4], &[n], device);
-    let values = Tensor::<CpuRuntime>::from_slice(&[2.0f64; 5], &[n], device);
+    let row_ptrs =
+        Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3, 4, 5], &[n + 1], device).unwrap();
+    let col_indices =
+        Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 3, 4], &[n], device).unwrap();
+    let values = Tensor::<CpuRuntime>::try_from_slice(&[2.0f64; 5], &[n], device).unwrap();
     let a = CsrData::new(row_ptrs, col_indices, values, [n, n]).unwrap();
 
     let result = client

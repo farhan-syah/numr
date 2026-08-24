@@ -88,8 +88,10 @@ fn test_tensor_add() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
+    let b =
+        Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -103,8 +105,9 @@ fn test_tensor_sub() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let c = client.sub(&a, &b).unwrap();
 
@@ -117,8 +120,8 @@ fn test_tensor_mul() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0, 4.0, 5.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0, 4.0, 5.0], &[4], &device).unwrap();
 
     let c = client.mul(&a, &b).unwrap();
 
@@ -131,8 +134,9 @@ fn test_tensor_div() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 4.0, 5.0, 8.0], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 4.0, 5.0, 8.0], &[4], &device).unwrap();
 
     let c = client.div(&a, &b).unwrap();
 
@@ -145,7 +149,8 @@ fn test_tensor_neg() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, -2.0, 3.0, -4.0], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, -2.0, 3.0, -4.0], &[4], &device).unwrap();
 
     let b = client.neg(&a).unwrap();
 
@@ -158,7 +163,7 @@ fn test_tensor_sqrt() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 4.0, 9.0, 16.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 4.0, 9.0, 16.0], &[4], &device).unwrap();
 
     let b = client.sqrt(&a).unwrap();
 
@@ -171,7 +176,7 @@ fn test_tensor_exp() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0], &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0], &[2], &device).unwrap();
 
     let b = client.exp(&a).unwrap();
 
@@ -189,8 +194,10 @@ fn test_tensor_matmul_2x2() {
     // A = [[1, 2], [3, 4]]
     // B = [[5, 6], [7, 8]]
     // C = A @ B = [[19, 22], [43, 50]]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
+    let b =
+        Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device).unwrap();
 
     let c = client.matmul(&a, &b).unwrap();
 
@@ -207,12 +214,15 @@ fn test_tensor_matmul_3x2_2x4() {
     // A = [[1, 2], [3, 4], [5, 6]] (3x2)
     // B = [[1, 2, 3, 4], [5, 6, 7, 8]] (2x4)
     // C = A @ B (3x4)
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+            .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         &[2, 4],
         &device,
-    );
+    )
+    .unwrap();
 
     let c = client.matmul(&a, &b).unwrap();
 
@@ -235,7 +245,9 @@ fn test_tensor_sum_last_dim() {
     let client = CpuRuntime::default_client(&device);
 
     // Shape [2, 3] -> sum over dim 1 -> shape [2]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
 
     let b = client.sum(&a, &[1], false).unwrap();
 
@@ -249,8 +261,12 @@ fn test_tensor_mean_last_dim() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a =
-        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 10.0, 20.0, 30.0], &[2, 3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(
+        &[1.0f32, 2.0, 3.0, 10.0, 20.0, 30.0],
+        &[2, 3],
+        &device,
+    )
+    .unwrap();
 
     let b = client.mean(&a, &[1], false).unwrap();
 
@@ -264,7 +280,9 @@ fn test_tensor_max_last_dim() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 2.0, 8.0, 4.0], &[2, 3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 2.0, 8.0, 4.0], &[2, 3], &device)
+            .unwrap();
 
     let b = client.max(&a, &[1], false).unwrap();
 
@@ -278,7 +296,8 @@ fn test_tensor_relu() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-1.0f32, 0.0, 1.0, -2.0], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[-1.0f32, 0.0, 1.0, -2.0], &[4], &device).unwrap();
 
     let b = client.relu(&a).unwrap();
 
@@ -291,7 +310,7 @@ fn test_tensor_sigmoid() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32], &[1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32], &[1], &device).unwrap();
 
     let b = client.sigmoid(&a).unwrap();
 
@@ -304,7 +323,8 @@ fn test_tensor_silu() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)
+        .unwrap();
     let b = client.silu(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -319,7 +339,8 @@ fn test_tensor_gelu() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)
+        .unwrap();
     let b = client.gelu(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -335,12 +356,14 @@ fn test_tensor_rms_norm() {
     let client = CpuRuntime::default_client(&device);
 
     // Input: 2 rows, 4 features each
-    let input = Tensor::<CpuRuntime>::from_slice(
+    let input = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 2.0, 4.0, 6.0, 8.0],
         &[2, 4],
         &device,
-    );
-    let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device);
+    )
+    .unwrap();
+    let weight =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
 
     let out = client.rms_norm(&input, &weight, 1e-5).unwrap();
     let result: Vec<f32> = out.to_vec();
@@ -364,13 +387,16 @@ fn test_tensor_layer_norm() {
     let client = CpuRuntime::default_client(&device);
 
     // Input: 2 rows, 4 features each
-    let input = Tensor::<CpuRuntime>::from_slice(
+    let input = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 2.0, 4.0, 6.0, 8.0],
         &[2, 4],
         &device,
-    );
-    let weight = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device);
-    let bias = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device);
+    )
+    .unwrap();
+    let weight =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 1.0, 1.0, 1.0], &[4], &device).unwrap();
+    let bias =
+        Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.0, 0.0, 0.0], &[4], &device).unwrap();
 
     let out = client.layer_norm(&input, &weight, &bias, 1e-5).unwrap();
     let result: Vec<f32> = out.to_vec();
@@ -400,7 +426,9 @@ fn test_tensor_argmax() {
     let client = CpuRuntime::default_client(&device);
 
     // 2D tensor: [[1, 5, 3], [4, 2, 6]]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device)
+            .unwrap();
 
     // argmax along dim=1 (find max index in each row)
     let out = client.argmax(&a, 1, false).unwrap();
@@ -427,7 +455,9 @@ fn test_tensor_argmin() {
     let client = CpuRuntime::default_client(&device);
 
     // 2D tensor: [[1, 5, 3], [4, 2, 6]]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 4.0, 2.0, 6.0], &[2, 3], &device)
+            .unwrap();
 
     // argmin along dim=1 (find min index in each row)
     let out = client.argmin(&a, 1, false).unwrap();
@@ -453,7 +483,7 @@ fn test_tensor_softmax_last_dim() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
 
     let b = client.softmax(&a, -1).unwrap();
 
@@ -471,8 +501,8 @@ fn test_tensor_ops_i32() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1i32, 2, 3, 4], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[5i32, 6, 7, 8], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[5i32, 6, 7, 8], &[4], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -485,8 +515,8 @@ fn test_tensor_dtype_mismatch() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0], &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0], &[2], &device).unwrap();
 
     let result = client.add(&a, &b);
     assert!(result.is_err());
@@ -500,7 +530,7 @@ fn test_tensor_tan() {
     let client = CpuRuntime::default_client(&device);
 
     // Use 0.5 radians to avoid clippy::approx_constant warnings
-    let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 0.5], &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 0.5], &[2], &device).unwrap();
     let b = client.tan(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -514,7 +544,7 @@ fn test_tensor_recip() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 4.0, 5.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 4.0, 5.0], &[4], &device).unwrap();
     let b = client.recip(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -526,7 +556,7 @@ fn test_tensor_square() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, -4.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, -4.0], &[4], &device).unwrap();
     let b = client.square(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -538,7 +568,8 @@ fn test_tensor_floor() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.5f32, 2.9, -1.5, -2.9], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.5f32, 2.9, -1.5, -2.9], &[4], &device).unwrap();
     let b = client.floor(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -550,7 +581,8 @@ fn test_tensor_ceil() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.5f32, 2.1, -1.5, -2.1], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.5f32, 2.1, -1.5, -2.1], &[4], &device).unwrap();
     let b = client.ceil(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -562,7 +594,7 @@ fn test_tensor_round() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.4f32, 1.5, 2.5, -1.5], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.4f32, 1.5, 2.5, -1.5], &[4], &device).unwrap();
     let b = client.round(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -577,8 +609,8 @@ fn test_tensor_pow() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0, 4.0], &[3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 2.0, 0.5], &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0, 4.0], &[3], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 2.0, 0.5], &[3], &device).unwrap();
 
     let c = client.pow(&a, &b).unwrap();
 
@@ -591,8 +623,8 @@ fn test_tensor_maximum() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 8.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 4.0, 6.0, 7.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 8.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 4.0, 6.0, 7.0], &[4], &device).unwrap();
 
     let c = client.maximum(&a, &b).unwrap();
 
@@ -605,8 +637,8 @@ fn test_tensor_minimum() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 8.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 4.0, 6.0, 7.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 8.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 4.0, 6.0, 7.0], &[4], &device).unwrap();
 
     let c = client.minimum(&a, &b).unwrap();
 
@@ -621,7 +653,7 @@ fn test_scalar_add() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
     let b = ScalarOps::add_scalar(&client, &a, 10.0).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -633,7 +665,7 @@ fn test_scalar_mul() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
     let b = ScalarOps::mul_scalar(&client, &a, 2.0).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -645,7 +677,7 @@ fn test_scalar_pow() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
     let b = ScalarOps::pow_scalar(&client, &a, 2.0).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -657,7 +689,8 @@ fn test_scalar_div() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
     let b = ScalarOps::div_scalar(&client, &a, 10.0).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -671,8 +704,8 @@ fn test_compare_eq() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 3.0, 3.0, 5.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 3.0, 3.0, 5.0], &[4], &device).unwrap();
 
     let c = CompareOps::eq(&client, &a, &b).unwrap();
 
@@ -685,8 +718,8 @@ fn test_compare_lt() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device).unwrap();
 
     let c = CompareOps::lt(&client, &a, &b).unwrap();
 
@@ -699,8 +732,8 @@ fn test_compare_gt() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device).unwrap();
 
     let c = CompareOps::gt(&client, &a, &b).unwrap();
 
@@ -713,8 +746,8 @@ fn test_compare_le() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device).unwrap();
 
     let c = CompareOps::le(&client, &a, &b).unwrap();
 
@@ -727,8 +760,8 @@ fn test_compare_ge() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 2.0, 2.0, 2.0], &[4], &device).unwrap();
 
     let c = CompareOps::ge(&client, &a, &b).unwrap();
 
@@ -741,8 +774,8 @@ fn test_compare_ne() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 3.0, 3.0, 5.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 3.0, 3.0, 5.0], &[4], &device).unwrap();
 
     let c = CompareOps::ne(&client, &a, &b).unwrap();
 
@@ -755,8 +788,8 @@ fn test_compare_i32() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1i32, 2, 3, 4], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2i32, 2, 2, 2], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1i32, 2, 3, 4], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2i32, 2, 2, 2], &[4], &device).unwrap();
 
     let c = CompareOps::lt(&client, &a, &b).unwrap();
 
@@ -772,8 +805,8 @@ fn test_broadcast_scalar_to_vector() {
     let client = CpuRuntime::default_client(&device);
 
     // [4] + [1] -> [4]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[10.0f32], &[1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32], &[1], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -788,8 +821,10 @@ fn test_broadcast_vector_to_matrix_row() {
     let client = CpuRuntime::default_client(&device);
 
     // [2, 3] + [3] -> [2, 3] (broadcast along rows)
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0], &[3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0], &[3], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -804,8 +839,10 @@ fn test_broadcast_vector_to_matrix_col() {
     let client = CpuRuntime::default_client(&device);
 
     // [2, 3] + [2, 1] -> [2, 3] (broadcast along columns)
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 100.0], &[2, 1], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 100.0], &[2, 1], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -820,8 +857,9 @@ fn test_broadcast_both_directions() {
     let client = CpuRuntime::default_client(&device);
 
     // [3, 1] + [1, 4] -> [3, 4]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[1, 4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[1, 4], &device)
+        .unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -844,8 +882,10 @@ fn test_broadcast_mul() {
     let client = CpuRuntime::default_client(&device);
 
     // [2, 3] * [1] -> [2, 3]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
 
     let c = client.mul(&a, &b).unwrap();
 
@@ -860,8 +900,9 @@ fn test_broadcast_sub() {
     let client = CpuRuntime::default_client(&device);
 
     // [2, 2] - [2] -> [2, 2]
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 2], &device)
+        .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
 
     let c = client.sub(&a, &b).unwrap();
 
@@ -876,8 +917,9 @@ fn test_broadcast_div() {
     let client = CpuRuntime::default_client(&device);
 
     // [4] / [1] -> [4]
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
 
     let c = client.div(&a, &b).unwrap();
 
@@ -892,14 +934,15 @@ fn test_broadcast_3d() {
     let client = CpuRuntime::default_client(&device);
 
     // [2, 2, 3] + [3] -> [2, 2, 3]
-    let a = Tensor::<CpuRuntime>::from_slice(
+    let a = Tensor::<CpuRuntime>::try_from_slice(
         &[
             1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
         ],
         &[2, 2, 3],
         &device,
-    );
-    let b = Tensor::<CpuRuntime>::from_slice(&[100.0f32, 200.0, 300.0], &[3], &device);
+    )
+    .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[100.0f32, 200.0, 300.0], &[3], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -919,8 +962,8 @@ fn test_broadcast_pow() {
     let client = CpuRuntime::default_client(&device);
 
     // [3] ^ [1] -> [3]
-    let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0, 4.0], &[3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0, 4.0], &[3], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32], &[1], &device).unwrap();
 
     let c = client.pow(&a, &b).unwrap();
 
@@ -935,8 +978,10 @@ fn test_broadcast_maximum() {
     let client = CpuRuntime::default_client(&device);
 
     // max([2, 3], [3]) -> [2, 3]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 2.0, 4.0, 0.0, 6.0], &[2, 3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 3.0, 3.0], &[3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 2.0, 4.0, 0.0, 6.0], &[2, 3], &device)
+            .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 3.0, 3.0], &[3], &device).unwrap();
 
     let c = client.maximum(&a, &b).unwrap();
 
@@ -951,8 +996,8 @@ fn test_broadcast_incompatible_shapes() {
     let client = CpuRuntime::default_client(&device);
 
     // [3] + [4] -> Error (incompatible)
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.add(&a, &b);
     assert!(result.is_err());
@@ -964,8 +1009,8 @@ fn test_broadcast_i32() {
     let client = CpuRuntime::default_client(&device);
 
     // [2, 2] + [2] -> [2, 2] (integer type)
-    let a = Tensor::<CpuRuntime>::from_slice(&[1i32, 2, 3, 4], &[2, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[10i32, 20], &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1i32, 2, 3, 4], &[2, 2], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[10i32, 20], &[2], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -984,8 +1029,8 @@ fn test_broadcast_compare_scalar() {
     let client = CpuRuntime::default_client(&device);
 
     // Compare [4] with scalar [1] -> [4]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.5f32], &[1], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.5f32], &[1], &device).unwrap();
 
     // a > 2.5: [false, false, true, true] -> [0, 0, 1, 1]
     let c = client.gt(&a, &b).unwrap();
@@ -1005,8 +1050,10 @@ fn test_broadcast_compare_matrix_row() {
     let client = CpuRuntime::default_client(&device);
 
     // [2, 3] compared with [3] -> [2, 3]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0, 4.0], &[3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0, 4.0], &[3], &device).unwrap();
 
     // a < b: row0: [1<2, 2<3, 3<4]=[T,T,T], row1: [4<2, 5<3, 6<4]=[F,F,F]
     let c = client.lt(&a, &b).unwrap();
@@ -1021,8 +1068,8 @@ fn test_broadcast_compare_eq() {
     let client = CpuRuntime::default_client(&device);
 
     // [3, 1] compared with [1, 3] -> [3, 3]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3, 1], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[1, 3], &device).unwrap();
 
     // Result is identity matrix (1s on diagonal)
     let c = client.eq(&a, &b).unwrap();
@@ -1055,8 +1102,8 @@ fn test_f16_tensor_add() {
         .map(f16::from_f32)
         .collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[4], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -1086,8 +1133,8 @@ fn test_f16_matmul() {
         .map(f16::from_f32)
         .collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[2, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[2, 2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[2, 2], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[2, 2], &device).unwrap();
 
     let c = client.matmul(&a, &b).unwrap();
 
@@ -1117,8 +1164,8 @@ fn test_bf16_tensor_mul() {
         .map(bf16::from_f32)
         .collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[3], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[3], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[3], &device).unwrap();
 
     let c = client.mul(&a, &b).unwrap();
 
@@ -1143,7 +1190,7 @@ fn test_f16_unary_ops() {
         .into_iter()
         .map(f16::from_f32)
         .collect();
-    let a = Tensor::<CpuRuntime>::from_slice(&data, &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[4], &device).unwrap();
 
     let sqrt_result = client.sqrt(&a).unwrap();
     let sqrt_vec: Vec<f16> = sqrt_result.to_vec();
@@ -1174,7 +1221,7 @@ fn test_f16_reduce() {
         .into_iter()
         .map(f16::from_f32)
         .collect();
-    let a = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3], &device).unwrap();
 
     let sum = client.sum(&a, &[1], false).unwrap();
     assert_eq!(sum.shape(), &[2]);
@@ -1197,8 +1244,8 @@ fn test_f16_broadcast() {
         .collect();
     let b_data: Vec<f16> = vec![10.0, 20.0].into_iter().map(f16::from_f32).collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[2, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[2, 2], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[2], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -1226,7 +1273,7 @@ fn test_fp8e4m3_tensor_creation() {
         .map(FP8E4M3::from_f32)
         .collect();
 
-    let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device);
+    let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 2], &device).unwrap();
 
     assert_eq!(tensor.shape(), &[2, 2]);
     assert_eq!(tensor.dtype(), DType::FP8E4M3);
@@ -1252,7 +1299,7 @@ fn test_fp8e5m2_tensor_creation() {
         .map(FP8E5M2::from_f32)
         .collect();
 
-    let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[4], &device);
+    let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[4], &device).unwrap();
 
     assert_eq!(tensor.shape(), &[4]);
     assert_eq!(tensor.dtype(), DType::FP8E5M2);
@@ -1281,8 +1328,8 @@ fn test_fp8e4m3_add() {
         .map(FP8E4M3::from_f32)
         .collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[2, 2], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[2, 2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[2, 2], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[2, 2], &device).unwrap();
 
     let c = client.add(&a, &b).unwrap();
 
@@ -1314,8 +1361,8 @@ fn test_fp8e4m3_mul() {
         .map(FP8E4M3::from_f32)
         .collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[4], &device).unwrap();
 
     let c = client.mul(&a, &b).unwrap();
 
@@ -1344,8 +1391,8 @@ fn test_fp8e5m2_large_values() {
         .map(FP8E5M2::from_f32)
         .collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &[4], &device).unwrap();
 
     let c = client.mul(&a, &b).unwrap();
 
@@ -1364,8 +1411,9 @@ fn test_fp8_full_scalar_tensor() {
 
     let device = CpuDevice::new();
 
-    // Test Tensor::full_scalar with FP8E4M3
-    let tensor = Tensor::<CpuRuntime>::full_scalar(&[2, 3], DType::FP8E4M3, 2.5, &device);
+    // Test Tensor::try_full_scalar with FP8E4M3
+    let tensor =
+        Tensor::<CpuRuntime>::try_full_scalar(&[2, 3], DType::FP8E4M3, 2.5, &device).unwrap();
 
     assert_eq!(tensor.shape(), &[2, 3]);
     assert_eq!(tensor.dtype(), DType::FP8E4M3);
@@ -1383,7 +1431,8 @@ fn test_cast_f32_to_f64() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.5f32, 2.5, 3.5, 4.5], &[2, 2], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.5f32, 2.5, 3.5, 4.5], &[2, 2], &device).unwrap();
     let b = client.cast(&a, DType::F64).unwrap();
 
     assert_eq!(b.dtype(), DType::F64);
@@ -1397,7 +1446,8 @@ fn test_cast_f64_to_i32() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.9f64, -2.1, 3.5, -4.9], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.9f64, -2.1, 3.5, -4.9], &[4], &device).unwrap();
     let b = client.cast(&a, DType::I32).unwrap();
 
     assert_eq!(b.dtype(), DType::I32);
@@ -1411,7 +1461,7 @@ fn test_cast_i32_to_f32() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1i32, -2, 100, -50], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1i32, -2, 100, -50], &[4], &device).unwrap();
     let b = client.cast(&a, DType::F32).unwrap();
 
     assert_eq!(b.dtype(), DType::F32);
@@ -1424,7 +1474,7 @@ fn test_cast_same_dtype_noop() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
     let b = client.cast(&a, DType::F32).unwrap();
 
     assert_eq!(b.dtype(), DType::F32);
@@ -1439,7 +1489,7 @@ fn test_cast_f32_to_fp8e4m3() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 4.0, 8.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 4.0, 8.0], &[4], &device).unwrap();
     let b = client.cast(&a, DType::FP8E4M3).unwrap();
 
     assert_eq!(b.dtype(), DType::FP8E4M3);
@@ -1466,7 +1516,7 @@ fn test_cast_fp8e4m3_to_f32() {
         FP8E4M3::from_f32(4.0),
         FP8E4M3::from_f32(8.0),
     ];
-    let a = Tensor::<CpuRuntime>::from_slice(&fp8_data, &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&fp8_data, &[4], &device).unwrap();
     let b = client.cast(&a, DType::F32).unwrap();
 
     assert_eq!(b.dtype(), DType::F32);
@@ -1487,7 +1537,8 @@ fn test_cast_f32_to_fp8e5m2() {
     let client = CpuRuntime::default_client(&device);
 
     // E5M2 has larger range but less precision
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 100.0, 1000.0, 10000.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 100.0, 1000.0, 10000.0], &[4], &device)
+        .unwrap();
     let b = client.cast(&a, DType::FP8E5M2).unwrap();
 
     assert_eq!(b.dtype(), DType::FP8E5M2);
@@ -1513,7 +1564,7 @@ fn test_cast_fp8e4m3_to_fp8e5m2() {
         FP8E4M3::from_f32(2.0),
         FP8E4M3::from_f32(4.0),
     ];
-    let a = Tensor::<CpuRuntime>::from_slice(&fp8_data, &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&fp8_data, &[3], &device).unwrap();
 
     // Cast E4M3 -> E5M2
     let b = client.cast(&a, DType::FP8E5M2).unwrap();
@@ -1535,7 +1586,8 @@ fn test_tensor_sign() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-3.0f32, -0.5, 0.0, 0.5, 3.0], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-3.0f32, -0.5, 0.0, 0.5, 3.0], &[5], &device)
+        .unwrap();
     let b = client.sign(&a).unwrap();
 
     let result: Vec<f32> = b.to_vec();
@@ -1547,8 +1599,12 @@ fn test_tensor_isnan() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a =
-        Tensor::<CpuRuntime>::from_slice(&[1.0f32, f32::NAN, 3.0, f32::NAN, 5.0], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(
+        &[1.0f32, f32::NAN, 3.0, f32::NAN, 5.0],
+        &[5],
+        &device,
+    )
+    .unwrap();
     let b = client.isnan(&a).unwrap();
 
     let result: Vec<u8> = b.to_vec();
@@ -1560,11 +1616,12 @@ fn test_tensor_isinf() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(
+    let a = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f32, f32::INFINITY, 3.0, f32::NEG_INFINITY, 5.0],
         &[5],
         &device,
-    );
+    )
+    .unwrap();
     let b = client.isinf(&a).unwrap();
 
     let result: Vec<u8> = b.to_vec();
@@ -1576,7 +1633,7 @@ fn test_tensor_logical_not() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[0u8, 1, 0, 1, 1], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 1, 0, 1, 1], &[5], &device).unwrap();
     let b = client.logical_not(&a).unwrap();
 
     let result: Vec<u8> = b.to_vec();
@@ -1588,8 +1645,8 @@ fn test_tensor_logical_and() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[0u8, 0, 1, 1], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[0u8, 1, 0, 1], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 0, 1, 1], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 1, 0, 1], &[4], &device).unwrap();
     let c = client.logical_and(&a, &b).unwrap();
 
     let result: Vec<u8> = c.to_vec();
@@ -1601,8 +1658,8 @@ fn test_tensor_logical_or() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[0u8, 0, 1, 1], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[0u8, 1, 0, 1], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 0, 1, 1], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 1, 0, 1], &[4], &device).unwrap();
     let c = client.logical_or(&a, &b).unwrap();
 
     let result: Vec<u8> = c.to_vec();
@@ -1614,8 +1671,8 @@ fn test_tensor_logical_xor() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[0u8, 0, 1, 1], &[4], &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&[0u8, 1, 0, 1], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 0, 1, 1], &[4], &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 1, 0, 1], &[4], &device).unwrap();
     let c = client.logical_xor(&a, &b).unwrap();
 
     let result: Vec<u8> = c.to_vec();
@@ -1628,9 +1685,10 @@ fn test_tensor_where_cond_same_shape() {
     let client = CpuRuntime::default_client(&device);
 
     // cond ? x : y
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1u8, 0, 1, 0], &[4], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[1u8, 0, 1, 0], &[4], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1644,9 +1702,10 @@ fn test_tensor_where_cond_broadcast_cond() {
     let client = CpuRuntime::default_client(&device);
 
     // Broadcast condition: [1] with x,y: [4]
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1u8], &[1], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[1u8], &[1], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1661,9 +1720,9 @@ fn test_tensor_where_cond_broadcast_xy() {
     let client = CpuRuntime::default_client(&device);
 
     // Broadcast x,y: cond: [4], x: [1], y: [4]
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1u8, 0, 1, 0], &[4], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[100.0f32], &[1], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[1u8, 0, 1, 0], &[4], &device).unwrap();
+    let x = Tensor::<CpuRuntime>::try_from_slice(&[100.0f32], &[1], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1678,9 +1737,11 @@ fn test_tensor_where_cond_2d() {
     let client = CpuRuntime::default_client(&device);
 
     // 2D where: cond: [2,2], x: [2,2], y: [2,2]
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1u8, 0, 0, 1], &[2, 2], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 2], &device);
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[1u8, 0, 0, 1], &[2, 2], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 2], &device)
+        .unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1699,9 +1760,10 @@ fn test_where_cond_i32_condition() {
     let client = CpuRuntime::default_client(&device);
 
     // I32 condition: non-zero values are true, zero is false
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1i32, 0, -1, 42], &[4], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[1i32, 0, -1, 42], &[4], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1716,9 +1778,10 @@ fn test_where_cond_i64_condition() {
     let client = CpuRuntime::default_client(&device);
 
     // I64 condition
-    let cond = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 0, -999], &[4], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[100.0f64, 200.0, 300.0, 400.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[4], &device);
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 0, -999], &[4], &device).unwrap();
+    let x = Tensor::<CpuRuntime>::try_from_slice(&[100.0f64, 200.0, 300.0, 400.0], &[4], &device)
+        .unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f64, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1732,9 +1795,11 @@ fn test_where_cond_f32_condition() {
     let client = CpuRuntime::default_client(&device);
 
     // F32 condition: 0.0 is false, any non-zero (including negative) is true
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0, -0.5, 0.001], &[4], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0, -0.5, 0.001], &[4], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1749,9 +1814,11 @@ fn test_where_cond_f64_condition() {
     let client = CpuRuntime::default_client(&device);
 
     // F64 condition
-    let cond = Tensor::<CpuRuntime>::from_slice(&[0.0f64, 1e-10, 0.0, -1e100], &[4], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond =
+        Tensor::<CpuRuntime>::try_from_slice(&[0.0f64, 1e-10, 0.0, -1e100], &[4], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1766,15 +1833,16 @@ fn test_where_cond_with_comparison_result() {
     let client = CpuRuntime::default_client(&device);
 
     // This is the primary use case: comparison ops return same dtype as input
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0, 3.0, 7.0], &[4], &device);
-    let threshold = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 4.0, 4.0, 4.0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0, 3.0, 7.0], &[4], &device).unwrap();
+    let threshold =
+        Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 4.0, 4.0, 4.0], &[4], &device).unwrap();
 
     // gt returns F32 (1.0 or 0.0), not U8
     let mask = client.gt(&a, &threshold).unwrap();
     assert_eq!(mask.dtype(), numr::dtype::DType::F32);
 
-    let high_values = Tensor::<CpuRuntime>::from_slice(&[100.0f32; 4], &[4], &device);
-    let low_values = Tensor::<CpuRuntime>::from_slice(&[0.0f32; 4], &[4], &device);
+    let high_values = Tensor::<CpuRuntime>::try_from_slice(&[100.0f32; 4], &[4], &device).unwrap();
+    let low_values = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32; 4], &[4], &device).unwrap();
 
     // where_cond should work directly with F32 mask
     let result = client.where_cond(&mask, &high_values, &low_values).unwrap();
@@ -1789,8 +1857,10 @@ fn test_where_cond_with_lt_comparison() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let values = Tensor::<CpuRuntime>::from_slice(&[-2.0f64, -1.0, 0.0, 1.0, 2.0], &[5], &device);
-    let zero = Tensor::<CpuRuntime>::from_slice(&[0.0f64; 5], &[5], &device);
+    let values =
+        Tensor::<CpuRuntime>::try_from_slice(&[-2.0f64, -1.0, 0.0, 1.0, 2.0], &[5], &device)
+            .unwrap();
+    let zero = Tensor::<CpuRuntime>::try_from_slice(&[0.0f64; 5], &[5], &device).unwrap();
 
     // Find negative values
     let is_negative = client.lt(&values, &zero).unwrap();
@@ -1811,9 +1881,10 @@ fn test_where_cond_generic_broadcast() {
     let client = CpuRuntime::default_client(&device);
 
     // I32 condition with broadcasting: cond [1], x [4], y [4]
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1i32], &[1], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[1i32], &[1], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1829,13 +1900,16 @@ fn test_where_cond_generic_2d_broadcast() {
     let client = CpuRuntime::default_client(&device);
 
     // F32 condition [2, 1] broadcasts with x, y [2, 3]
-    let cond = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[2, 1], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(
+    let cond = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[2, 1], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(
         &[10.0f32, 20.0, 30.0, 40.0, 50.0, 60.0],
         &[2, 3],
         &device,
-    );
+    )
+    .unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1852,9 +1926,11 @@ fn test_where_cond_u32_condition() {
     let client = CpuRuntime::default_client(&device);
 
     // U32 condition
-    let cond = Tensor::<CpuRuntime>::from_slice(&[0u32, 1, 0, u32::MAX], &[4], &device);
-    let x = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
-    let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let cond =
+        Tensor::<CpuRuntime>::try_from_slice(&[0u32, 1, 0, u32::MAX], &[4], &device).unwrap();
+    let x =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
+    let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
 
     let result = client.where_cond(&cond, &x, &y).unwrap();
 
@@ -1871,7 +1947,8 @@ fn test_tensor_leaky_relu() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)
+        .unwrap();
 
     // leaky_relu with negative_slope = 0.1
     let b = client.leaky_relu(&a, 0.1).unwrap();
@@ -1891,7 +1968,7 @@ fn test_tensor_leaky_relu_default_slope() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-10.0f32, 5.0], &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-10.0f32, 5.0], &[2], &device).unwrap();
 
     // leaky_relu with default negative_slope = 0.01
     let b = client.leaky_relu(&a, 0.01).unwrap();
@@ -1906,7 +1983,8 @@ fn test_tensor_elu() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-2.0f32, -1.0, 0.0, 1.0, 2.0], &[5], &device)
+        .unwrap();
 
     // elu with alpha = 1.0
     let b = client.elu(&a, 1.0).unwrap();
@@ -1929,7 +2007,7 @@ fn test_tensor_elu_custom_alpha() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-1.0f32, 1.0], &[2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-1.0f32, 1.0], &[2], &device).unwrap();
 
     // elu with alpha = 2.0
     let b = client.elu(&a, 2.0).unwrap();
@@ -1946,7 +2024,7 @@ fn test_tensor_leaky_relu_f64() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-2.0f64, 0.0, 2.0], &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-2.0f64, 0.0, 2.0], &[3], &device).unwrap();
 
     let b = client.leaky_relu(&a, 0.2).unwrap();
 
@@ -1961,7 +2039,7 @@ fn test_tensor_elu_f64() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[-1.0f64, 0.0, 1.0], &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[-1.0f64, 0.0, 1.0], &[3], &device).unwrap();
 
     let b = client.elu(&a, 1.0).unwrap();
 
@@ -1981,14 +2059,15 @@ fn test_tensor_index_select() {
     let client = CpuRuntime::default_client(&device);
 
     // 2D tensor: [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
-    let a = Tensor::<CpuRuntime>::from_slice(
+    let a = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
         &[3, 3],
         &device,
-    );
+    )
+    .unwrap();
 
     // Select rows 0 and 2
-    let indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 2], &[2], &device);
+    let indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2], &[2], &device).unwrap();
     let out = client.index_select(&a, 0, &indices).unwrap();
 
     assert_eq!(out.shape(), &[2, 3]);
@@ -1996,7 +2075,7 @@ fn test_tensor_index_select() {
     assert_eq!(result, [1.0, 2.0, 3.0, 7.0, 8.0, 9.0]);
 
     // Select columns 1 and 0
-    let indices = Tensor::<CpuRuntime>::from_slice(&[1i64, 0], &[2], &device);
+    let indices = Tensor::<CpuRuntime>::try_from_slice(&[1i64, 0], &[2], &device).unwrap();
     let out = client.index_select(&a, 1, &indices).unwrap();
 
     assert_eq!(out.shape(), &[3, 2]);
@@ -2010,10 +2089,11 @@ fn test_tensor_index_select_1d() {
     let client = CpuRuntime::default_client(&device);
 
     // 1D tensor
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0, 50.0], &[5], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0, 50.0], &[5], &device)
+        .unwrap();
 
     // Select indices 4, 2, 0
-    let indices = Tensor::<CpuRuntime>::from_slice(&[4i64, 2, 0], &[3], &device);
+    let indices = Tensor::<CpuRuntime>::try_from_slice(&[4i64, 2, 0], &[3], &device).unwrap();
     let out = client.index_select(&a, 0, &indices).unwrap();
 
     assert_eq!(out.shape(), &[3]);
@@ -2027,10 +2107,12 @@ fn test_tensor_gather() {
     let client = CpuRuntime::default_client(&device);
 
     // 2D tensor: [[1, 2], [3, 4], [5, 6]]
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+            .unwrap();
 
     // Gather along dim 0 using indices [[0, 1], [2, 0]]
-    let indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 1, 2, 0], &[2, 2], &device);
+    let indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 1, 2, 0], &[2, 2], &device).unwrap();
     let out = client.gather(&a, 0, &indices).unwrap();
 
     assert_eq!(out.shape(), &[2, 2]);
@@ -2048,10 +2130,11 @@ fn test_tensor_gather_1d() {
     let client = CpuRuntime::default_client(&device);
 
     // 1D tensor
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[4], &device).unwrap();
 
     // Gather specific indices
-    let indices = Tensor::<CpuRuntime>::from_slice(&[3i64, 0, 2, 1, 3], &[5], &device);
+    let indices = Tensor::<CpuRuntime>::try_from_slice(&[3i64, 0, 2, 1, 3], &[5], &device).unwrap();
     let out = client.gather(&a, 0, &indices).unwrap();
 
     assert_eq!(out.shape(), &[5]);
@@ -2065,14 +2148,16 @@ fn test_tensor_scatter() {
     let client = CpuRuntime::default_client(&device);
 
     // Initialize destination tensor with zeros: 3x3
-    let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32; 9], &[3, 3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32; 9], &[3, 3], &device).unwrap();
 
     // Source values to scatter: 2x3
     let src =
-        Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
 
     // Indices for dim 0: [[0, 2, 1], [2, 1, 0]]
-    let indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 1, 2, 1, 0], &[2, 3], &device);
+    let indices =
+        Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 1, 2, 1, 0], &[2, 3], &device).unwrap();
     let out = client.scatter(&a, 0, &indices, &src).unwrap();
 
     assert_eq!(out.shape(), &[3, 3]);
@@ -2098,10 +2183,13 @@ fn test_tensor_masked_fill() {
     let client = CpuRuntime::default_client(&device);
 
     // Input tensor
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
 
     // Mask: true where value > 3
-    let mask = Tensor::<CpuRuntime>::from_slice(&[0u8, 0, 0, 1, 1, 1], &[2, 3], &device);
+    let mask =
+        Tensor::<CpuRuntime>::try_from_slice(&[0u8, 0, 0, 1, 1, 1], &[2, 3], &device).unwrap();
 
     let out = client.masked_fill(&a, &mask, -1.0).unwrap();
 
@@ -2115,8 +2203,8 @@ fn test_tensor_masked_fill_all_false() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let mask = Tensor::<CpuRuntime>::from_slice(&[0u8, 0, 0, 0], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let mask = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 0, 0, 0], &[4], &device).unwrap();
 
     let out = client.masked_fill(&a, &mask, 999.0).unwrap();
     let result: Vec<f32> = out.to_vec();
@@ -2128,8 +2216,8 @@ fn test_tensor_masked_fill_all_true() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
-    let mask = Tensor::<CpuRuntime>::from_slice(&[1u8, 1, 1, 1], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device).unwrap();
+    let mask = Tensor::<CpuRuntime>::try_from_slice(&[1u8, 1, 1, 1], &[4], &device).unwrap();
 
     let out = client.masked_fill(&a, &mask, 0.0).unwrap();
     let result: Vec<f32> = out.to_vec();
@@ -2142,10 +2230,13 @@ fn test_tensor_masked_select() {
     let client = CpuRuntime::default_client(&device);
 
     // Input tensor
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device);
+    let a =
+        Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &device)
+            .unwrap();
 
     // Select values where mask is true (values > 2)
-    let mask = Tensor::<CpuRuntime>::from_slice(&[0u8, 0, 1, 1, 1, 1], &[2, 3], &device);
+    let mask =
+        Tensor::<CpuRuntime>::try_from_slice(&[0u8, 0, 1, 1, 1, 1], &[2, 3], &device).unwrap();
 
     let out = client.masked_select(&a, &mask).unwrap();
 
@@ -2160,8 +2251,8 @@ fn test_tensor_masked_select_none() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
-    let mask = Tensor::<CpuRuntime>::from_slice(&[0u8, 0, 0], &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device).unwrap();
+    let mask = Tensor::<CpuRuntime>::try_from_slice(&[0u8, 0, 0], &[3], &device).unwrap();
 
     let out = client.masked_select(&a, &mask).unwrap();
 
@@ -2175,8 +2266,9 @@ fn test_tensor_masked_select_all() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 2], &device);
-    let mask = Tensor::<CpuRuntime>::from_slice(&[1u8, 1, 1, 1], &[2, 2], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 20.0, 30.0, 40.0], &[2, 2], &device)
+        .unwrap();
+    let mask = Tensor::<CpuRuntime>::try_from_slice(&[1u8, 1, 1, 1], &[2, 2], &device).unwrap();
 
     let out = client.masked_select(&a, &mask).unwrap();
 
@@ -2191,8 +2283,8 @@ fn test_tensor_index_select_i32() {
     let client = CpuRuntime::default_client(&device);
 
     // Test with i32 dtype
-    let a = Tensor::<CpuRuntime>::from_slice(&[10i32, 20, 30, 40, 50], &[5], &device);
-    let indices = Tensor::<CpuRuntime>::from_slice(&[4i64, 0, 2], &[3], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[10i32, 20, 30, 40, 50], &[5], &device).unwrap();
+    let indices = Tensor::<CpuRuntime>::try_from_slice(&[4i64, 0, 2], &[3], &device).unwrap();
 
     let out = client.index_select(&a, 0, &indices).unwrap();
     assert_eq!(out.dtype(), DType::I32);
@@ -2205,8 +2297,8 @@ fn test_tensor_gather_i32() {
     let device = CpuDevice::new();
     let client = CpuRuntime::default_client(&device);
 
-    let a = Tensor::<CpuRuntime>::from_slice(&[100i32, 200, 300, 400], &[4], &device);
-    let indices = Tensor::<CpuRuntime>::from_slice(&[2i64, 0, 3, 1], &[4], &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&[100i32, 200, 300, 400], &[4], &device).unwrap();
+    let indices = Tensor::<CpuRuntime>::try_from_slice(&[2i64, 0, 3, 1], &[4], &device).unwrap();
 
     let out = client.gather(&a, 0, &indices).unwrap();
     assert_eq!(out.dtype(), DType::I32);

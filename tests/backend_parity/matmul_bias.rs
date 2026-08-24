@@ -128,9 +128,11 @@ fn test_matmul_bias_batched_parity() {
 #[test]
 fn test_matmul_bias_matches_matmul_plus_bias() {
     let (cpu_client, cpu_device) = create_cpu_client();
-    let a = Tensor::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &cpu_device);
-    let b = Tensor::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &cpu_device);
-    let bias = Tensor::from_slice(&[0.1f32, 0.2], &[2], &cpu_device);
+    let a =
+        Tensor::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], &cpu_device).unwrap();
+    let b =
+        Tensor::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &cpu_device).unwrap();
+    let bias = Tensor::try_from_slice(&[0.1f32, 0.2], &[2], &cpu_device).unwrap();
     let fused: Vec<f32> = cpu_client.matmul_bias(&a, &b, &bias).unwrap().to_vec();
     let reference: Vec<f32> = cpu_client
         .add(
@@ -168,9 +170,9 @@ fn test_cpu_matmul_bias_parallelism_config_matches_default() {
         .collect();
     let bias_data: Vec<f32> = (0..bias_numel).map(|i| (i as f32 * 0.021).sin()).collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&a_data, &a_shape, &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&b_data, &b_shape, &device);
-    let bias = Tensor::<CpuRuntime>::from_slice(&bias_data, &bias_shape, &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&a_data, &a_shape, &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&b_data, &b_shape, &device).unwrap();
+    let bias = Tensor::<CpuRuntime>::try_from_slice(&bias_data, &bias_shape, &device).unwrap();
 
     let base: Vec<f32> = default_client.matmul_bias(&a, &b, &bias).unwrap().to_vec();
     let cfg: Vec<f32> = configured_client

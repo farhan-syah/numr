@@ -58,17 +58,17 @@ pub fn tensor_from_f64<R: Runtime<DType = DType>>(
     client: &impl TypeConversionOps<R>,
 ) -> Result<Tensor<R>> {
     if dtype == DType::F64 {
-        return Ok(Tensor::from_slice(data, shape, device));
+        return Ok(Tensor::try_from_slice(data, shape, device).unwrap());
     }
 
     // Try creating as F64 and casting. If the backend doesn't support F64
     // (e.g. WebGPU), fall back to creating as F32 and casting from there.
-    let f64_tensor = Tensor::from_slice(data, shape, device);
+    let f64_tensor = Tensor::try_from_slice(data, shape, device).unwrap();
     match client.cast(&f64_tensor, dtype) {
         Ok(t) => Ok(t),
         Err(_) => {
             let f32_data: Vec<f32> = data.iter().map(|&v| v as f32).collect();
-            let f32_tensor = Tensor::from_slice(&f32_data, shape, device);
+            let f32_tensor = Tensor::try_from_slice(&f32_data, shape, device).unwrap();
             if dtype == DType::F32 {
                 Ok(f32_tensor)
             } else {
@@ -96,7 +96,7 @@ pub fn tensor_from_f32<R: Runtime<DType = DType>>(
     device: &R::Device,
     client: &impl TypeConversionOps<R>,
 ) -> Result<Tensor<R>> {
-    let tensor = Tensor::from_slice(data, shape, device);
+    let tensor = Tensor::try_from_slice(data, shape, device).unwrap();
 
     if tensor.dtype() == dtype {
         Ok(tensor)
@@ -123,7 +123,7 @@ pub fn tensor_from_i32<R: Runtime<DType = DType>>(
     device: &R::Device,
     client: &impl TypeConversionOps<R>,
 ) -> Result<Tensor<R>> {
-    let tensor = Tensor::from_slice(data, shape, device);
+    let tensor = Tensor::try_from_slice(data, shape, device).unwrap();
 
     if tensor.dtype() == dtype {
         Ok(tensor)

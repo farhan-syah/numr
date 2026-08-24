@@ -79,16 +79,17 @@ fn create_test_csr_3x3<R: Runtime<DType = DType>>(
     let row_ptrs = vec![0i64, 2, 3, 5];
     let col_indices = vec![0i64, 2, 1, 0, 2];
 
-    let row_ptrs_tensor = Tensor::from_slice(&row_ptrs, &[row_ptrs.len()], device);
-    let col_indices_tensor = Tensor::from_slice(&col_indices, &[col_indices.len()], device);
+    let row_ptrs_tensor = Tensor::try_from_slice(&row_ptrs, &[row_ptrs.len()], device).unwrap();
+    let col_indices_tensor =
+        Tensor::try_from_slice(&col_indices, &[col_indices.len()], device).unwrap();
     let values_typed = match dtype {
         DType::F32 => {
             let values = vec![1.0f32, 2.0, 3.0, 4.0, 5.0];
-            Tensor::from_slice(&values, &[values.len()], device)
+            Tensor::try_from_slice(&values, &[values.len()], device).unwrap()
         }
         DType::F64 => {
             let values = vec![1.0f64, 2.0, 3.0, 4.0, 5.0];
-            Tensor::from_slice(&values, &[values.len()], device)
+            Tensor::try_from_slice(&values, &[values.len()], device).unwrap()
         }
         _ => {
             return Err(Error::UnsupportedDType {
@@ -398,11 +399,11 @@ fn test_dsmm_small_f32() -> Result<()> {
 
     // Dense matrix A [2, 3]
     let a_data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
-    let a_cpu = Tensor::from_slice(&a_data, &[2, 3], &cpu_device);
+    let a_cpu = Tensor::try_from_slice(&a_data, &[2, 3], &cpu_device).unwrap();
     #[cfg(feature = "cuda")]
-    let a_cuda = Tensor::from_slice(&a_data, &[2, 3], &cuda_device);
+    let a_cuda = Tensor::try_from_slice(&a_data, &[2, 3], &cuda_device).unwrap();
     #[cfg(feature = "wgpu")]
-    let a_wgpu = Tensor::from_slice(&a_data, &[2, 3], &wgpu_device);
+    let a_wgpu = Tensor::try_from_slice(&a_data, &[2, 3], &wgpu_device).unwrap();
 
     // Sparse matrix B [3, 2] in CSC format
     // [1.0, 0.0]
@@ -414,25 +415,28 @@ fn test_dsmm_small_f32() -> Result<()> {
 
     use numr::sparse::{CscData, SparseTensor};
 
-    let col_ptrs_cpu = Tensor::from_slice(&col_ptrs, &[col_ptrs.len()], &cpu_device);
-    let row_indices_cpu = Tensor::from_slice(&row_indices, &[row_indices.len()], &cpu_device);
-    let values_cpu = Tensor::from_slice(&values, &[values.len()], &cpu_device);
+    let col_ptrs_cpu = Tensor::try_from_slice(&col_ptrs, &[col_ptrs.len()], &cpu_device).unwrap();
+    let row_indices_cpu =
+        Tensor::try_from_slice(&row_indices, &[row_indices.len()], &cpu_device).unwrap();
+    let values_cpu = Tensor::try_from_slice(&values, &[values.len()], &cpu_device).unwrap();
     let csc_cpu = CscData::new(col_ptrs_cpu, row_indices_cpu, values_cpu, [3, 2])?;
 
     #[cfg(feature = "cuda")]
-    let col_ptrs_cuda = Tensor::from_slice(&col_ptrs, &[col_ptrs.len()], &cuda_device);
+    let col_ptrs_cuda = Tensor::try_from_slice(&col_ptrs, &[col_ptrs.len()], &cuda_device).unwrap();
     #[cfg(feature = "cuda")]
-    let row_indices_cuda = Tensor::from_slice(&row_indices, &[row_indices.len()], &cuda_device);
+    let row_indices_cuda =
+        Tensor::try_from_slice(&row_indices, &[row_indices.len()], &cuda_device).unwrap();
     #[cfg(feature = "cuda")]
-    let values_cuda = Tensor::from_slice(&values, &[values.len()], &cuda_device);
+    let values_cuda = Tensor::try_from_slice(&values, &[values.len()], &cuda_device).unwrap();
     #[cfg(feature = "cuda")]
     let csc_cuda = CscData::new(col_ptrs_cuda, row_indices_cuda, values_cuda, [3, 2])?;
     #[cfg(feature = "wgpu")]
-    let col_ptrs_wgpu = Tensor::from_slice(&col_ptrs, &[col_ptrs.len()], &wgpu_device);
+    let col_ptrs_wgpu = Tensor::try_from_slice(&col_ptrs, &[col_ptrs.len()], &wgpu_device).unwrap();
     #[cfg(feature = "wgpu")]
-    let row_indices_wgpu = Tensor::from_slice(&row_indices, &[row_indices.len()], &wgpu_device);
+    let row_indices_wgpu =
+        Tensor::try_from_slice(&row_indices, &[row_indices.len()], &wgpu_device).unwrap();
     #[cfg(feature = "wgpu")]
-    let values_wgpu = Tensor::from_slice(&values, &[values.len()], &wgpu_device);
+    let values_wgpu = Tensor::try_from_slice(&values, &[values.len()], &wgpu_device).unwrap();
     #[cfg(feature = "wgpu")]
     let csc_wgpu = CscData::new(col_ptrs_wgpu, row_indices_wgpu, values_wgpu, [3, 2])?;
 
@@ -505,11 +509,11 @@ fn test_dsmm_100x200_f32() -> Result<()> {
     let n = 50;
 
     let a_data: Vec<f32> = (0..m * k).map(|i| (i as f32 * 0.01) % 10.0).collect();
-    let a_cpu = Tensor::from_slice(&a_data, &[m, k], &cpu_device);
+    let a_cpu = Tensor::try_from_slice(&a_data, &[m, k], &cpu_device).unwrap();
     #[cfg(feature = "cuda")]
-    let a_cuda = Tensor::from_slice(&a_data, &[m, k], &cuda_device);
+    let a_cuda = Tensor::try_from_slice(&a_data, &[m, k], &cuda_device).unwrap();
     #[cfg(feature = "wgpu")]
-    let a_wgpu = Tensor::from_slice(&a_data, &[m, k], &wgpu_device);
+    let a_wgpu = Tensor::try_from_slice(&a_data, &[m, k], &wgpu_device).unwrap();
 
     // Sparse matrix B [200, 50] with ~5% density
     let nnz = (k * n) / 20;

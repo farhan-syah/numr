@@ -54,7 +54,7 @@ fn main() -> numr::error::Result<()> {
     // 3. Sparse matrix-vector multiplication (SpMV)
     // -----------------------------------------------------------------------
     // y = A · x
-    let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device);
+    let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[4], &device)?;
     let y = csr.spmv(&x)?;
     let y_vec: Vec<f32> = y.to_vec();
 
@@ -82,11 +82,11 @@ fn main() -> numr::error::Result<()> {
     // 5. Sparse algebra via the client trait
     // -----------------------------------------------------------------------
     // SparseTensor also supports sparse × dense matrix multiplication.
-    let x2 = Tensor::<CpuRuntime>::from_slice(
+    let x2 = Tensor::<CpuRuntime>::try_from_slice(
         &[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         &[4, 2],
         &device,
-    );
+    )?;
     let y2 = csr.spmm(&x2)?;
     println!("\nSpMM: A · B result (shape {:?}):", y2.shape());
     println!("{:?}", y2.to_vec::<f32>());

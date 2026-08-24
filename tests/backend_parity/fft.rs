@@ -40,7 +40,8 @@ fn test_fft_forward_parity() {
             .map(|i| Complex64::new((i as f32 * 0.1).sin(), (i as f32 * 0.1).cos()))
             .collect();
 
-        let cpu_input = Tensor::<CpuRuntime>::from_slice(&input_data, &[size], &cpu_device);
+        let cpu_input =
+            Tensor::<CpuRuntime>::try_from_slice(&input_data, &[size], &cpu_device).unwrap();
         let cpu_result = cpu_client
             .fft(&cpu_input, FftDirection::Forward, FftNormalization::None)
             .unwrap();
@@ -48,11 +49,12 @@ fn test_fft_forward_parity() {
 
         #[cfg(feature = "cuda")]
         with_cuda_backend(|cuda_client, cuda_device| {
-            let input = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+            let input = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
                 &input_data,
                 &[size],
                 &cuda_device,
-            );
+            )
+            .unwrap();
             let result = cuda_client
                 .fft(&input, FftDirection::Forward, FftNormalization::None)
                 .unwrap();
@@ -62,11 +64,12 @@ fn test_fft_forward_parity() {
 
         #[cfg(feature = "wgpu")]
         with_wgpu_backend(|wgpu_client, wgpu_device| {
-            let input = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
+            let input = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
                 &input_data,
                 &[size],
                 &wgpu_device,
-            );
+            )
+            .unwrap();
             let result = wgpu_client
                 .fft(&input, FftDirection::Forward, FftNormalization::None)
                 .unwrap();
@@ -85,7 +88,7 @@ fn test_fft_roundtrip_parity() {
         .map(|i| Complex64::new(i as f32, -(i as f32) * 0.5))
         .collect();
 
-    let cpu_input = Tensor::<CpuRuntime>::from_slice(&input_data, &[64], &cpu_device);
+    let cpu_input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &[64], &cpu_device).unwrap();
     let cpu_fft = cpu_client
         .fft(&cpu_input, FftDirection::Forward, FftNormalization::None)
         .unwrap();
@@ -96,11 +99,12 @@ fn test_fft_roundtrip_parity() {
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let input = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+        let input = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
             &input_data,
             &[64],
             &cuda_device,
-        );
+        )
+        .unwrap();
         let fft = cuda_client
             .fft(&input, FftDirection::Forward, FftNormalization::None)
             .unwrap();
@@ -113,11 +117,12 @@ fn test_fft_roundtrip_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let input = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
+        let input = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
             &input_data,
             &[64],
             &wgpu_device,
-        );
+        )
+        .unwrap();
         let fft = wgpu_client
             .fft(&input, FftDirection::Forward, FftNormalization::None)
             .unwrap();
@@ -136,7 +141,7 @@ fn test_rfft_irfft_parity() {
     let n = 64;
     let input_data: Vec<f32> = (0..n).map(|i| (i as f32 * 0.1).cos()).collect();
 
-    let cpu_real = Tensor::<CpuRuntime>::from_slice(&input_data, &[n], &cpu_device);
+    let cpu_real = Tensor::<CpuRuntime>::try_from_slice(&input_data, &[n], &cpu_device).unwrap();
     let cpu_freq = cpu_client.rfft(&cpu_real, FftNormalization::None).unwrap();
     let cpu_ir = cpu_client
         .irfft(&cpu_freq, Some(n), FftNormalization::Backward)
@@ -145,8 +150,12 @@ fn test_rfft_irfft_parity() {
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let real =
-            Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(&input_data, &[n], &cuda_device);
+        let real = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
+            &input_data,
+            &[n],
+            &cuda_device,
+        )
+        .unwrap();
         let freq = cuda_client.rfft(&real, FftNormalization::None).unwrap();
         let ir = cuda_client
             .irfft(&freq, Some(n), FftNormalization::Backward)
@@ -159,8 +168,12 @@ fn test_rfft_irfft_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let real =
-            Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(&input_data, &[n], &wgpu_device);
+        let real = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
+            &input_data,
+            &[n],
+            &wgpu_device,
+        )
+        .unwrap();
         let freq = wgpu_client.rfft(&real, FftNormalization::None).unwrap();
         let ir = wgpu_client
             .irfft(&freq, Some(n), FftNormalization::Backward)
@@ -180,17 +193,18 @@ fn test_fftshift_parity() {
     let input_data: Vec<Complex64> = (0..16)
         .map(|i| Complex64::new(i as f32, -i as f32))
         .collect();
-    let cpu_input = Tensor::<CpuRuntime>::from_slice(&input_data, &[16], &cpu_device);
+    let cpu_input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &[16], &cpu_device).unwrap();
     let cpu_result = cpu_client.fftshift(&cpu_input).unwrap();
     let cpu_data: Vec<Complex64> = cpu_result.to_vec();
 
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
-        let input = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+        let input = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
             &input_data,
             &[16],
             &cuda_device,
-        );
+        )
+        .unwrap();
         let result = cuda_client.fftshift(&input).unwrap();
         let data: Vec<Complex64> = result.to_vec();
         assert_complex_close(&cpu_data, &data, 1e-5, "fftshift cuda");
@@ -198,11 +212,12 @@ fn test_fftshift_parity() {
 
     #[cfg(feature = "wgpu")]
     with_wgpu_backend(|wgpu_client, wgpu_device| {
-        let input = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
+        let input = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
             &input_data,
             &[16],
             &wgpu_device,
-        );
+        )
+        .unwrap();
         let result = wgpu_client.fftshift(&input).unwrap();
         let data: Vec<Complex64> = result.to_vec();
         assert_complex_close(&cpu_data, &data, 1e-5, "fftshift wgpu");
@@ -223,7 +238,7 @@ fn test_cpu_fft_parallelism_config_matches_default() {
         .map(|i| Complex64::new((i as f32 * 0.031).sin(), (i as f32 * 0.017).cos()))
         .collect();
 
-    let input = Tensor::<CpuRuntime>::from_slice(&input_data, &shape, &device);
+    let input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &shape, &device).unwrap();
     let base = default_client
         .fft(&input, FftDirection::Forward, FftNormalization::None)
         .unwrap();
@@ -252,7 +267,7 @@ fn test_cpu_rfft_irfft_parallelism_config_matches_default() {
     let numel: usize = shape.iter().product();
     let input_data: Vec<f32> = (0..numel).map(|i| (i as f32 * 0.023).sin()).collect();
 
-    let input = Tensor::<CpuRuntime>::from_slice(&input_data, &shape, &device);
+    let input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &shape, &device).unwrap();
     let base_freq = default_client.rfft(&input, FftNormalization::None).unwrap();
     let cfg_freq = configured_client
         .rfft(&input, FftNormalization::None)
@@ -295,7 +310,7 @@ fn test_cpu_fftshift_parallelism_config_matches_default() {
         .map(|i| Complex64::new((i as f32 * 0.013).cos(), (i as f32 * 0.019).sin()))
         .collect();
 
-    let input = Tensor::<CpuRuntime>::from_slice(&input_data, &shape, &device);
+    let input = Tensor::<CpuRuntime>::try_from_slice(&input_data, &shape, &device).unwrap();
     let base_shift = default_client.fftshift(&input).unwrap();
     let cfg_shift = configured_client.fftshift(&input).unwrap();
     let base_shift_data: Vec<Complex64> = base_shift.to_vec();

@@ -34,7 +34,7 @@ fn main() -> Result<()> {
             Complex64::new(val, 0.0)
         })
         .collect();
-    let input = Tensor::<CpuRuntime>::from_slice(&signal, &[n], &device);
+    let input = Tensor::<CpuRuntime>::try_from_slice(&signal, &[n], &device)?;
 
     // Forward FFT (no normalization on forward).
     let freq = client.fft(&input, FftDirection::Forward, FftNormalization::Backward)?;
@@ -81,7 +81,7 @@ fn main() -> Result<()> {
             (2.0 * std::f32::consts::PI * 5.0 * t).sin()
         })
         .collect();
-    let real_input = Tensor::<CpuRuntime>::from_slice(&real_signal, &[n], &device);
+    let real_input = Tensor::<CpuRuntime>::try_from_slice(&real_signal, &[n], &device)?;
 
     let real_freq = client.rfft(&real_input, FftNormalization::Backward)?;
     println!(

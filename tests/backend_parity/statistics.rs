@@ -454,7 +454,7 @@ fn test_mode_parity_i32() {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let data = vec![1i32, 2, 2, 3, 2];
-        let cpu_tensor = Tensor::from_slice(&data, &[5], &cpu_device);
+        let cpu_tensor = Tensor::try_from_slice(&data, &[5], &cpu_device).unwrap();
 
         let (cpu_values, cpu_counts) = cpu_client
             .mode(&cpu_tensor, Some(0), false)
@@ -469,7 +469,7 @@ fn test_mode_parity_i32() {
         #[cfg(feature = "cuda")]
         if is_dtype_supported("cuda", dtype) {
             with_cuda_backend(|cuda_client, cuda_device| {
-                let cuda_tensor = Tensor::from_slice(&data, &[5], &cuda_device);
+                let cuda_tensor = Tensor::try_from_slice(&data, &[5], &cuda_device).unwrap();
 
                 let (cuda_values, cuda_counts) = cuda_client
                     .mode(&cuda_tensor, Some(0), false)
@@ -492,7 +492,7 @@ fn test_mode_parity_i32() {
         #[cfg(feature = "wgpu")]
         if is_dtype_supported("wgpu", dtype) {
             with_wgpu_backend(|wgpu_client, wgpu_device| {
-                let wgpu_tensor = Tensor::from_slice(&data, &[5], &wgpu_device);
+                let wgpu_tensor = Tensor::try_from_slice(&data, &[5], &wgpu_device).unwrap();
 
                 let (wgpu_values, wgpu_counts) = wgpu_client
                     .mode(&wgpu_tensor, Some(0), false)

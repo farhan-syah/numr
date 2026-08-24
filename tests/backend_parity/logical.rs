@@ -67,10 +67,18 @@ fn test_binary_logical_parity(op: LogicalOp) {
     let cpu_results: Vec<Vec<bool>> = cases
         .iter()
         .map(|tc| {
-            let a =
-                Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(&tc.a, &tc.shape, &cpu_device);
-            let b =
-                Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(&tc.b, &tc.shape, &cpu_device);
+            let a = Tensor::<numr::runtime::cpu::CpuRuntime>::try_from_slice(
+                &tc.a,
+                &tc.shape,
+                &cpu_device,
+            )
+            .unwrap();
+            let b = Tensor::<numr::runtime::cpu::CpuRuntime>::try_from_slice(
+                &tc.b,
+                &tc.shape,
+                &cpu_device,
+            )
+            .unwrap();
             let result = apply_logical_op(&cpu_client, op, &a, &b)
                 .unwrap_or_else(|e| panic!("CPU {op:?} failed: {e}"));
             readback_as_bool(&result)
@@ -80,16 +88,18 @@ fn test_binary_logical_parity(op: LogicalOp) {
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
         for (idx, tc) in cases.iter().enumerate() {
-            let a = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+            let a = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
                 &tc.a,
                 &tc.shape,
                 &cuda_device,
-            );
-            let b = Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+            )
+            .unwrap();
+            let b = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
                 &tc.b,
                 &tc.shape,
                 &cuda_device,
-            );
+            )
+            .unwrap();
             let result = apply_logical_op(&cuda_client, op, &a, &b)
                 .unwrap_or_else(|e| panic!("CUDA {op:?} failed: {e}"));
             let cuda_bools = readback_as_bool(&result);
@@ -106,16 +116,18 @@ fn test_binary_logical_parity(op: LogicalOp) {
             // WebGPU uses U32 for bool-like tensors
             let a_u32: Vec<u32> = tc.a.iter().map(|&v| v as u32).collect();
             let b_u32: Vec<u32> = tc.b.iter().map(|&v| v as u32).collect();
-            let a = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
+            let a = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
                 &a_u32,
                 &tc.shape,
                 &wgpu_device,
-            );
-            let b = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
+            )
+            .unwrap();
+            let b = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
                 &b_u32,
                 &tc.shape,
                 &wgpu_device,
-            );
+            )
+            .unwrap();
             let result = apply_logical_op(&wgpu_client, op, &a, &b)
                 .unwrap_or_else(|e| panic!("WebGPU {op:?} failed: {e}"));
             let wgpu_bools = readback_as_bool(&result);
@@ -140,7 +152,9 @@ fn test_not_parity() {
     let cpu_results: Vec<Vec<bool>> = cases
         .iter()
         .map(|(data, shape)| {
-            let a = Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(data, shape, &cpu_device);
+            let a =
+                Tensor::<numr::runtime::cpu::CpuRuntime>::try_from_slice(data, shape, &cpu_device)
+                    .unwrap();
             let result = cpu_client
                 .logical_not(&a)
                 .unwrap_or_else(|e| panic!("CPU NOT failed: {e}"));
@@ -151,8 +165,12 @@ fn test_not_parity() {
     #[cfg(feature = "cuda")]
     with_cuda_backend(|cuda_client, cuda_device| {
         for (idx, (data, shape)) in cases.iter().enumerate() {
-            let a =
-                Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(data, shape, &cuda_device);
+            let a = Tensor::<numr::runtime::cuda::CudaRuntime>::try_from_slice(
+                data,
+                shape,
+                &cuda_device,
+            )
+            .unwrap();
             let result = cuda_client
                 .logical_not(&a)
                 .unwrap_or_else(|e| panic!("CUDA NOT failed: {e}"));
@@ -165,11 +183,12 @@ fn test_not_parity() {
     with_wgpu_backend(|wgpu_client, wgpu_device| {
         for (idx, (data, shape)) in cases.iter().enumerate() {
             let data_u32: Vec<u32> = data.iter().map(|&v| v as u32).collect();
-            let a = Tensor::<numr::runtime::wgpu::WgpuRuntime>::from_slice(
+            let a = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_from_slice(
                 &data_u32,
                 shape,
                 &wgpu_device,
-            );
+            )
+            .unwrap();
             let result = wgpu_client
                 .logical_not(&a)
                 .unwrap_or_else(|e| panic!("WebGPU NOT failed: {e}"));

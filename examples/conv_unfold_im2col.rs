@@ -29,7 +29,7 @@ fn main() -> Result<()> {
         9.0, 10.0, 11.0, 12.0,
        13.0, 14.0, 15.0, 16.0,
     ];
-    let input = Tensor::<CpuRuntime>::from_slice(input_data, &[1, 1, 4, 4], &device);
+    let input = Tensor::<CpuRuntime>::try_from_slice(input_data, &[1, 1, 4, 4], &device)?;
 
     // Kernel: out_channels=1, in_channels=1, kH=3, kW=3
     #[rustfmt::skip]
@@ -38,7 +38,7 @@ fn main() -> Result<()> {
         1.0, 0.0, -1.0,
         1.0, 0.0, -1.0,
     ];
-    let kernel = Tensor::<CpuRuntime>::from_slice(kernel_data, &[1, 1, 3, 3], &device);
+    let kernel = Tensor::<CpuRuntime>::try_from_slice(kernel_data, &[1, 1, 3, 3], &device)?;
 
     // -----------------------------------------------------------------------
     // 2. Direct conv2d (stride=1, no padding, dilation=1, groups=1)

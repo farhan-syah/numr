@@ -317,11 +317,12 @@ fn test_add_into_parity(test_cases: &[TestCase], dtype: DType) {
     for (idx, tc) in test_cases.iter().enumerate() {
         let a = tensor_from_f64(&tc.a, &tc.a_shape, dtype, &cpu_device, &cpu_client).unwrap();
         let b = tensor_from_f64(&tc.b, &tc.b_shape, dtype, &cpu_device, &cpu_client).unwrap();
-        let out = Tensor::<numr::runtime::cpu::CpuRuntime>::zeros(
+        let out = Tensor::<numr::runtime::cpu::CpuRuntime>::try_zeros(
             cpu_results[idx].shape(),
             dtype,
             &cpu_device,
-        );
+        )
+        .unwrap();
         cpu_client.add_into(&out, &a, &b).unwrap();
         assert_tensor_allclose(
             &out,
@@ -339,11 +340,12 @@ fn test_add_into_parity(test_cases: &[TestCase], dtype: DType) {
                     tensor_from_f64(&tc.a, &tc.a_shape, dtype, &cuda_device, &cuda_client).unwrap();
                 let b =
                     tensor_from_f64(&tc.b, &tc.b_shape, dtype, &cuda_device, &cuda_client).unwrap();
-                let out = Tensor::<numr::runtime::cuda::CudaRuntime>::zeros(
+                let out = Tensor::<numr::runtime::cuda::CudaRuntime>::try_zeros(
                     cpu_results[idx].shape(),
                     dtype,
                     &cuda_device,
-                );
+                )
+                .unwrap();
                 cuda_client.add_into(&out, &a, &b).unwrap();
                 assert_tensor_allclose(
                     &out,
@@ -363,11 +365,12 @@ fn test_add_into_parity(test_cases: &[TestCase], dtype: DType) {
                     tensor_from_f64(&tc.a, &tc.a_shape, dtype, &wgpu_device, &wgpu_client).unwrap();
                 let b =
                     tensor_from_f64(&tc.b, &tc.b_shape, dtype, &wgpu_device, &wgpu_client).unwrap();
-                let out = Tensor::<numr::runtime::wgpu::WgpuRuntime>::zeros(
+                let out = Tensor::<numr::runtime::wgpu::WgpuRuntime>::try_zeros(
                     cpu_results[idx].shape(),
                     dtype,
                     &wgpu_device,
-                );
+                )
+                .unwrap();
                 wgpu_client.add_into(&out, &a, &b).unwrap();
                 assert_tensor_allclose(
                     &out,

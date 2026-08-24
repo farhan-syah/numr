@@ -343,8 +343,8 @@ fn test_cpu_reduce_parallelism_config_matches_default() {
         .map(|i| if i % 13 == 0 { 0.0 } else { 1.0 })
         .collect();
 
-    let a = Tensor::<CpuRuntime>::from_slice(&data, &shape, &device);
-    let b = Tensor::<CpuRuntime>::from_slice(&boolish_data, &shape, &device);
+    let a = Tensor::<CpuRuntime>::try_from_slice(&data, &shape, &device).unwrap();
+    let b = Tensor::<CpuRuntime>::try_from_slice(&boolish_data, &shape, &device).unwrap();
 
     let sum_base: Vec<f32> = default_client.sum(&a, &[1], false).unwrap().to_vec();
     let sum_cfg: Vec<f32> = configured_client.sum(&a, &[1], false).unwrap().to_vec();
