@@ -85,7 +85,7 @@ impl<R: Runtime<DType = DType>> CooData<R> {
 
         // Handle empty cases - if either is empty, result is empty
         if self.nnz() == 0 || other.nnz() == 0 {
-            return Ok(Self::empty(self.shape, dtype, device));
+            return Self::empty(self.shape, dtype, device);
         }
 
         // Read indices to host
@@ -156,7 +156,7 @@ impl<R: Runtime<DType = DType>> CooData<R> {
 
             // Handle empty result
             if result_rows.is_empty() {
-                return Ok(Self::empty(self.shape, dtype, device));
+                return Self::empty(self.shape, dtype, device);
             }
 
             let row_tensor = Tensor::from_slice(&result_rows, &[result_rows.len()], device);
@@ -265,7 +265,7 @@ mod tests {
             &device,
         )
         .unwrap();
-        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
 
         // Divide with empty matrix gives empty result
         let c = a.div(&b).unwrap();
@@ -279,8 +279,8 @@ mod tests {
     fn test_coo_div_shape_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CooData::<CpuRuntime>::empty([2, 3], DType::F32, &device);
-        let b = CooData::<CpuRuntime>::empty([3, 2], DType::F32, &device);
+        let a = CooData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
+        let b = CooData::<CpuRuntime>::empty([3, 2], DType::F32, &device).unwrap();
 
         let result = a.div(&b);
         assert!(result.is_err());
@@ -290,8 +290,8 @@ mod tests {
     fn test_coo_div_dtype_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
-        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F64, &device);
+        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
+        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F64, &device).unwrap();
 
         let result = a.div(&b);
         assert!(result.is_err());

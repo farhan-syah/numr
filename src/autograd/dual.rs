@@ -17,6 +17,7 @@
 //! in a single forward pass.
 
 use crate::dtype::DType;
+use crate::error::Result;
 use crate::runtime::Runtime;
 use crate::tensor::Tensor;
 
@@ -92,15 +93,15 @@ impl<R: Runtime> DualTensor<R> {
     ///
     /// The tangent is initialized to all ones with the same shape as the primal.
     /// This is useful when computing the derivative of a scalar function.
-    pub fn with_unit_tangent(primal: Tensor<R>, device: &R::Device) -> Self
+    pub fn with_unit_tangent(primal: Tensor<R>, device: &R::Device) -> Result<Self>
     where
         R: Runtime<DType = DType>,
     {
-        let tangent = Tensor::ones(primal.shape(), primal.dtype(), device);
-        Self {
+        let tangent = Tensor::try_ones(primal.shape(), primal.dtype(), device)?;
+        Ok(Self {
             primal,
             tangent: Some(tangent),
-        }
+        })
     }
 
     /// Create a dual tensor from a primal with a specific tangent
@@ -184,11 +185,11 @@ impl<R: Runtime> DualTensor<R> {
     ///
     /// This is useful when we need an explicit zero tangent for operations
     /// that can't handle `Option<Tensor>` directly.
-    pub fn zero_tangent(&self, device: &R::Device) -> Tensor<R>
+    pub fn zero_tangent(&self, device: &R::Device) -> Result<Tensor<R>>
     where
         R: Runtime<DType = DType>,
     {
-        Tensor::zeros(self.primal.shape(), self.primal.dtype(), device)
+        Tensor::try_zeros(self.primal.shape(), self.primal.dtype(), device)
     }
 }
 
@@ -227,7 +228,7 @@ mod tests {
         let device = CpuDevice::new();
         let primal = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
 
-        let dual = DualTensor::with_unit_tangent(primal, &device);
+        let dual = DualTensor::with_unit_tangent(primal, &device).unwrap();
 
         assert!(dual.has_tangent());
         assert_eq!(dual.tangent().unwrap().to_vec::<f32>(), [1.0, 1.0, 1.0]);

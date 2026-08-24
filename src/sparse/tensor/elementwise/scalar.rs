@@ -203,7 +203,8 @@ mod tests {
         let device = <CpuRuntime as Runtime>::Device::default();
 
         let sparse =
-            SparseTensor::<CpuRuntime>::empty([3, 3], DType::F32, SparseFormat::Coo, &device);
+            SparseTensor::<CpuRuntime>::empty([3, 3], DType::F32, SparseFormat::Coo, &device)
+                .unwrap();
 
         let result = sparse.scalar_add(5.0).unwrap();
 

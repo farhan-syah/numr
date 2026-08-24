@@ -197,7 +197,7 @@ mod tests {
     fn test_coo_add_empty_a() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
         let b = CooData::<CpuRuntime>::from_slices(
             &[0i64, 1],
             &[0i64, 1],
@@ -224,7 +224,7 @@ mod tests {
             &device,
         )
         .unwrap();
-        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
 
         let c = a.add(&b).unwrap();
 
@@ -235,8 +235,8 @@ mod tests {
     fn test_coo_add_shape_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CooData::<CpuRuntime>::empty([2, 3], DType::F32, &device);
-        let b = CooData::<CpuRuntime>::empty([3, 2], DType::F32, &device);
+        let a = CooData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
+        let b = CooData::<CpuRuntime>::empty([3, 2], DType::F32, &device).unwrap();
 
         let result = a.add(&b);
         assert!(result.is_err());
@@ -246,8 +246,8 @@ mod tests {
     fn test_coo_add_dtype_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
-        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F64, &device);
+        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
+        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F64, &device).unwrap();
 
         let result = a.add(&b);
         assert!(result.is_err());

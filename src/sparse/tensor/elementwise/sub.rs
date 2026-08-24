@@ -278,8 +278,10 @@ mod tests {
     fn test_sub_shape_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = SparseTensor::<CpuRuntime>::empty([2, 3], DType::F32, SparseFormat::Csr, &device);
-        let b = SparseTensor::<CpuRuntime>::empty([3, 2], DType::F32, SparseFormat::Csr, &device);
+        let a = SparseTensor::<CpuRuntime>::empty([2, 3], DType::F32, SparseFormat::Csr, &device)
+            .unwrap();
+        let b = SparseTensor::<CpuRuntime>::empty([3, 2], DType::F32, SparseFormat::Csr, &device)
+            .unwrap();
 
         let result = a.sub(&b);
         assert!(result.is_err());
@@ -289,8 +291,10 @@ mod tests {
     fn test_sub_dtype_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = SparseTensor::<CpuRuntime>::empty([2, 2], DType::F32, SparseFormat::Csr, &device);
-        let b = SparseTensor::<CpuRuntime>::empty([2, 2], DType::F64, SparseFormat::Csr, &device);
+        let a = SparseTensor::<CpuRuntime>::empty([2, 2], DType::F32, SparseFormat::Csr, &device)
+            .unwrap();
+        let b = SparseTensor::<CpuRuntime>::empty([2, 2], DType::F64, SparseFormat::Csr, &device)
+            .unwrap();
 
         let result = a.sub(&b);
         assert!(result.is_err());

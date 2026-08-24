@@ -77,16 +77,16 @@ impl<R: Runtime<DType = DType>> CscData<R> {
     }
 
     /// Create an empty CSC matrix
-    pub fn empty(shape: [usize; 2], dtype: DType, device: &R::Device) -> Self {
+    pub fn empty(shape: [usize; 2], dtype: DType, device: &R::Device) -> Result<Self> {
         let [_nrows, ncols] = shape;
         let col_ptrs_data: Vec<i64> = vec![0; ncols + 1];
 
-        Self {
-            col_ptrs: Tensor::from_slice(&col_ptrs_data, &[ncols + 1], device),
-            row_indices: Tensor::empty(&[0], DType::I64, device),
-            values: Tensor::empty(&[0], dtype, device),
+        Ok(Self {
+            col_ptrs: Tensor::try_from_slice(&col_ptrs_data, &[ncols + 1], device)?,
+            row_indices: Tensor::try_empty(&[0], DType::I64, device)?,
+            values: Tensor::try_empty(&[0], dtype, device)?,
             shape,
-        }
+        })
     }
 
     /// Returns the column pointers tensor
@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn test_csc_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
-        let csc = CscData::<CpuRuntime>::empty([100, 200], DType::F64, &device);
+        let csc = CscData::<CpuRuntime>::empty([100, 200], DType::F64, &device).unwrap();
 
         assert_eq!(csc.nnz(), 0);
         assert_eq!(csc.shape(), [100, 200]);

@@ -91,12 +91,12 @@ impl<R: Runtime<DType = DType>> SparseTensor<R> {
         dtype: DType,
         format: SparseFormat,
         device: &R::Device,
-    ) -> Self {
-        match format {
-            SparseFormat::Coo => SparseTensor::Coo(CooData::empty(shape, dtype, device)),
-            SparseFormat::Csr => SparseTensor::Csr(CsrData::empty(shape, dtype, device)),
-            SparseFormat::Csc => SparseTensor::Csc(CscData::empty(shape, dtype, device)),
-        }
+    ) -> Result<Self> {
+        Ok(match format {
+            SparseFormat::Coo => SparseTensor::Coo(CooData::empty(shape, dtype, device)?),
+            SparseFormat::Csr => SparseTensor::Csr(CsrData::empty(shape, dtype, device)?),
+            SparseFormat::Csc => SparseTensor::Csc(CscData::empty(shape, dtype, device)?),
+        })
     }
 
     /// Create sparse tensor from COO triplet slices

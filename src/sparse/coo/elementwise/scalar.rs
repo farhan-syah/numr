@@ -268,7 +268,7 @@ mod tests {
     fn test_coo_scalar_add_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let coo = CooData::<CpuRuntime>::empty([3, 3], DType::F32, &device);
+        let coo = CooData::<CpuRuntime>::empty([3, 3], DType::F32, &device).unwrap();
 
         let result = coo.scalar_add(5.0).unwrap();
 

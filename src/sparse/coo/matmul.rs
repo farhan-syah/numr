@@ -155,7 +155,7 @@ mod tests {
     fn test_coo_transpose_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let coo = CooData::<CpuRuntime>::empty([3, 5], DType::F32, &device);
+        let coo = CooData::<CpuRuntime>::empty([3, 5], DType::F32, &device).unwrap();
         let coo_t = coo.transpose();
 
         assert_eq!(coo_t.shape(), [5, 3]);

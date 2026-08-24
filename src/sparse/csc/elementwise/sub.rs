@@ -199,7 +199,7 @@ mod tests {
     fn test_csc_sub_empty_a() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let a = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
         let b = CscData::<CpuRuntime>::from_slices(
             &[0i64, 1, 2],
             &[0i64, 1],
@@ -229,7 +229,7 @@ mod tests {
             &device,
         )
         .unwrap();
-        let b = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let b = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
 
         let c = a.sub(&b).unwrap();
         assert_eq!(c.nnz(), 2);
@@ -243,8 +243,8 @@ mod tests {
     fn test_csc_sub_shape_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CscData::<CpuRuntime>::empty([2, 3], DType::F32, &device);
-        let b = CscData::<CpuRuntime>::empty([3, 2], DType::F32, &device);
+        let a = CscData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
+        let b = CscData::<CpuRuntime>::empty([3, 2], DType::F32, &device).unwrap();
 
         let result = a.sub(&b);
         assert!(result.is_err());

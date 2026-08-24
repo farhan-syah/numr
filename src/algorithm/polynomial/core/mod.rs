@@ -115,10 +115,10 @@ pub(crate) fn create_index_tensor<R: Runtime<DType = DType>>(
     index: usize,
     index_dtype: DType,
     device: &R::Device,
-) -> Tensor<R> {
+) -> Result<Tensor<R>> {
     match index_dtype {
-        DType::I32 => Tensor::<R>::from_slice(&[index as i32], &[1], device),
-        _ => Tensor::<R>::from_slice(&[index as i64], &[1], device),
+        DType::I32 => Tensor::<R>::try_from_slice(&[index as i32], &[1], device),
+        _ => Tensor::<R>::try_from_slice(&[index as i64], &[1], device),
     }
 }
 
@@ -135,15 +135,15 @@ pub(crate) fn create_arange_tensor<R: Runtime<DType = DType>>(
     end: usize,
     index_dtype: DType,
     device: &R::Device,
-) -> Tensor<R> {
+) -> Result<Tensor<R>> {
     match index_dtype {
         DType::I32 => {
             let indices: Vec<i32> = (start..end).map(|i| i as i32).collect();
-            Tensor::<R>::from_slice(&indices, &[indices.len()], device)
+            Tensor::<R>::try_from_slice(&indices, &[indices.len()], device)
         }
         _ => {
             let indices: Vec<i64> = (start..end).map(|i| i as i64).collect();
-            Tensor::<R>::from_slice(&indices, &[indices.len()], device)
+            Tensor::<R>::try_from_slice(&indices, &[indices.len()], device)
         }
     }
 }

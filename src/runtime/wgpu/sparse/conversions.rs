@@ -986,7 +986,7 @@ impl WgpuClient {
                 [nrows, ncols],
                 dtype,
                 device,
-            )));
+            )?));
         }
 
         // Step 3: Allocate output COO tensors

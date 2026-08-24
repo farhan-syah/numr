@@ -198,7 +198,7 @@ mod tests {
             &device,
         )
         .unwrap();
-        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
 
         // Multiply with empty matrix gives empty result
         let c = a.mul(&b).unwrap();
@@ -212,8 +212,8 @@ mod tests {
     fn test_coo_mul_shape_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CooData::<CpuRuntime>::empty([2, 3], DType::F32, &device);
-        let b = CooData::<CpuRuntime>::empty([3, 2], DType::F32, &device);
+        let a = CooData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
+        let b = CooData::<CpuRuntime>::empty([3, 2], DType::F32, &device).unwrap();
 
         let result = a.mul(&b);
         assert!(result.is_err());
@@ -223,8 +223,8 @@ mod tests {
     fn test_coo_mul_dtype_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
-        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F64, &device);
+        let a = CooData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
+        let b = CooData::<CpuRuntime>::empty([2, 2], DType::F64, &device).unwrap();
 
         let result = a.mul(&b);
         assert!(result.is_err());

@@ -179,16 +179,18 @@ fn handle_empty_compressed<T: Element>(
     // CSR uses nrows, CSC uses ncols for pointer dimension
     let ptr_dim = if format_is_csr { shape[0] } else { shape[1] };
 
-    let empty_result = || {
-        let empty_ptrs = Tensor::from_slice(&vec![0i64; ptr_dim + 1], &[ptr_dim + 1], device);
-        let empty_indices = Tensor::from_slice(&Vec::<i64>::new(), &[0], device);
-        let empty_vals = Tensor::from_slice(&Vec::<T>::new(), &[0], device);
-        (empty_ptrs, empty_indices, empty_vals)
-    };
+    let empty_result =
+        || -> Result<(Tensor<CpuRuntime>, Tensor<CpuRuntime>, Tensor<CpuRuntime>)> {
+            let empty_ptrs =
+                Tensor::try_from_slice(&vec![0i64; ptr_dim + 1], &[ptr_dim + 1], device)?;
+            let empty_indices = Tensor::try_from_slice(&Vec::<i64>::new(), &[0], device)?;
+            let empty_vals = Tensor::try_from_slice(&Vec::<T>::new(), &[0], device)?;
+            Ok((empty_ptrs, empty_indices, empty_vals))
+        };
 
     match (a_nnz, b_nnz, semantics) {
         // Both empty - always return empty
-        (0, 0, _) => Some(Ok(empty_result())),
+        (0, 0, _) => Some(empty_result()),
 
         // A empty, B not empty
         (0, _, OperationSemantics::Add) => {
@@ -199,16 +201,18 @@ fn handle_empty_compressed<T: Element>(
             // 0 - B = -B
             let b_vals: Vec<T> = b_values.to_vec();
             let negated_vals: Vec<T> = b_vals.iter().map(|&v| T::from_f64(-v.to_f64())).collect();
-            let out_vals = Tensor::from_slice(&negated_vals, &[negated_vals.len()], device);
-            Some(Ok((b_ptrs.clone(), b_indices.clone(), out_vals)))
+            Some(
+                Tensor::try_from_slice(&negated_vals, &[negated_vals.len()], device)
+                    .map(|out_vals| (b_ptrs.clone(), b_indices.clone(), out_vals)),
+            )
         }
         (0, _, OperationSemantics::Multiply) => {
             // 0 * B = 0
-            Some(Ok(empty_result()))
+            Some(empty_result())
         }
         (0, _, OperationSemantics::Divide) => {
             // 0 / B = 0 (mathematically)
-            Some(Ok(empty_result()))
+            Some(empty_result())
         }
 
         // A not empty, B empty
@@ -222,7 +226,7 @@ fn handle_empty_compressed<T: Element>(
         }
         (_, 0, OperationSemantics::Multiply) => {
             // A * 0 = 0
-            Some(Ok(empty_result()))
+            Some(empty_result())
         }
         (_, 0, OperationSemantics::Divide) => {
             // A / 0 = undefined (division by zero matrix)

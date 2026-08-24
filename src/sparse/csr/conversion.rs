@@ -18,11 +18,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
 
         // Handle empty case
         if nnz == 0 {
-            return Ok(CooData::empty(
-                self.shape,
-                self.dtype(),
-                self.values.device(),
-            ));
+            return CooData::empty(self.shape, self.dtype(), self.values.device());
         }
 
         // Read CSR data to host
@@ -113,7 +109,7 @@ mod tests {
     #[test]
     fn test_csr_to_coo_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
-        let csr = CsrData::<CpuRuntime>::empty([3, 3], DType::F32, &device);
+        let csr = CsrData::<CpuRuntime>::empty([3, 3], DType::F32, &device).unwrap();
         let coo = csr.to_coo().unwrap();
 
         assert_eq!(coo.nnz(), 0);
@@ -187,7 +183,7 @@ mod tests {
     #[test]
     fn test_csr_to_csc_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
-        let csr = CsrData::<CpuRuntime>::empty([3, 3], DType::F32, &device);
+        let csr = CsrData::<CpuRuntime>::empty([3, 3], DType::F32, &device).unwrap();
         let csc = csr.to_csc().unwrap();
 
         assert_eq!(csc.nnz(), 0);

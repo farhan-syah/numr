@@ -87,7 +87,7 @@ where
     //   factor_real = [-r_real, 1]
     //   factor_imag = [-r_imag, 0]
     for i in 0..n_roots {
-        let idx = create_index_tensor::<R>(i, index_dtype, device);
+        let idx = create_index_tensor::<R>(i, index_dtype, device)?;
 
         // Get root i as [1]-shaped tensors
         let r_real = client.index_select(roots_real, 0, &idx)?;

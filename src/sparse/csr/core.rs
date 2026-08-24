@@ -90,17 +90,17 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
     }
 
     /// Create an empty CSR matrix
-    pub fn empty(shape: [usize; 2], dtype: DType, device: &R::Device) -> Self {
+    pub fn empty(shape: [usize; 2], dtype: DType, device: &R::Device) -> Result<Self> {
         let [nrows, _ncols] = shape;
         // Row pointers are all zeros for empty matrix
         let row_ptrs_data: Vec<i64> = vec![0; nrows + 1];
 
-        Self {
-            row_ptrs: Tensor::from_slice(&row_ptrs_data, &[nrows + 1], device),
-            col_indices: Tensor::empty(&[0], DType::I64, device),
-            values: Tensor::empty(&[0], dtype, device),
+        Ok(Self {
+            row_ptrs: Tensor::try_from_slice(&row_ptrs_data, &[nrows + 1], device)?,
+            col_indices: Tensor::try_empty(&[0], DType::I64, device)?,
+            values: Tensor::try_empty(&[0], dtype, device)?,
             shape,
-        }
+        })
     }
 
     /// Returns the row pointers tensor
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn test_csr_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
-        let csr = CsrData::<CpuRuntime>::empty([100, 200], DType::F64, &device);
+        let csr = CsrData::<CpuRuntime>::empty([100, 200], DType::F64, &device).unwrap();
 
         assert_eq!(csr.nnz(), 0);
         assert_eq!(csr.shape(), [100, 200]);

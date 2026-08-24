@@ -312,7 +312,7 @@ mod tests {
     fn test_spmv_empty_matrix() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let csr = CsrData::<CpuRuntime>::empty([3, 3], DType::F32, &device);
+        let csr = CsrData::<CpuRuntime>::empty([3, 3], DType::F32, &device).unwrap();
         let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
 
         let y = csr.spmv(&x).unwrap();
@@ -505,7 +505,7 @@ mod tests {
     fn test_spmm_empty_matrix() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let csr = CsrData::<CpuRuntime>::empty([2, 3], DType::F32, &device);
+        let csr = CsrData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
         let b =
             Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device);
 
@@ -687,7 +687,7 @@ mod tests {
     fn test_csr_transpose_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let csr = CsrData::<CpuRuntime>::empty([3, 5], DType::F32, &device);
+        let csr = CsrData::<CpuRuntime>::empty([3, 5], DType::F32, &device).unwrap();
         let csc = csr.transpose();
 
         assert_eq!(csc.shape(), [5, 3]);

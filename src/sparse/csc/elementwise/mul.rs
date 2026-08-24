@@ -198,7 +198,7 @@ mod tests {
             &device,
         )
         .unwrap();
-        let b = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let b = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
 
         let c = a.mul(&b).unwrap();
         assert_eq!(c.nnz(), 0);
@@ -211,8 +211,8 @@ mod tests {
     fn test_csc_mul_shape_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CscData::<CpuRuntime>::empty([2, 3], DType::F32, &device);
-        let b = CscData::<CpuRuntime>::empty([3, 2], DType::F32, &device);
+        let a = CscData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
+        let b = CscData::<CpuRuntime>::empty([3, 2], DType::F32, &device).unwrap();
 
         let result = a.mul(&b);
         assert!(result.is_err());

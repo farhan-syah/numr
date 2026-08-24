@@ -168,7 +168,7 @@ where
             }
 
             let eigenvalues = Tensor::<R>::from_slice(&eigenvalue_data, &[k_actual], device);
-            let eigenvectors = assemble_column_matrix::<R>(&ritz_vectors, n, k_actual, device);
+            let eigenvectors = assemble_column_matrix::<R>(&ritz_vectors, n, k_actual, device)?;
 
             return Ok(SparseEigResult {
                 eigenvalues,
@@ -219,11 +219,11 @@ fn assemble_column_matrix<R: Runtime<DType = DType>>(
     n: usize,
     k: usize,
     device: &R::Device,
-) -> Tensor<R> {
+) -> Result<Tensor<R>> {
     let mut flat = vec![0.0f64; n * k];
     for (col, tensor) in columns.iter().enumerate() {
         let col_data: Vec<f64> = tensor.to_vec();
         flat[col * n..(col + 1) * n].copy_from_slice(&col_data);
     }
-    Tensor::<R>::from_slice(&flat, &[n, k], device)
+    Tensor::<R>::try_from_slice(&flat, &[n, k], device)
 }

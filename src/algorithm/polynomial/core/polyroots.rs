@@ -82,7 +82,7 @@ where
 
     // Get leading coefficient as tensor
     // Select last coefficient: coeffs[n-1]
-    let last_idx = create_index_tensor::<R>(n - 1, index_dtype, device);
+    let last_idx = create_index_tensor::<R>(n - 1, index_dtype, device)?;
     let leading_tensor = client.index_select(coeffs, 0, &last_idx)?; // Shape [1]
 
     // Note: We skip validation of leading coefficient being non-zero.
@@ -111,7 +111,7 @@ where
 
     // Build last column: -coeffs[0:degree] / leading
     // Select coefficients 0 to degree-1
-    let coeff_indices = create_arange_tensor::<R>(0, degree, index_dtype, device);
+    let coeff_indices = create_arange_tensor::<R>(0, degree, index_dtype, device)?;
     let lower_coeffs = client.index_select(coeffs, 0, &coeff_indices)?; // Shape [degree]
 
     // Negate and divide by leading coefficient

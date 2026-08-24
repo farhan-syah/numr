@@ -199,7 +199,7 @@ mod tests {
     fn test_csc_add_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device);
+        let a = CscData::<CpuRuntime>::empty([2, 2], DType::F32, &device).unwrap();
         let b = CscData::<CpuRuntime>::from_slices(
             &[0i64, 1, 2],
             &[0i64, 1],
@@ -220,8 +220,8 @@ mod tests {
     fn test_csc_add_shape_mismatch() {
         let device = <CpuRuntime as Runtime>::Device::default();
 
-        let a = CscData::<CpuRuntime>::empty([2, 3], DType::F32, &device);
-        let b = CscData::<CpuRuntime>::empty([3, 2], DType::F32, &device);
+        let a = CscData::<CpuRuntime>::empty([2, 3], DType::F32, &device).unwrap();
+        let b = CscData::<CpuRuntime>::empty([3, 2], DType::F32, &device).unwrap();
 
         let result = a.add(&b);
         assert!(result.is_err());

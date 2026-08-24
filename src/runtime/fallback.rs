@@ -153,9 +153,9 @@ impl CpuFallbackContext {
     pub fn tensor_from_gpu<T: Element, R: Runtime<DType = DType>>(
         &self,
         tensor: &Tensor<R>,
-    ) -> Tensor<cpu::CpuRuntime> {
+    ) -> Result<Tensor<cpu::CpuRuntime>> {
         let data: Vec<T> = tensor.to_vec();
-        Tensor::<cpu::CpuRuntime>::from_slice(&data, tensor.shape(), &self.device)
+        Tensor::<cpu::CpuRuntime>::try_from_slice(&data, tensor.shape(), &self.device)
     }
 }
 
@@ -230,8 +230,8 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
-        let b_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
+        let b_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b)?;
 
         let result_cpu = match op {
             BinaryOp::Add => cpu.client.add(&a_cpu, &b_cpu)?,
@@ -266,7 +266,7 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
 
         let result_cpu = match op {
             UnaryOp::Neg => cpu.client.neg(&a_cpu)?,
@@ -325,7 +325,7 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
 
         let result_cpu = match op {
             BinaryOp::Add => cpu.client.add_scalar(&a_cpu, scalar)?,
@@ -361,7 +361,7 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
 
         let result_cpu = match op {
             ReduceOp::Sum => cpu.client.sum(&a_cpu, dims, keepdim)?,
@@ -397,7 +397,7 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
         let result_cpu = op_fn(&cpu.client, &a_cpu)?;
         let result_data: Vec<T> = result_cpu.to_vec();
         return Ok(Tensor::<R>::from_slice(&result_data, a.shape(), device));
@@ -421,7 +421,7 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
         let result_cpu = cpu.client.softmax(&a_cpu, dim)?;
         let result_data: Vec<T> = result_cpu.to_vec();
         return Ok(Tensor::<R>::from_slice(&result_data, a.shape(), device));
@@ -446,8 +446,8 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
-        let b_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
+        let b_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b)?;
 
         let result_cpu = cpu.client.matmul(&a_cpu, &b_cpu)?;
         let result_data: Vec<T> = result_cpu.to_vec();
@@ -475,8 +475,8 @@ where
     let cpu = CpuFallbackContext::new();
 
     dispatch_dtype!(dtype, T => {
-        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a);
-        let b_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b);
+        let a_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a)?;
+        let b_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b)?;
 
         let result_cpu = match op {
             CompareOp::Eq => cpu.client.eq(&a_cpu, &b_cpu)?,
@@ -549,9 +549,9 @@ where
     dispatch_dtype!(cond_dtype, C => {
         dispatch_dtype!(dtype, T => {
             // Copy all three tensors to CPU
-            let cond_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<C, R>(cond);
-            let x_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(x);
-            let y_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(y);
+            let cond_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<C, R>(cond)?;
+            let x_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(x)?;
+            let y_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(y)?;
 
             // Execute where_cond on CPU (CPU impl now handles any cond dtype)
             let result_cpu = cpu.client.where_cond(&cond_cpu, &x_cpu, &y_cpu)?;
@@ -596,12 +596,14 @@ where
     let cpu = CpuFallbackContext::new();
 
     // Copy to CPU
-    let a_col_ptrs_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(a_col_ptrs);
-    let a_row_indices_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(a_row_indices);
-    let a_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a_values);
-    let b_col_ptrs_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(b_col_ptrs);
-    let b_row_indices_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(b_row_indices);
-    let b_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b_values);
+    let a_col_ptrs_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(a_col_ptrs)?;
+    let a_row_indices_cpu: Tensor<cpu::CpuRuntime> =
+        cpu.tensor_from_gpu::<i64, R>(a_row_indices)?;
+    let a_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a_values)?;
+    let b_col_ptrs_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(b_col_ptrs)?;
+    let b_row_indices_cpu: Tensor<cpu::CpuRuntime> =
+        cpu.tensor_from_gpu::<i64, R>(b_row_indices)?;
+    let b_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b_values)?;
 
     // Execute on CPU using the merge_csc_impl from cpu/sparse.rs
     let (result_col_ptrs_cpu, result_row_indices_cpu, result_values_cpu) =
@@ -659,12 +661,16 @@ where
     let cpu = CpuFallbackContext::new();
 
     // Copy to CPU
-    let a_row_indices_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(a_row_indices);
-    let a_col_indices_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(a_col_indices);
-    let a_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a_values);
-    let b_row_indices_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(b_row_indices);
-    let b_col_indices_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<i64, R>(b_col_indices);
-    let b_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b_values);
+    let a_row_indices_cpu: Tensor<cpu::CpuRuntime> =
+        cpu.tensor_from_gpu::<i64, R>(a_row_indices)?;
+    let a_col_indices_cpu: Tensor<cpu::CpuRuntime> =
+        cpu.tensor_from_gpu::<i64, R>(a_col_indices)?;
+    let a_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(a_values)?;
+    let b_row_indices_cpu: Tensor<cpu::CpuRuntime> =
+        cpu.tensor_from_gpu::<i64, R>(b_row_indices)?;
+    let b_col_indices_cpu: Tensor<cpu::CpuRuntime> =
+        cpu.tensor_from_gpu::<i64, R>(b_col_indices)?;
+    let b_values_cpu: Tensor<cpu::CpuRuntime> = cpu.tensor_from_gpu::<T, R>(b_values)?;
 
     // Execute on CPU using the merge_coo_impl from cpu/sparse.rs
     let (result_row_indices_cpu, result_col_indices_cpu, result_values_cpu) =

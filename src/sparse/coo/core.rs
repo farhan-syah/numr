@@ -82,14 +82,14 @@ impl<R: Runtime<DType = DType>> CooData<R> {
     }
 
     /// Create an empty COO matrix
-    pub fn empty(shape: [usize; 2], dtype: DType, device: &R::Device) -> Self {
-        Self {
-            row_indices: Tensor::empty(&[0], DType::I64, device),
-            col_indices: Tensor::empty(&[0], DType::I64, device),
-            values: Tensor::empty(&[0], dtype, device),
+    pub fn empty(shape: [usize; 2], dtype: DType, device: &R::Device) -> Result<Self> {
+        Ok(Self {
+            row_indices: Tensor::try_empty(&[0], DType::I64, device)?,
+            col_indices: Tensor::try_empty(&[0], DType::I64, device)?,
+            values: Tensor::try_empty(&[0], dtype, device)?,
             shape,
             sorted: true,
-        }
+        })
     }
 
     /// Returns the row indices tensor
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn test_coo_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
-        let coo = CooData::<CpuRuntime>::empty([100, 100], DType::F32, &device);
+        let coo = CooData::<CpuRuntime>::empty([100, 100], DType::F32, &device).unwrap();
 
         assert_eq!(coo.nnz(), 0);
         assert_eq!(coo.shape(), [100, 100]);

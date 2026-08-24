@@ -496,7 +496,8 @@ mod tests {
         let device = <CpuRuntime as Runtime>::Device::default();
 
         let empty =
-            SparseTensor::<CpuRuntime>::empty([2, 3], DType::F32, SparseFormat::Csr, &device);
+            SparseTensor::<CpuRuntime>::empty([2, 3], DType::F32, SparseFormat::Csr, &device)
+                .unwrap();
 
         let transposed = empty.transpose();
 

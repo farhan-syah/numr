@@ -20,11 +20,7 @@ impl<R: Runtime<DType = DType>> CooData<R> {
 
         // Handle empty case
         if nnz == 0 {
-            return Ok(CsrData::empty(
-                self.shape,
-                self.dtype(),
-                self.values.device(),
-            ));
+            return CsrData::empty(self.shape, self.dtype(), self.values.device());
         }
 
         // Read COO data to host
@@ -82,11 +78,7 @@ impl<R: Runtime<DType = DType>> CooData<R> {
 
         // Handle empty case
         if nnz == 0 {
-            return Ok(CscData::empty(
-                self.shape,
-                self.dtype(),
-                self.values.device(),
-            ));
+            return CscData::empty(self.shape, self.dtype(), self.values.device());
         }
 
         // Read COO data to host
@@ -179,7 +171,7 @@ mod tests {
     #[test]
     fn test_coo_to_csr_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
-        let coo = CooData::<CpuRuntime>::empty([3, 3], DType::F32, &device);
+        let coo = CooData::<CpuRuntime>::empty([3, 3], DType::F32, &device).unwrap();
         let csr = coo.to_csr().unwrap();
 
         assert_eq!(csr.nnz(), 0);
@@ -255,7 +247,7 @@ mod tests {
     #[test]
     fn test_coo_to_csc_empty() {
         let device = <CpuRuntime as Runtime>::Device::default();
-        let coo = CooData::<CpuRuntime>::empty([3, 3], DType::F32, &device);
+        let coo = CooData::<CpuRuntime>::empty([3, 3], DType::F32, &device).unwrap();
         let csc = coo.to_csc().unwrap();
 
         assert_eq!(csc.nnz(), 0);

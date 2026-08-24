@@ -75,8 +75,8 @@ fn validate_loss<R: Runtime>(loss: &Var<R>, fn_name: &str) -> Result<()> {
 
 /// Create the initial gradient tensor for the loss (dL/dL = 1)
 #[inline]
-fn create_loss_gradient<R: Runtime<DType = DType>>(loss: &Var<R>) -> Tensor<R> {
-    Tensor::<R>::ones(loss.shape(), loss.tensor().dtype(), loss.tensor().device())
+fn create_loss_gradient<R: Runtime<DType = DType>>(loss: &Var<R>) -> Result<Tensor<R>> {
+    Tensor::<R>::try_ones(loss.shape(), loss.tensor().dtype(), loss.tensor().device())
 }
 
 /// Compute gradients via reverse-mode automatic differentiation
@@ -285,7 +285,7 @@ where
 
     // Initialize gradient store with dL/dL = 1
     let mut grad_store = GradStore::new();
-    grad_store.insert(loss.id(), create_loss_gradient(loss));
+    grad_store.insert(loss.id(), create_loss_gradient(loss)?);
 
     // Build the computation graph and get topological order
     let topo_order = topological_sort(loss);
@@ -402,7 +402,7 @@ where
     // Initialize gradient store with dL/dL = 1 as a Var
     // This is a leaf Var (no grad_fn), but requires_grad = true so it can be differentiated
     let mut var_grad_store = VarGradStore::new();
-    var_grad_store.insert(loss.id(), Var::new(create_loss_gradient(loss), true));
+    var_grad_store.insert(loss.id(), Var::new(create_loss_gradient(loss)?, true));
 
     // Build the computation graph and get topological order
     let topo_order = topological_sort(loss);
