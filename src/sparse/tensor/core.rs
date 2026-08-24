@@ -163,7 +163,7 @@ impl<R: Runtime<DType = DType>> SparseTensor<R> {
     /// # use numr::sparse::SparseTensor;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let dense = Tensor::<CpuRuntime>::from_slice(&[1.0, 0.0, 2.0, 0.0], &[2, 2], &device);
+    /// let dense = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 0.0, 2.0, 0.0], &[2, 2], &device)?;
     /// let sparse = SparseTensor::from_dense(&client, &dense, 1e-10)?;
     /// assert_eq!(sparse.nnz(), 2);  // Only non-zero elements
     /// # }

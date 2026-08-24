@@ -37,8 +37,8 @@ use crate::tensor::Tensor;
 /// # use numr::autograd::DualTensor;
 /// # let device = CpuDevice::new();
 /// // Create a dual tensor with primal x=3.0 and tangent v=1.0
-/// let primal = Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[], &device);
-/// let tangent = Tensor::<CpuRuntime>::from_slice(&[1.0f32], &[], &device);
+/// let primal = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32], &[], &device).unwrap();
+/// let tangent = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32], &[], &device).unwrap();
 /// let x = DualTensor::new(primal, Some(tangent));
 ///
 /// // Access primal and tangent components

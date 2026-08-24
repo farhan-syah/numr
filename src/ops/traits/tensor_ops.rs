@@ -22,8 +22,8 @@ use super::{
 /// let device = CpuDevice::new();
 /// let client = CpuRuntime::default_client(&device);
 ///
-/// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-/// let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+/// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+/// let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device)?;
 ///
 /// let c = client.add(&a, &b)?;
 /// ```

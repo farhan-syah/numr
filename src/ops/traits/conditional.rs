@@ -28,12 +28,12 @@ pub trait ConditionalOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// # let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0], &[3], &device);
-    /// # let x = Tensor::<CpuRuntime>::from_slice(&[10.0, 20.0, 30.0], &[3], &device);
-    /// # let y = Tensor::<CpuRuntime>::from_slice(&[100.0, 200.0, 300.0], &[3], &device);
+    /// # let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0], &[3], &device)?;
+    /// # let x = Tensor::<CpuRuntime>::try_from_slice(&[10.0, 20.0, 30.0], &[3], &device)?;
+    /// # let y = Tensor::<CpuRuntime>::try_from_slice(&[100.0, 200.0, 300.0], &[3], &device)?;
     /// use numr::ops::ConditionalOps;
     ///
-    /// let threshold = Tensor::<CpuRuntime>::from_slice(&[1.5, 1.5, 1.5], &[3], &device);
+    /// let threshold = Tensor::<CpuRuntime>::try_from_slice(&[1.5, 1.5, 1.5], &[3], &device)?;
     /// let mask = client.gt(&a, &threshold)?;  // Returns same dtype as a
     /// let result = client.where_cond(&mask, &x, &y)?;  // Works directly
     /// # Ok::<(), numr::error::Error>(())

@@ -61,7 +61,7 @@ pub use traits::{LinearAlgebraAlgorithms, MatrixFunctionsAlgorithms, TensorDecom
 /// use numr::algorithm::linalg::MatrixNormOrder;
 /// use numr::ops::LinalgOps;
 ///
-/// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+/// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
 /// let fro = client.matrix_norm(&a, MatrixNormOrder::Frobenius)?;
 /// let spec = client.matrix_norm(&a, MatrixNormOrder::Spectral)?;
 /// # Ok::<(), numr::error::Error>(())

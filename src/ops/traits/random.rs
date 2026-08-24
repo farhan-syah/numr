@@ -233,17 +233,17 @@ pub trait RandomOps<R: Runtime> {
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
     /// // Sample one index from a 4-category distribution
-    /// let probs = Tensor::<CpuRuntime>::from_slice(&[0.1f32, 0.2, 0.3, 0.4], &[4], &device);
+    /// let probs = Tensor::<CpuRuntime>::try_from_slice(&[0.1f32, 0.2, 0.3, 0.4], &[4], &device)?;
     /// let sample = client.multinomial(&probs, 1, true)?;  // Shape: [1]
     ///
     /// // Sample 3 indices without replacement
     /// let samples = client.multinomial(&probs, 3, false)?;  // Shape: [3]
     ///
     /// // Batch sampling: 2 distributions, 5 samples each
-    /// let batch_probs = Tensor::<CpuRuntime>::from_slice(
+    /// let batch_probs = Tensor::<CpuRuntime>::try_from_slice(
     ///     &[0.1f32, 0.9, 0.5, 0.5],  // 2 rows of 2 categories
     ///     &[2, 2], &device
-    /// );
+    /// )?;
     /// let batch_samples = client.multinomial(&batch_probs, 5, true)?;  // Shape: [2, 5]
     /// # Ok::<(), numr::error::Error>(())
     /// ```

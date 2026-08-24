@@ -27,8 +27,8 @@ use crate::tensor::Tensor;
 /// let device = CpuDevice::new();
 /// let client = CpuRuntime::default_client(&device);
 ///
-/// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-/// let b = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device);
+/// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
+/// let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 6.0, 7.0, 8.0], &[2, 2], &device)?;
 ///
 /// let c = client.add(&a, &b)?;  // [6.0, 8.0, 10.0, 12.0]
 /// # Ok::<(), numr::error::Error>(())
@@ -54,8 +54,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
-    /// let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 4.0], &[2], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 4.0], &[2], &device)?;
     /// let result = client.add(&a, &b)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -81,8 +81,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[5.0f32, 8.0], &[2], &device);
-    /// let b = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 3.0], &[2], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[5.0f32, 8.0], &[2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 3.0], &[2], &device)?;
     /// let result = client.sub(&a, &b)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -108,8 +108,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device);
-    /// let b = Tensor::<CpuRuntime>::from_slice(&[4.0f32, 5.0], &[2], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[4.0f32, 5.0], &[2], &device)?;
     /// let result = client.mul(&a, &b)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -136,8 +136,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[10.0f32, 9.0], &[2], &device);
-    /// let b = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[10.0f32, 9.0], &[2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device)?;
     /// let result = client.div(&a, &b)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -164,8 +164,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let base = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 3.0], &[2], &device);
-    /// let exponent = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 2.0], &[2], &device);
+    /// let base = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 3.0], &[2], &device)?;
+    /// let exponent = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 2.0], &[2], &device)?;
     /// let result = client.pow(&base, &exponent)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -191,8 +191,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0], &[2], &device);
-    /// let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 2.0], &[2], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0], &[2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 2.0], &[2], &device)?;
     /// let result = client.maximum(&a, &b)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -218,8 +218,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 5.0], &[2], &device);
-    /// let b = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 2.0], &[2], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 5.0], &[2], &device)?;
+    /// let b = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 2.0], &[2], &device)?;
     /// let result = client.minimum(&a, &b)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -249,8 +249,8 @@ pub trait BinaryOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let y = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 0.0], &[2], &device);
-    /// let x = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0], &[2], &device);
+    /// let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 0.0], &[2], &device)?;
+    /// let x = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0], &[2], &device)?;
     /// let angles = client.atan2(&y, &x)?;
     /// # Ok::<(), numr::error::Error>(())
     /// ```

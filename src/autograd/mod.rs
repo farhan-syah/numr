@@ -42,8 +42,8 @@
 //! # let device = CpuDevice::new();
 //! # let client = CpuRuntime::default_client(&device);
 //! // Create leaf variables
-//! let x = Var::new(Tensor::from_slice(&[2.0f32], &[1], &device), true);
-//! let y = Var::new(Tensor::from_slice(&[3.0f32], &[1], &device), true);
+//! let x = Var::new(Tensor::try_from_slice(&[2.0f32], &[1], &device)?, true);
+//! let y = Var::new(Tensor::try_from_slice(&[3.0f32], &[1], &device)?, true);
 //!
 //! // Forward: z = x * y
 //! let z = var_mul(&x, &y, &client)?;
@@ -65,8 +65,8 @@
 //! # let device = CpuDevice::new();
 //! # let client = CpuRuntime::default_client(&device);
 //! // f(x) = x² at x=3, tangent v=1 → df/dx in direction v
-//! let x = Tensor::from_slice(&[3.0f32], &[1], &device);
-//! let v = Tensor::from_slice(&[1.0f32], &[1], &device);
+//! let x = Tensor::try_from_slice(&[3.0f32], &[1], &device)?;
+//! let v = Tensor::try_from_slice(&[1.0f32], &[1], &device)?;
 //!
 //! let (y, dy) = jvp(
 //!     |inputs, c| {
@@ -89,7 +89,7 @@
 //! # let device = CpuDevice::new();
 //! # let client = CpuRuntime::default_client(&device);
 //! // f(x) = x²
-//! let x = Var::new(Tensor::from_slice(&[3.0f32], &[1], &device), true);
+//! let x = Var::new(Tensor::try_from_slice(&[3.0f32], &[1], &device)?, true);
 //! let y = var_mul(&x, &x, &client)?;
 //!
 //! // First backward with graph retention
@@ -97,7 +97,7 @@
 //! let grad_x = grads.get_var(x.id()).unwrap();  // dy/dx = 2x = 6
 //!
 //! // Compute Hessian-vector product: H @ v where v = [1.0]
-//! let v = Var::new(Tensor::from_slice(&[1.0f32], &[1], &device), false);
+//! let v = Var::new(Tensor::try_from_slice(&[1.0f32], &[1], &device)?, false);
 //! let grad_v = var_mul(grad_x, &v, &client)?;
 //! let scalar = var_sum(&grad_v, &[], false, &client)?;
 //!

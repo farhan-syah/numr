@@ -26,7 +26,7 @@ pub trait CumulativeOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[4], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[4], &device)?;
     /// let result = client.cumsum(&a, 0)?; // [1, 3, 6, 10]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -57,7 +57,7 @@ pub trait CumulativeOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[4], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[4], &device)?;
     /// let result = client.cumprod(&a, 0)?; // [1, 2, 6, 24]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -91,7 +91,7 @@ pub trait CumulativeOps<R: Runtime> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0], &[3], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0], &[3], &device)?;
     /// let result = client.logsumexp(&a, &[0], false)?;
     /// // result ≈ log(exp(1) + exp(2) + exp(3)) ≈ 3.4076
     /// # Ok::<(), numr::error::Error>(())

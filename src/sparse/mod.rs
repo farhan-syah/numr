@@ -38,7 +38,7 @@
 //! let csr = coo.to_csr()?;
 //!
 //! // Sparse matrix-vector multiplication
-//! let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0], &[3], &device);
+//! let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0], &[3], &device)?;
 //! // let sparse_ops = CpuRuntime::default_client(&device);
 //! // let y = sparse_ops.spmv(&csr, &x)?;  // y = A * x
 //! # }

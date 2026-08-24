@@ -102,8 +102,8 @@ fn create_loss_gradient<R: Runtime<DType = DType>>(loss: &Var<R>) -> Result<Tens
 /// # let device = CpuDevice::new();
 /// # let client = CpuRuntime::default_client(&device);
 /// // Create variables
-/// let x = Var::new(Tensor::from_slice(&[2.0f32], &[1], &device), true);
-/// let y = Var::new(Tensor::from_slice(&[3.0f32], &[1], &device), true);
+/// let x = Var::new(Tensor::try_from_slice(&[2.0f32], &[1], &device)?, true);
+/// let y = Var::new(Tensor::try_from_slice(&[3.0f32], &[1], &device)?, true);
 ///
 /// // Forward: z = x * y
 /// let z = var_mul(&x, &y, &client)?;
@@ -370,7 +370,7 @@ where
 /// # let device = CpuDevice::new();
 /// # let client = CpuRuntime::default_client(&device);
 /// // Forward pass
-/// let x = Var::new(Tensor::from_slice(&[2.0f32], &[1], &device), true);
+/// let x = Var::new(Tensor::try_from_slice(&[2.0f32], &[1], &device)?, true);
 /// let y = var_mul(&x, &x, &client)?;  // y = x²
 ///
 /// // First backward - get gradient as Var (not detached)
@@ -379,7 +379,7 @@ where
 ///
 /// // grad_x is a Var with history, so we can differentiate it
 /// // Compute HVP: multiply by vector v, then differentiate again
-/// let v = Var::new(Tensor::from_slice(&[1.0f32], &[1], &device), true);
+/// let v = Var::new(Tensor::try_from_slice(&[1.0f32], &[1], &device)?, true);
 /// let grad_v = var_mul(grad_x, &v, &client)?;
 /// let hvp = backward(&var_sum(&grad_v, &[], false, &client)?, &client)?;
 /// // hvp[x] = d²y/dx² * v = 2 * 1 = 2

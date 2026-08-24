@@ -31,7 +31,7 @@
 //!                .ok_or(Error::BroadcastError { ... })?;
 //!
 //!            // 2. Allocate output tensor
-//!            let out = Tensor::empty(&out_shape, a.dtype(), self.device());
+//!            let out = Tensor::try_empty(&out_shape, a.dtype(), self.device())?;
 //!
 //!            // 3. Dispatch kernel
 //!            cuda_add_kernel(a.ptr(), b.ptr(), out.ptr(), ...);

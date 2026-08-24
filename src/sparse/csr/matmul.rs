@@ -49,7 +49,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
     /// # let device = CpuDevice::new();
     /// # let sp = SparseTensor::<CpuRuntime>::from_coo_slices(&[0, 0, 1], &[0, 1, 0], &[1.0f32, 2.0, 3.0], [2, 2], &device)?.to_csr()?;
     /// # if let numr::sparse::SparseTensor::Csr(csr) = sp {
-    /// let x = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0], &[2], &device);
+    /// let x = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], &device)?;
     /// let y = csr.spmv(&x)?;  // y = [1*1 + 2*2, 3*1] = [5, 3]
     /// # }
     /// # }
@@ -148,7 +148,7 @@ impl<R: Runtime<DType = DType>> CsrData<R> {
     /// // A: `[2, 3]` sparse, B: `[3, 2]` dense -> C: `[2, 2]` dense
     /// # let sp = SparseTensor::<CpuRuntime>::from_coo_slices(&[0, 0, 1], &[0, 1, 2], &[1.0f32, 2.0, 3.0], [2, 3], &device)?.to_csr()?;
     /// # if let numr::sparse::SparseTensor::Csr(csr) = sp {
-    /// # let b = Tensor::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0f32], &[3, 2], &device);
+    /// # let b = Tensor::try_from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0f32], &[3, 2], &device)?;
     /// let c = csr.spmm(&b)?;
     /// # }
     /// # }

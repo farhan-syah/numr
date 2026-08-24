@@ -11,8 +11,8 @@
 //! # let device = CpuDevice::new();
 //! # let client = CpuRuntime::default_client(&device);
 //! // Create leaf variables
-//! let x = Var::new(Tensor::from_slice(&[2.0f32], &[1], &device), true);
-//! let y = Var::new(Tensor::from_slice(&[3.0f32], &[1], &device), true);
+//! let x = Var::new(Tensor::try_from_slice(&[2.0f32], &[1], &device)?, true);
+//! let y = Var::new(Tensor::try_from_slice(&[3.0f32], &[1], &device)?, true);
 //!
 //! // Build computation graph: z = x * y
 //! let z = var_mul(&x, &y, &client)?;

@@ -28,8 +28,8 @@
 //! use numr::prelude::*;
 //!
 //! let device = CpuDevice;
-//! let a = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device);
-//! let b = Tensor::<CpuRuntime>::from_slice(&[5.0, 6.0, 7.0, 8.0], &[2, 2], &device);
+//! let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device).unwrap();
+//! let b = Tensor::<CpuRuntime>::try_from_slice(&[5.0, 6.0, 7.0, 8.0], &[2, 2], &device).unwrap();
 //!
 //! let c = &a + &b;
 //! let d = a.matmul(&b)?;

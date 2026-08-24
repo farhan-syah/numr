@@ -48,7 +48,7 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 1.0, 4.0, 1.0, 5.0], &[5], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 1.0, 4.0, 1.0, 5.0], &[5], &device)?;
     /// let sorted = client.sort(&a, 0, false)?; // [1.0, 1.0, 3.0, 4.0, 5.0]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -84,7 +84,7 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 1.0, 4.0], &[3], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 1.0, 4.0], &[3], &device)?;
     /// let (values, indices) = client.sort_with_indices(&a, 0, false)?;
     /// // values = [1.0, 3.0, 4.0]
     /// // indices = [1, 0, 2]
@@ -128,7 +128,7 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 1.0, 4.0], &[3], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 1.0, 4.0], &[3], &device)?;
     /// let indices = client.argsort(&a, 0, false)?; // [1, 0, 2]
     /// // a[indices] would give [1.0, 3.0, 4.0]
     /// # Ok::<(), numr::error::Error>(())
@@ -171,7 +171,7 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[3.0f32, 1.0, 4.0, 1.0, 5.0], &[5], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[3.0f32, 1.0, 4.0, 1.0, 5.0], &[5], &device)?;
     /// let (values, indices) = client.topk(&a, 2, 0, true, true)?;
     /// // values = [5.0, 4.0] (largest 2, sorted)
     /// // indices = [4, 2]
@@ -211,7 +211,7 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 3.0, 1.0], &[5], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 3.0, 1.0], &[5], &device)?;
     /// let unique = client.unique(&a, true)?; // [1.0, 2.0, 3.0]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -246,7 +246,7 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 2.0, 3.0, 1.0], &[5], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 2.0, 3.0, 1.0], &[5], &device)?;
     /// let (unique, inverse, counts) = client.unique_with_counts(&a)?;
     /// // unique = [1.0, 2.0, 3.0]
     /// // inverse = [0, 1, 1, 2, 0] (maps each input to index in unique)
@@ -281,7 +281,7 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let a = Tensor::<CpuRuntime>::from_slice(&[0.0f32, 1.0, 0.0, 2.0], &[2, 2], &device);
+    /// let a = Tensor::<CpuRuntime>::try_from_slice(&[0.0f32, 1.0, 0.0, 2.0], &[2, 2], &device)?;
     /// let indices = client.nonzero(&a)?;
     /// // indices = [[0, 1], [1, 1]] (positions of 1.0 and 2.0)
     /// # Ok::<(), numr::error::Error>(())
@@ -315,8 +315,8 @@ pub trait SortingOps<R: Runtime> {
     /// # use numr::ops::SortingOps;
     /// # let device = CpuDevice::new();
     /// # let client = CpuRuntime::default_client(&device);
-    /// let sorted = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 3.0, 5.0, 7.0], &[4], &device);
-    /// let values = Tensor::<CpuRuntime>::from_slice(&[2.0f32, 4.0, 6.0], &[3], &device);
+    /// let sorted = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 3.0, 5.0, 7.0], &[4], &device)?;
+    /// let values = Tensor::<CpuRuntime>::try_from_slice(&[2.0f32, 4.0, 6.0], &[3], &device)?;
     /// let indices = client.searchsorted(&sorted, &values, false)?;
     /// // indices = [1, 2, 3] (insert positions to maintain order)
     /// # Ok::<(), numr::error::Error>(())

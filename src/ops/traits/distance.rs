@@ -99,8 +99,8 @@ pub trait DistanceOps<R: Runtime> {
     /// use numr::ops::DistanceOps;
     ///
     /// // Points in 3D space
-    /// let x = Tensor::<CpuRuntime>::from_slice(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], &[2, 3], &device);
-    /// let y = Tensor::<CpuRuntime>::from_slice(&[1.0, 0.0, 0.0, 2.0, 2.0, 2.0], &[2, 3], &device);
+    /// let x = Tensor::<CpuRuntime>::try_from_slice(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], &[2, 3], &device)?;
+    /// let y = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 0.0, 0.0, 2.0, 2.0, 2.0], &[2, 3], &device)?;
     ///
     /// // Euclidean distances
     /// let d = client.cdist(&x, &y, DistanceMetric::Euclidean)?;
@@ -160,7 +160,7 @@ pub trait DistanceOps<R: Runtime> {
     /// # let client = CpuRuntime::default_client(&device);
     /// use numr::ops::DistanceOps;
     ///
-    /// let x = Tensor::<CpuRuntime>::from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0], &[3, 2], &device);
+    /// let x = Tensor::<CpuRuntime>::try_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0], &[3, 2], &device)?;
     ///
     /// // Condensed distances: [d(0,1), d(0,2), d(1,2)]
     /// let d = client.pdist(&x, DistanceMetric::Euclidean)?;
@@ -205,7 +205,7 @@ pub trait DistanceOps<R: Runtime> {
     /// # let client = CpuRuntime::default_client(&device);
     /// use numr::ops::DistanceOps;
     ///
-    /// # let x = Tensor::<CpuRuntime>::from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0], &[3, 2], &device);
+    /// # let x = Tensor::<CpuRuntime>::try_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0], &[3, 2], &device)?;
     /// let condensed = client.pdist(&x, DistanceMetric::Euclidean)?;
     /// let square = client.squareform(&condensed, 3)?;
     /// // square has shape (3, 3), symmetric with zero diagonal
@@ -246,7 +246,7 @@ pub trait DistanceOps<R: Runtime> {
     /// # let client = CpuRuntime::default_client(&device);
     /// use numr::ops::DistanceOps;
     ///
-    /// # let x = Tensor::<CpuRuntime>::from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0], &[3, 2], &device);
+    /// # let x = Tensor::<CpuRuntime>::try_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0, 1.0], &[3, 2], &device)?;
     /// let square = client.cdist(&x, &x, DistanceMetric::Euclidean)?;
     /// let condensed = client.squareform_inverse(&square)?;
     /// # Ok::<(), numr::error::Error>(())

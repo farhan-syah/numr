@@ -34,8 +34,8 @@
 //! # let device = CpuDevice::new();
 //! # let client = CpuRuntime::default_client(&device);
 //! // f(x) = sum(x²), compute directional derivative in direction v
-//! let x = Tensor::from_slice(&[1.0, 2.0, 3.0], &[3], &device);
-//! let v = Tensor::from_slice(&[1.0, 1.0, 1.0], &[3], &device);
+//! let x = Tensor::try_from_slice(&[1.0, 2.0, 3.0], &[3], &device)?;
+//! let v = Tensor::try_from_slice(&[1.0, 1.0, 1.0], &[3], &device)?;
 //!
 //! let (y, dy) = jvp(
 //!     |inputs, c| {
@@ -95,8 +95,8 @@ use crate::tensor::Tensor;
 /// # let device = CpuDevice::new();
 /// # let client = CpuRuntime::default_client(&device);
 /// // Compute directional derivative of f(x) = x² at x=3 in direction v=1
-/// let x = Tensor::from_slice(&[3.0f32], &[1], &device);
-/// let v = Tensor::from_slice(&[1.0f32], &[1], &device);
+/// let x = Tensor::try_from_slice(&[3.0f32], &[1], &device)?;
+/// let v = Tensor::try_from_slice(&[1.0f32], &[1], &device)?;
 ///
 /// let (y, dy) = jvp(
 ///     |inputs, c| {
@@ -235,7 +235,7 @@ where
 /// ```ignore
 /// // f(x) = `[x[0]², x[0]*x[1], x[1]²]`
 /// // J = `[[2*x[0], 0], [x[1], x[0]], [0, 2*x[1]]]`
-/// let x = Tensor::from_slice(&[3.0f32, 2.0], &[2], &device);
+/// let x = Tensor::try_from_slice(&[3.0f32, 2.0], &[2], &device).unwrap();
 /// let f = |x: &DualTensor<_>, c: &_| -> Result<DualTensor<_>> {
 ///     let x0_sq = dual_mul(&x.index(&[0..1]), &x.index(&[0..1]), c)?;
 ///     let x01 = dual_mul(&x.index(&[0..1]), &x.index(&[1..2]), c)?;

@@ -189,7 +189,7 @@ pub trait UtilityOps<R: Runtime> {
     /// # let client = CpuRuntime::default_client(&device);
     /// use numr::ops::UtilityOps;
     ///
-    /// let indices = Tensor::<CpuRuntime>::from_slice(&[0i64, 2, 1], &[3], &device);
+    /// let indices = Tensor::<CpuRuntime>::try_from_slice(&[0i64, 2, 1], &[3], &device)?;
     /// let oh = client.one_hot(&indices, 4)?;
     /// // oh = [[1, 0, 0, 0],
     /// //       [0, 0, 1, 0],

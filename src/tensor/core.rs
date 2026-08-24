@@ -25,7 +25,7 @@ use std::fmt;
 /// ```
 /// # use numr::prelude::*;
 /// # let device = CpuDevice::new();
-/// let a = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
+/// let a = Tensor::<CpuRuntime>::try_from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device)?;
 /// let b = a.transpose(-1, -2); // Zero-copy, shares storage with a
 /// # Ok::<(), numr::error::Error>(())
 /// ```
@@ -50,19 +50,6 @@ impl<R: Runtime> Tensor<R> {
             storage,
             layout,
         }
-    }
-
-    /// Create an uninitialized tensor
-    ///
-    /// # Safety
-    /// The contents are uninitialized. Reading before writing is undefined behavior.
-    ///
-    /// # Panics
-    /// Panics if allocation fails. Use [`Self::try_empty`] in fallible contexts.
-    #[track_caller]
-    pub fn empty(shape: &[usize], dtype: R::DType, device: &R::Device) -> Self {
-        Self::try_empty(shape, dtype, device)
-            .unwrap_or_else(|e| panic!("Tensor::empty failed: {e}"))
     }
 
     /// Wrap an allocation error with the shape, dtype and device being allocated.
@@ -397,7 +384,7 @@ impl<R: Runtime> Tensor<R> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let data = vec![0.0f32; 24];
-    /// let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3, 4], &device);
+    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3, 4], &device)?;
     /// let permuted = tensor.permute(&[2, 0, 1])?; // Shape becomes [4, 2, 3]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -433,7 +420,7 @@ impl<R: Runtime> Tensor<R> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let data = vec![0.0f32; 120];
-    /// let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[4, 5, 6], &device);
+    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[4, 5, 6], &device)?;
     /// let narrowed = tensor.narrow(1, 1, 3)?; // Shape becomes [4, 3, 6]
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -491,7 +478,7 @@ impl<R: Runtime> Tensor<R> {
     /// ```
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
-    /// let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device);
+    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&[1.0, 2.0, 3.0, 4.0], &[2, 2], &device)?;
     /// let flipped = tensor.flip(0)?; // Reverse rows: [[3, 4], [1, 2]]
     /// let flipped = tensor.flip(-1)?; // Reverse columns: [[2, 1], [4, 3]]
     /// # Ok::<(), numr::error::Error>(())
@@ -520,7 +507,7 @@ impl<R: Runtime> Tensor<R> {
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
     /// # let data = vec![0.0f32; 24];
-    /// let tensor = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3, 4], &device);
+    /// let tensor = Tensor::<CpuRuntime>::try_from_slice(&data, &[2, 3, 4], &device)?;
     /// let flipped = tensor.flip_dims(&[0, 2])?; // Flip first and last dimensions
     /// # Ok::<(), numr::error::Error>(())
     /// ```
@@ -695,7 +682,7 @@ impl<R: Runtime> Tensor<R> {
     /// ```
     /// # use numr::prelude::*;
     /// # let device = CpuDevice::new();
-    /// # let loss = Tensor::<CpuRuntime>::from_slice(&[0.5f32], &[], &device);
+    /// # let loss = Tensor::<CpuRuntime>::try_from_slice(&[0.5f32], &[], &device)?;
     /// let loss_val: f32 = loss.item()?;
     /// if loss_val < 1.0 {
     ///     // training converged
@@ -803,27 +790,6 @@ impl<R: Runtime> Tensor<R> {
 impl<R: Runtime<DType = DType>> Tensor<R> {
     /// Create a tensor from a slice of data
     ///
-    /// # Panics
-    ///
-    /// Panics if `data.len()` does not equal the product of the `shape` dimensions.
-    /// For a fallible alternative, use [`Self::try_from_slice`].
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use numr::prelude::*;
-    /// # let device = CpuDevice::new();
-    /// let tensor = Tensor::<CpuRuntime>::from_slice(&[1.0f32, 2.0, 3.0, 4.0], &[2, 2], &device);
-    /// # Ok::<(), numr::error::Error>(())
-    /// ```
-    #[track_caller]
-    pub fn from_slice<T: Element>(data: &[T], shape: &[usize], device: &R::Device) -> Self {
-        Self::try_from_slice(data, shape, device)
-            .unwrap_or_else(|e| panic!("Tensor::from_slice failed: {e}"))
-    }
-
-    /// Create a tensor from a slice of data (fallible version)
-    ///
     /// Returns an error if `data.len()` does not equal the product of the `shape` dimensions,
     /// or if memory allocation fails.
     ///
@@ -862,24 +828,11 @@ impl<R: Runtime<DType = DType>> Tensor<R> {
     /// Create a tensor filled with zeros
     ///
     /// This properly initializes memory to zero on all backends (CPU and GPU).
-    #[track_caller]
-    pub fn zeros(shape: &[usize], dtype: DType, device: &R::Device) -> Self {
-        Self::try_zeros(shape, dtype, device)
-            .unwrap_or_else(|e| panic!("Tensor::zeros failed: {e}"))
-    }
-
-    /// Create a tensor filled with zeros (fallible version)
     pub fn try_zeros(shape: &[usize], dtype: DType, device: &R::Device) -> Result<Self> {
         Self::try_full_scalar(shape, dtype, 0.0, device)
     }
 
     /// Create a tensor filled with ones
-    #[track_caller]
-    pub fn ones(shape: &[usize], dtype: DType, device: &R::Device) -> Self {
-        Self::try_ones(shape, dtype, device).unwrap_or_else(|e| panic!("Tensor::ones failed: {e}"))
-    }
-
-    /// Create a tensor filled with ones (fallible version)
     pub fn try_ones(shape: &[usize], dtype: DType, device: &R::Device) -> Result<Self> {
         Self::try_full_scalar(shape, dtype, 1.0, device)
     }
@@ -887,13 +840,6 @@ impl<R: Runtime<DType = DType>> Tensor<R> {
     /// Create a tensor filled with a scalar value
     ///
     /// The scalar is converted to the target dtype.
-    #[track_caller]
-    pub fn full_scalar(shape: &[usize], dtype: DType, value: f64, device: &R::Device) -> Self {
-        Self::try_full_scalar(shape, dtype, value, device)
-            .unwrap_or_else(|e| panic!("Tensor::full_scalar failed: {e}"))
-    }
-
-    /// Create a tensor filled with a scalar value (fallible version)
     pub fn try_full_scalar(
         shape: &[usize],
         dtype: DType,

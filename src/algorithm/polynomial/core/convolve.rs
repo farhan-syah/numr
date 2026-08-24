@@ -49,8 +49,8 @@ const FFT_THRESHOLD: usize = 64;
 ///
 /// ```ignore
 /// // (1 + 2x) * (3 + 4x) = 3 + 10x + 8x²
-/// let a = Tensor::from_slice(&[1.0f32, 2.0], &[2], &device);
-/// let b = Tensor::from_slice(&[3.0f32, 4.0], &[2], &device);
+/// let a = Tensor::try_from_slice(&[1.0f32, 2.0], &[2], &device).unwrap();
+/// let b = Tensor::try_from_slice(&[3.0f32, 4.0], &[2], &device).unwrap();
 /// let c = convolve_impl(&client, &a, &b, DTypeSupport::FULL)?;
 /// // c = [3.0, 10.0, 8.0]
 /// ```

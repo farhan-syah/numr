@@ -88,9 +88,9 @@ pub trait Runtime: Clone + Send + Sync + 'static {
     /// # Example (CUDA)
     ///
     /// ```ignore
-    /// let a = Tensor::<CudaRuntime>::from_slice(&[1.0f32, 2.0], &[2], device);
-    /// let b = Tensor::<CudaRuntime>::from_slice(&[3.0f32, 4.0], &[2], device);
-    /// let c = Tensor::<CudaRuntime>::zeros(&[2], DType::F32, device);
+    /// let a = Tensor::<CudaRuntime>::try_from_slice(&[1.0f32, 2.0], &[2], device).unwrap();
+    /// let b = Tensor::<CudaRuntime>::try_from_slice(&[3.0f32, 4.0], &[2], device).unwrap();
+    /// let c = Tensor::<CudaRuntime>::try_zeros(&[2], DType::F32, device).unwrap();
     ///
     /// let captured = CudaRuntime::capture_graph_into(
     ///     client, &[&a, &b], &[&c],
