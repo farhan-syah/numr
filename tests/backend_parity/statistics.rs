@@ -992,3 +992,107 @@ fn test_histogram_invalid_inputs_parity() {
         }
     }
 }
+
+// ============================================================================
+// Narrow-float reduction epilogue
+// ============================================================================
+
+/// CUDA `var`/`std` must not overflow F16 in their reduction epilogue.
+///
+/// 131072 values alternating `+1.0` and `-1.0`, correction 0. The mean is
+/// exactly `0`, every squared difference is exactly `1.0`, the sum of squares
+/// is exactly `131072`, and the variance is exactly `1.0` — every intermediate
+/// is a power of two, so the assertions are exact with no tolerance.
+///
+/// `var` ends in "sum the squared differences, divide by N - correction", and
+/// built out of `sum` + `div_scalar` that overflows F16 twice: `sum` writes
+/// its result back in the tensor's dtype, so `131072` saturates to infinity,
+/// and `div_scalar` narrows the divisor `131072` to infinity as well. Before
+/// the fix `var` returns NaN (`inf / inf`) and `std` returns NaN with it.
+/// Promoting to F32 for both the sum and the division gives exactly `1.0`.
+#[cfg(all(feature = "f16", feature = "cuda"))]
+#[test]
+fn test_f16_var_std_do_not_overflow_cuda() {
+    use numr::ops::TypeConversionOps;
+
+    if !is_dtype_supported("cuda", DType::F16) {
+        return;
+    }
+
+    let data: Vec<f64> = (0..131072)
+        .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+        .collect();
+    let shape = [131072usize, 1];
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let tensor = tensor_from_f64(&data, &shape, DType::F16, &cuda_device, &cuda_client)
+            .expect("CUDA F16 tensor creation failed");
+
+        let variance = cuda_client
+            .var(&tensor, &[0, 1], false, 0)
+            .expect("CUDA F16 var failed");
+        let got: f32 = cuda_client
+            .cast(&variance, DType::F32)
+            .expect("cast to F32 failed")
+            .item()
+            .expect("item failed");
+        assert_eq!(got, 1.0, "CUDA F16 var overflowed: {got}");
+
+        let deviation = cuda_client
+            .std(&tensor, &[0, 1], false, 0)
+            .expect("CUDA F16 std failed");
+        let got: f32 = cuda_client
+            .cast(&deviation, DType::F32)
+            .expect("cast to F32 failed")
+            .item()
+            .expect("item failed");
+        assert_eq!(got, 1.0, "CUDA F16 std overflowed: {got}");
+    });
+}
+
+/// `var` squares the deviations BEFORE reducing, so on a narrow float the
+/// square overflows long before the sum does — a separate failure from the
+/// epilogue's sum/divisor overflow, and one the alternating +/-1.0 test above
+/// cannot see because 1.0 squared is still 1.0.
+///
+/// One element sits 300 away from a near-zero mean. 300^2 = 90000, past F16's
+/// 65504 ceiling, so without promoting the whole computation that element
+/// becomes `inf` and poisons the sum. The true variance, 90000/131072, is
+/// perfectly representable — which is exactly what makes the bug silent.
+#[test]
+#[cfg(all(feature = "f16", feature = "cuda"))]
+fn test_f16_var_square_does_not_overflow_cuda() {
+    use numr::ops::TypeConversionOps;
+
+    if !is_dtype_supported("cuda", DType::F16) {
+        return;
+    }
+
+    let n = 131072usize;
+    let mut data = vec![0.0f64; n];
+    data[0] = 300.0;
+    let shape = [n, 1];
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let tensor = tensor_from_f64(&data, &shape, DType::F16, &cuda_device, &cuda_client)
+            .expect("CUDA F16 tensor creation failed");
+
+        let variance = cuda_client
+            .var(&tensor, &[0, 1], false, 0)
+            .expect("CUDA F16 var failed");
+        let got: f32 = cuda_client
+            .cast(&variance, DType::F32)
+            .expect("cast to F32 failed")
+            .item()
+            .expect("item failed");
+
+        // mean = 300/131072, so the sum of squared deviations is just under
+        // 300^2; 90000/131072 = 0.6866. F16 resolves ~0.0005 near 0.69, and
+        // the mean subtraction shifts the result by ~1e-5, so pin a tight
+        // window rather than an exact equality.
+        assert!(
+            (got - 0.6866).abs() < 0.005,
+            "CUDA F16 var overflowed on the squared deviation: {got}"
+        );
+    });
+}

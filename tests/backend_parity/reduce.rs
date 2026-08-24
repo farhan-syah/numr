@@ -376,7 +376,7 @@ fn test_cpu_reduce_parallelism_config_matches_default() {
 // two backends that saturate identically would still pass a parity check.
 // ============================================================================
 
-#[cfg(feature = "f16")]
+#[cfg(any(feature = "f16", feature = "cuda"))]
 fn mean_all_as_f32<R: Runtime<DType = DType>>(
     client: &(impl ReduceOps<R> + numr::ops::TypeConversionOps<R>),
     t: &Tensor<R>,
@@ -435,9 +435,13 @@ fn test_bf16_mean_does_not_saturate() {
 /// values of `2^-6`, split 4096 per thread, stall each thread at `32`; the
 /// tree then merges them to `8192` instead of `16384`.
 ///
-/// This asserts the sum, not the mean: CUDA computes a mean as `sum` followed
-/// by `div_scalar`, and `1048576` is not representable in F16, so the divisor
-/// itself would come back as infinity.
+/// This asserts the sum directly, so the check stays on the accumulator and
+/// does not depend on the mean epilogue. CUDA's `mean` is now safe at these
+/// lengths too: it promotes a narrow float to F32 and does both the sum and
+/// the division there, so neither the total nor the element count is narrowed.
+/// The mean-side guarantees are pinned by
+/// `test_f16_mean_divisor_does_not_overflow_cuda` and
+/// `test_f16_mean_sum_does_not_saturate_cuda` below.
 ///
 /// CPU is not asserted here because this tensor is 2 MiB, above the fused
 /// multi-dim threshold, so CPU already reaches the widened SIMD kernel. CPU
@@ -467,5 +471,96 @@ fn test_f16_sum_does_not_saturate_cuda() {
             .item()
             .expect("item failed");
         assert_eq!(got, 16384.0, "CUDA F16 sum saturated: {got}");
+    });
+}
+
+/// The divisor half of the CUDA F16 mean overflow.
+///
+/// 65536 values of `0.5`. The true sum is `32768`, exactly representable in
+/// F16, so the accumulator is not the problem here — the element count is.
+/// Building the mean as `sum` then `div_scalar` narrows the divisor to the
+/// tensor's own dtype, and `65536` is above F16's largest finite value of
+/// `65504`, so the divisor becomes infinity and `32768 / inf` gives `0.0`.
+///
+/// Dividing in F32 and narrowing once gives exactly `0.5`, so this asserts
+/// equality with no tolerance.
+#[cfg(all(feature = "f16", feature = "cuda"))]
+#[test]
+fn test_f16_mean_divisor_does_not_overflow_cuda() {
+    let data = vec![0.5f64; 65536];
+    let shape = [65536usize, 1];
+
+    if !is_dtype_supported("cuda", DType::F16) {
+        return;
+    }
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let tensor = tensor_from_f64(&data, &shape, DType::F16, &cuda_device, &cuda_client)
+            .expect("CUDA F16 tensor creation failed");
+        let got = mean_all_as_f32(&cuda_client, &tensor);
+        assert_eq!(got, 0.5, "CUDA F16 mean divisor overflowed: {got}");
+    });
+}
+
+/// The sum half of the CUDA F16 mean overflow.
+///
+/// 131072 values of `1.0`. The true sum is `131072`, which does NOT fit in
+/// F16: `sum` accumulates in F32 but writes its result back in the tensor's
+/// dtype, so the total saturates to infinity. The result then comes back as
+/// infinity or NaN — never `1.0`.
+///
+/// This is the case a divisor-only fix would miss, which is why it is separate
+/// from `test_f16_mean_divisor_does_not_overflow_cuda`. Summing in F32 and
+/// narrowing only the final mean gives exactly `1.0`.
+#[cfg(all(feature = "f16", feature = "cuda"))]
+#[test]
+fn test_f16_mean_sum_does_not_saturate_cuda() {
+    let data = vec![1.0f64; 131072];
+    let shape = [131072usize, 1];
+
+    if !is_dtype_supported("cuda", DType::F16) {
+        return;
+    }
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let tensor = tensor_from_f64(&data, &shape, DType::F16, &cuda_device, &cuda_client)
+            .expect("CUDA F16 tensor creation failed");
+        let got = mean_all_as_f32(&cuda_client, &tensor);
+        assert_eq!(got, 1.0, "CUDA F16 mean sum saturated: {got}");
+    });
+}
+
+/// F32 `mean` must not be routed through the narrow-float promote path.
+///
+/// F32 is already the working dtype, so the fix for F16/BF16 must leave it on
+/// the direct `sum` + `div_scalar` path. This pins the values so a later
+/// refactor that promotes every dtype (or demotes through a narrower one) is
+/// caught. Both cases are exact in F32, so equality is asserted with no
+/// tolerance.
+///
+/// Unlike the F16 tests above, this one passes before the fix as well — it is
+/// a guard against future regression, not a reproduction of the bug.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_f32_mean_unchanged_cuda() {
+    if !is_dtype_supported("cuda", DType::F32) {
+        return;
+    }
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        // Same length that overflows an F16 divisor; F32 handles it directly.
+        let big = vec![0.5f64; 65536];
+        let big_shape = [65536usize, 1];
+        let tensor = tensor_from_f64(&big, &big_shape, DType::F32, &cuda_device, &cuda_client)
+            .expect("CUDA F32 tensor creation failed");
+        let got = mean_all_as_f32(&cuda_client, &tensor);
+        assert_eq!(got, 0.5, "CUDA F32 mean changed: {got}");
+
+        let small = vec![1.0f64, 2.0, 3.0, 4.0];
+        let small_shape = [4usize, 1];
+        let tensor = tensor_from_f64(&small, &small_shape, DType::F32, &cuda_device, &cuda_client)
+            .expect("CUDA F32 tensor creation failed");
+        let got = mean_all_as_f32(&cuda_client, &tensor);
+        assert_eq!(got, 2.5, "CUDA F32 mean changed: {got}");
     });
 }

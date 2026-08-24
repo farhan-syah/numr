@@ -1,6 +1,8 @@
 //! Statistical operations for CUDA runtime
+use crate::algorithm::linalg::helpers::{linalg_demote, linalg_promote};
 use crate::error::Result;
-use crate::ops::{BinaryOps, ReduceOps, ScalarOps, StatisticalOps, UnaryOps};
+use crate::ops::{BinaryOps, ReduceOps, StatisticalOps, UnaryOps};
+use crate::runtime::cuda::ops::reduce_epilogue::sum_then_divide;
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::tensor::Tensor;
 
@@ -37,21 +39,31 @@ impl StatisticalOps<CudaRuntime> for CudaClient {
             dims.iter().map(|&d| shape[d]).product()
         };
 
+        // Promote ONCE for the whole computation, not just the epilogue.
+        // `square` is the reason: on a narrow float a squared difference
+        // overflows long before the sum does. A single F16 element 300 away
+        // from the mean squares to 90000, past F16's 65504 ceiling, so the
+        // element becomes `inf` and poisons the sum — even though the final
+        // variance would have been perfectly representable. Everything below
+        // therefore runs in the promoted dtype and narrows exactly once.
+        let (a_wide, original_dtype) = linalg_promote(self, a)?;
+        let a_wide = a_wide.as_ref();
+
         // Compute mean (mean already handles empty dims internally)
-        let mean_val = self.mean(a, dims, true)?;
+        let mean_val = self.mean(a_wide, dims, true)?;
 
         // Compute (x - mean)
-        let diff = self.sub(a, &mean_val)?;
+        let diff = self.sub(a_wide, &mean_val)?;
 
         // Compute (x - mean)^2
         let diff_squared = self.square(&diff)?;
 
-        // Compute sum of squared differences over all dims when dims is empty
-        let sum_sq = self.sum(&diff_squared, &actual_dims, keepdim)?;
-
-        // Divide by (N - correction)
+        // Sum the squared differences and divide by (N - correction). The
+        // input is already promoted, so the epilogue takes its non-narrow
+        // path and does not promote a second time.
         let divisor = (count.saturating_sub(correction)).max(1) as f64;
-        self.div_scalar(&sum_sq, divisor)
+        let variance = sum_then_divide(self, &diff_squared, &actual_dims, keepdim, divisor)?;
+        linalg_demote(self, variance, original_dtype)
     }
 
     fn std(

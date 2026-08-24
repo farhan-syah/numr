@@ -1,8 +1,9 @@
 //! Reduce operations for CUDA runtime
 use crate::error::Result;
-use crate::ops::{ReduceOps, ScalarOps};
+use crate::ops::ReduceOps;
 use crate::runtime::cuda::kernels::AccumulationPrecision;
 use crate::runtime::cuda::ops::helpers::native_reduce_op;
+use crate::runtime::cuda::ops::reduce_epilogue::sum_then_divide;
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::tensor::Tensor;
 
@@ -50,8 +51,10 @@ impl ReduceOps<CudaRuntime> for CudaClient {
         };
 
         let dims = normalize_reduce_dims(dims, a.shape().len());
-        let sum_result = self.sum(a, &dims, keepdim)?;
-        self.div_scalar(&sum_result, count as f64)
+        // Narrow floats sum and divide in F32, then narrow once — a F16 sum
+        // above 65504 saturates to infinity, and a F16 divisor above 65504
+        // does too. F32/F64/integers take the direct path unchanged.
+        sum_then_divide(self, a, &dims, keepdim, count as f64)
     }
 
     fn max(
