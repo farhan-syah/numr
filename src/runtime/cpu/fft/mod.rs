@@ -8,7 +8,7 @@ mod shift;
 
 use super::{CpuClient, CpuRuntime, kernels};
 use crate::algorithm::fft::{
-    FftAlgorithms, FftDirection, FftNormalization, validate_fft_complex_dtype, validate_fft_size,
+    FftAlgorithms, FftDirection, FftNormalization, validate_fft_complex_dtype,
 };
 use crate::dtype::{Complex64, Complex128, DType};
 use crate::error::{Error, Result};
@@ -56,7 +56,14 @@ impl FftAlgorithms<CpuRuntime> for CpuClient {
         }
 
         let n = input.shape()[dim];
-        validate_fft_size(n, "fft")?;
+        // The CPU backend handles any size: power-of-two via Stockham, everything
+        // else via Bluestein. Only an empty transform axis is invalid.
+        if n == 0 {
+            return Err(Error::InvalidArgument {
+                arg: "n",
+                reason: format!("fft requires size >= 1 along dim {}, got 0", dim),
+            });
+        }
 
         if dim == ndim - 1 && input.is_contiguous() {
             return self.fft_last_dim_contiguous(input, direction, norm);
