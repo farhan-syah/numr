@@ -1,5 +1,6 @@
 //! Cumulative operation kernels (cumsum, cumprod, logsumexp)
 
+use super::wide_acc::WideAcc;
 use crate::dtype::Element;
 
 /// Cumulative sum along a contiguous dimension
@@ -20,12 +21,47 @@ pub unsafe fn cumsum_kernel<T: Element>(
     scan_size: usize,
     outer_size: usize,
 ) {
+    // The running total outgrows the element type long before a scan of any
+    // length ends, for every float narrower than F32 and for every integer.
+    // Those accumulate wide and narrow once per element written; F32, F64, and
+    // the complex types already accumulate in a type as wide as their output
+    // and keep the direct path.
+    if T::DTYPE.is_narrow_float() {
+        cumsum_kernel_acc::<T, f32>(a, out, scan_size, outer_size);
+        return;
+    }
+    if T::DTYPE.is_int() {
+        cumsum_kernel_acc::<T, i128>(a, out, scan_size, outer_size);
+        return;
+    }
+
     for o in 0..outer_size {
         let base = o * scan_size;
         let mut acc = T::zero();
         for i in 0..scan_size {
             acc = acc + *a.add(base + i);
             *out.add(base + i) = acc;
+        }
+    }
+}
+
+/// Cumulative sum over a contiguous dimension with a wide accumulator.
+///
+/// # Safety
+/// Same as [`cumsum_kernel`].
+#[inline]
+unsafe fn cumsum_kernel_acc<T: Element, A: WideAcc>(
+    a: *const T,
+    out: *mut T,
+    scan_size: usize,
+    outer_size: usize,
+) {
+    for o in 0..outer_size {
+        let base = o * scan_size;
+        let mut acc = A::ZERO;
+        for i in 0..scan_size {
+            acc = acc.wide_add(A::from_elem(*a.add(base + i)));
+            *out.add(base + i) = acc.to_elem::<T>();
         }
     }
 }
@@ -102,7 +138,18 @@ pub unsafe fn cumsum_strided_kernel<T: Element>(
         }
     }
 
-    // Scalar fallback
+    // Scalar fallback. FP8 never reaches the SIMD block above, and neither do
+    // the integer dtypes, so both need the wide accumulator here for the same
+    // reason `cumsum_kernel` does.
+    if T::DTYPE.is_narrow_float() {
+        cumsum_strided_kernel_acc::<T, f32>(a, out, scan_size, outer_size, inner_size);
+        return;
+    }
+    if T::DTYPE.is_int() {
+        cumsum_strided_kernel_acc::<T, i128>(a, out, scan_size, outer_size, inner_size);
+        return;
+    }
+
     // For strided access: element [o, s, i] is at offset o * scan_size * inner_size + s * inner_size + i
     for o in 0..outer_size {
         for i in 0..inner_size {
@@ -111,6 +158,30 @@ pub unsafe fn cumsum_strided_kernel<T: Element>(
                 let idx = o * scan_size * inner_size + s * inner_size + i;
                 acc = acc + *a.add(idx);
                 *out.add(idx) = acc;
+            }
+        }
+    }
+}
+
+/// Cumulative sum over a strided dimension with a wide accumulator.
+///
+/// # Safety
+/// Same as [`cumsum_strided_kernel`].
+#[inline]
+unsafe fn cumsum_strided_kernel_acc<T: Element, A: WideAcc>(
+    a: *const T,
+    out: *mut T,
+    scan_size: usize,
+    outer_size: usize,
+    inner_size: usize,
+) {
+    for o in 0..outer_size {
+        for i in 0..inner_size {
+            let mut acc = A::ZERO;
+            for s in 0..scan_size {
+                let idx = o * scan_size * inner_size + s * inner_size + i;
+                acc = acc.wide_add(A::from_elem(*a.add(idx)));
+                *out.add(idx) = acc.to_elem::<T>();
             }
         }
     }
@@ -486,5 +557,99 @@ mod tests {
         // Should be log(3) + 1000 ≈ 1001.0986
         let expected = 1000.0 + (3.0f64).ln();
         assert!((out[0] as f64 - expected).abs() < 1e-3);
+    }
+
+    /// Catches a `cumsum` accumulator held in the element type for FP8.
+    ///
+    /// FP8E4M3 has three mantissa bits, so above 16 its spacing is 2 and
+    /// `16 + 1` rounds back to 16. An FP8 accumulator therefore stalls at 16
+    /// and every later output reads 16 instead of the true partial sum.
+    #[test]
+    fn test_cumsum_fp8_accumulates_wider_than_the_element_type() {
+        use crate::dtype::FP8E4M3;
+
+        let a = [FP8E4M3::from_f32(1.0); 32];
+        let mut out = [FP8E4M3::from_f32(0.0); 32];
+
+        unsafe {
+            cumsum_kernel(a.as_ptr(), out.as_mut_ptr(), 32, 1);
+        }
+
+        // 24 and 32 are both exactly representable in FP8E4M3.
+        assert_eq!(out[23].to_f32(), 24.0);
+        assert_eq!(out[31].to_f32(), 32.0);
+    }
+
+    /// Catches a `cumsum` accumulator held in the element type for F16.
+    ///
+    /// F16 has ten mantissa bits, so above 2048 its spacing is 2 and
+    /// `2048 + 1` rounds back to 2048. An F16 accumulator stalls there.
+    #[cfg(feature = "f16")]
+    #[test]
+    fn test_cumsum_f16_accumulates_wider_than_the_element_type() {
+        let a = vec![half::f16::from_f32(1.0); 3000];
+        let mut out = vec![half::f16::from_f32(0.0); 3000];
+
+        unsafe {
+            cumsum_kernel(a.as_ptr(), out.as_mut_ptr(), 3000, 1);
+        }
+
+        // 2500 and 3000 are even, so both are exact in F16.
+        assert_eq!(out[2499].to_f32(), 2500.0);
+        assert_eq!(out[2999].to_f32(), 3000.0);
+    }
+
+    /// Catches an i32 `cumsum` accumulator.
+    ///
+    /// The running total leaves i32's range at element 1 and comes back at
+    /// element 2. An i32 accumulator panics on that overflow in a debug build,
+    /// and in a release build stores the wrapped -294_967_296 where the
+    /// documented answer is the saturated `i32::MAX`.
+    #[test]
+    fn test_cumsum_i32_accumulates_in_a_wider_integer() {
+        let a = [2_000_000_000i32, 2_000_000_000, -2_000_000_000];
+        let mut out = [0i32; 3];
+
+        unsafe {
+            cumsum_kernel(a.as_ptr(), out.as_mut_ptr(), 3, 1);
+        }
+
+        assert_eq!(out, [2_000_000_000, i32::MAX, 2_000_000_000]);
+    }
+
+    /// Same accumulator defect on the strided path, which the SIMD block above
+    /// never covers for integers.
+    ///
+    /// Layout is `[scan][inner]` with `inner_size = 2`: column 0 overflows i32,
+    /// column 1 stays small and pins that the fix did not disturb it.
+    #[test]
+    fn test_cumsum_strided_i32_accumulates_in_a_wider_integer() {
+        let a = [2_000_000_000i32, 1, 2_000_000_000, 2, -2_000_000_000, 3];
+        let mut out = [0i32; 6];
+
+        unsafe {
+            cumsum_strided_kernel(a.as_ptr(), out.as_mut_ptr(), 3, 1, 2);
+        }
+
+        assert_eq!(out, [2_000_000_000, 1, i32::MAX, 3, 2_000_000_000, 6]);
+    }
+
+    /// Catches an FP8 accumulator on the strided path, which has no SIMD
+    /// dispatch for FP8 on any architecture.
+    #[test]
+    fn test_cumsum_strided_fp8_accumulates_wider_than_the_element_type() {
+        use crate::dtype::FP8E4M3;
+
+        // 32 scan steps over 2 interleaved columns of 1.0.
+        let a = [FP8E4M3::from_f32(1.0); 64];
+        let mut out = [FP8E4M3::from_f32(0.0); 64];
+
+        unsafe {
+            cumsum_strided_kernel(a.as_ptr(), out.as_mut_ptr(), 32, 1, 2);
+        }
+
+        // Last scan step of each column is 32; an FP8 accumulator reads 16.
+        assert_eq!(out[62].to_f32(), 32.0);
+        assert_eq!(out[63].to_f32(), 32.0);
     }
 }

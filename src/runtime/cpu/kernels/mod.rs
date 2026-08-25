@@ -38,6 +38,7 @@ pub mod sparse;
 pub mod sparse_24;
 pub mod unary;
 pub mod where_select;
+pub mod wide_acc;
 
 // Re-export all kernel functions for convenient access
 pub use advanced_random::{

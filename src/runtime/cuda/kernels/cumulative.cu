@@ -8,6 +8,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
+#include <climits>
 #include "dtype_traits.cuh"
 
 // ============================================================================
@@ -36,6 +37,70 @@ __device__ void cumsum_simple_impl(
     for (unsigned int i = 0; i < scan_size; i++) {
         acc = acc + input[base + i];
         output[base + i] = acc;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Integer cumsum with a wider accumulator
+//
+// A running total held in the element type wraps when it leaves that type's
+// range, even when a later element brings it back to a value the output could
+// represent. Accumulate in the next wider integer and clamp on store, matching
+// the CPU kernels (which accumulate in i128 and saturate on narrowing).
+//
+// I64 and U64 have no wider integer available here, so they keep their native
+// accumulator: `__int128` is not portable across the CUDA versions this builds
+// against. That is a deliberate limit, documented in `cumsum_i64`/`cumsum_u64`.
+// ----------------------------------------------------------------------------
+
+// `lo` is 0 for the unsigned instantiations, where the low branch folds away.
+template<typename T, typename Acc>
+__device__ __forceinline__ T cumsum_saturate(Acc v, Acc lo, Acc hi) {
+    return (T)(v < lo ? lo : (v > hi ? hi : v));
+}
+
+template<typename T, typename Acc>
+__device__ void cumsum_simple_wide_impl(
+    const T* __restrict__ input,
+    T* __restrict__ output,
+    unsigned int scan_size,
+    unsigned int outer_size,
+    Acc lo,
+    Acc hi
+) {
+    unsigned int outer_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (outer_idx >= outer_size) return;
+
+    unsigned int base = outer_idx * scan_size;
+    Acc acc = (Acc)0;
+    for (unsigned int i = 0; i < scan_size; i++) {
+        acc = acc + (Acc)input[base + i];
+        output[base + i] = cumsum_saturate<T, Acc>(acc, lo, hi);
+    }
+}
+
+template<typename T, typename Acc>
+__device__ void cumsum_strided_wide_impl(
+    const T* __restrict__ input,
+    T* __restrict__ output,
+    unsigned int scan_size,
+    unsigned int outer_size,
+    unsigned int inner_size,
+    Acc lo,
+    Acc hi
+) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int total_inner = outer_size * inner_size;
+    if (idx >= total_inner) return;
+
+    unsigned int outer_idx = idx / inner_size;
+    unsigned int inner_idx = idx % inner_size;
+
+    Acc acc = (Acc)0;
+    for (unsigned int s = 0; s < scan_size; s++) {
+        unsigned int offset = outer_idx * scan_size * inner_size + s * inner_size + inner_idx;
+        acc = acc + (Acc)input[offset];
+        output[offset] = cumsum_saturate<T, Acc>(acc, lo, hi);
     }
 }
 
@@ -612,17 +677,21 @@ __global__ void cumsum_f64(const double* in, double* out, unsigned int scan_size
 }
 
 __global__ void cumsum_i32(const int* in, int* out, unsigned int scan_size, unsigned int outer_size) {
-    cumsum_simple_impl(in, out, scan_size, outer_size);
+    cumsum_simple_wide_impl<int, long long>(in, out, scan_size, outer_size, (long long)INT_MIN, (long long)INT_MAX);
 }
 
+// I64 has no wider integer accumulator available in this kernel, so it keeps a
+// native one: an i64 total that overflows cannot be represented by the i64
+// output either.
 __global__ void cumsum_i64(const long long* in, long long* out, unsigned int scan_size, unsigned int outer_size) {
     cumsum_simple_impl(in, out, scan_size, outer_size);
 }
 
 __global__ void cumsum_u32(const unsigned int* in, unsigned int* out, unsigned int scan_size, unsigned int outer_size) {
-    cumsum_simple_impl(in, out, scan_size, outer_size);
+    cumsum_simple_wide_impl<unsigned int, unsigned long long>(in, out, scan_size, outer_size, (unsigned long long)0, (unsigned long long)UINT_MAX);
 }
 
+// U64: same limit as I64 above.
 __global__ void cumsum_u64(const unsigned long long* in, unsigned long long* out, unsigned int scan_size, unsigned int outer_size) {
     cumsum_simple_impl(in, out, scan_size, outer_size);
 }
@@ -653,7 +722,7 @@ __global__ void cumsum_strided_f64(const double* in, double* out, unsigned int s
 }
 
 __global__ void cumsum_strided_i32(const int* in, int* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {
-    cumsum_strided_impl(in, out, scan_size, outer_size, inner_size);
+    cumsum_strided_wide_impl<int, long long>(in, out, scan_size, outer_size, inner_size, (long long)INT_MIN, (long long)INT_MAX);
 }
 
 __global__ void cumsum_strided_i64(const long long* in, long long* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {
@@ -661,7 +730,7 @@ __global__ void cumsum_strided_i64(const long long* in, long long* out, unsigned
 }
 
 __global__ void cumsum_strided_u32(const unsigned int* in, unsigned int* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {
-    cumsum_strided_impl(in, out, scan_size, outer_size, inner_size);
+    cumsum_strided_wide_impl<unsigned int, unsigned long long>(in, out, scan_size, outer_size, inner_size, (unsigned long long)0, (unsigned long long)UINT_MAX);
 }
 
 __global__ void cumsum_strided_u64(const unsigned long long* in, unsigned long long* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {

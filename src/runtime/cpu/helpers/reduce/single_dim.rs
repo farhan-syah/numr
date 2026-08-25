@@ -4,6 +4,7 @@ use crate::dispatch_dtype;
 use crate::dtype::Element;
 use crate::error::{Error, Result};
 use crate::ops::{Kernel, ReduceOp, reduce_output_shape};
+use crate::runtime::cpu::kernels::wide_acc::int_mean_from_sum;
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
 use crate::tensor::Tensor;
 #[cfg(feature = "rayon")]
@@ -118,6 +119,15 @@ pub(super) unsafe fn reduce_non_last_dim_outer<T: Element>(
         return;
     }
 
+    // Integer `mean` is a sum-then-divide epilogue whose sum can leave the
+    // dtype's range while the mean stays inside it. Accumulate in i128 so that
+    // case returns the representable answer instead of a wrapped one. Every
+    // other integer reduction keeps the loop below.
+    if T::DTYPE.is_int() && matches!(op, ReduceOp::Mean) {
+        reduce_mean_int_non_last_dim_outer::<T>(a, out, outer, reduce_size, inner_size);
+        return;
+    }
+
     for inner in 0..inner_size {
         let mut acc = match op {
             ReduceOp::Sum | ReduceOp::Mean => T::zero(),
@@ -178,6 +188,26 @@ pub(super) unsafe fn reduce_non_last_dim_outer<T: Element>(
 
         let out_idx = outer * inner_size + inner;
         *out.add(out_idx) = acc;
+    }
+}
+
+/// Integer `mean` over one non-last dimension, accumulating in i128.
+#[allow(unsafe_op_in_unsafe_fn)]
+#[inline]
+unsafe fn reduce_mean_int_non_last_dim_outer<T: Element>(
+    a: *const T,
+    out: *mut T,
+    outer: usize,
+    reduce_size: usize,
+    inner_size: usize,
+) {
+    for inner in 0..inner_size {
+        let mut sum = 0i128;
+        for r in 0..reduce_size {
+            let idx = outer * reduce_size * inner_size + r * inner_size + inner;
+            sum = sum.saturating_add((*a.add(idx)).to_i128());
+        }
+        *out.add(outer * inner_size + inner) = int_mean_from_sum::<T>(sum, reduce_size);
     }
 }
 

@@ -9,6 +9,7 @@ pub use special::{
     argmax_kernel, argmin_kernel, softmax_bwd_kernel, softmax_kernel, variance_kernel,
 };
 
+use super::wide_acc::int_mean_from_sum;
 use crate::dtype::Element;
 use crate::ops::{AccumulationPrecision, ReduceOp};
 
@@ -102,7 +103,37 @@ pub unsafe fn reduce_kernel<T: Element>(
         return;
     }
 
+    // `mean` on an integer dtype is a sum-then-divide epilogue: the sum can
+    // leave the dtype's range while the mean stays inside it, so summing in the
+    // element type wraps (release) or panics (debug) on a result the output
+    // dtype could hold perfectly well. Sum in i128 and divide there.
+    //
+    // `sum` itself is not fixable this way and is deliberately left alone: its
+    // output dtype is the element type, so a total that overflows has nowhere
+    // to go.
+    if T::DTYPE.is_int() && matches!(op, ReduceOp::Mean) {
+        reduce_mean_int_kernel(a, out, reduce_size, outer_size);
+        return;
+    }
+
     reduce_kernel_scalar(op, a, out, reduce_size, outer_size);
+}
+
+/// Mean over a contiguous dimension for integer dtypes, accumulating in i128.
+#[inline]
+unsafe fn reduce_mean_int_kernel<T: Element>(
+    a: *const T,
+    out: *mut T,
+    reduce_size: usize,
+    outer_size: usize,
+) {
+    for o in 0..outer_size {
+        let mut sum = 0i128;
+        for r in 0..reduce_size {
+            sum = sum.saturating_add((*a.add(o * reduce_size + r)).to_i128());
+        }
+        *out.add(o) = int_mean_from_sum::<T>(sum, reduce_size);
+    }
 }
 
 /// Scalar reduce kernel for all Element types
@@ -353,5 +384,59 @@ unsafe fn reduce_kernel_acc<T: Element, A: Accumulator>(
             // Boolean reductions don't benefit from higher precision accumulation
             reduce_kernel(op, a, out, reduce_size, outer_size);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Catches an integer `mean` that sums in the element type.
+    ///
+    /// The sum of the two elements needs 33 bits, but the mean is exactly
+    /// 2_000_000_000, which i32 holds. Summing in i32 panics on the overflow in
+    /// a debug build; in a release build it wraps to -294_967_296 and the
+    /// division then reports -147_483_648. Unlike a plain sum, a division is
+    /// not recoverable from a wrapped total.
+    #[test]
+    fn test_mean_i32_sums_in_a_wider_integer() {
+        let a = [2_000_000_000i32, 2_000_000_000];
+        let mut out = [0i32; 1];
+
+        unsafe {
+            reduce_kernel(ReduceOp::Mean, a.as_ptr(), out.as_mut_ptr(), 2, 1);
+        }
+
+        assert_eq!(out[0], 2_000_000_000);
+    }
+
+    /// Pins the integer `mean` rounding convention: truncate toward zero, which
+    /// is what the previous float-division epilogue did for every sum it could
+    /// represent.
+    #[test]
+    fn test_mean_i32_truncates_toward_zero() {
+        let a = [7i32, 0, -7, 0];
+        let mut out = [0i32; 2];
+
+        unsafe {
+            reduce_kernel(ReduceOp::Mean, a.as_ptr(), out.as_mut_ptr(), 2, 2);
+        }
+
+        assert_eq!(out, [3, -3]);
+    }
+
+    /// `sum` is deliberately left accumulating in the element type: its output
+    /// dtype is the element type, so a total that overflows has nowhere to go.
+    /// This pins that ordinary integer sums are untouched by the `mean` fix.
+    #[test]
+    fn test_sum_i32_is_unchanged() {
+        let a = [1i32, 2, 3, 4];
+        let mut out = [0i32; 1];
+
+        unsafe {
+            reduce_kernel(ReduceOp::Sum, a.as_ptr(), out.as_mut_ptr(), 4, 1);
+        }
+
+        assert_eq!(out[0], 10);
     }
 }

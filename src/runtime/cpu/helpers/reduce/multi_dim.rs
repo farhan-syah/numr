@@ -6,6 +6,7 @@ use crate::dtype::Element;
 use crate::error::Result;
 use crate::ops::{AccumulationPrecision, ReduceOp, reduce_output_shape};
 use crate::runtime::cpu::kernels::Accumulator;
+use crate::runtime::cpu::kernels::wide_acc::int_mean_from_sum;
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
 use crate::tensor::Tensor;
 
@@ -54,9 +55,11 @@ pub(super) fn reduce_multi_dim_fused(
 
     dispatch_dtype!(a.dtype(), T => {
         unsafe {
-            match precision {
-                AccumulationPrecision::Native => reduce_multi_dim_fused_native::<T>(
-                    op,
+            // Integer `mean` keeps one accumulator per output bucket, and in the
+            // element type that accumulator wraps on a sum whose average the
+            // output dtype could still represent. Sum in i128 and divide there.
+            if T::DTYPE.is_int() && matches!(op, ReduceOp::Mean) {
+                reduce_multi_dim_fused_int_mean::<T>(
                     in_ptr as *const T,
                     out_ptr as *mut T,
                     numel,
@@ -67,9 +70,10 @@ pub(super) fn reduce_multi_dim_fused(
                     &kept_axes,
                     &out_strides,
                     reduce_count,
-                ),
-                AccumulationPrecision::FP32 | AccumulationPrecision::BF16 => {
-                    reduce_multi_dim_fused_acc::<T, f32>(
+                );
+            } else {
+                match precision {
+                    AccumulationPrecision::Native => reduce_multi_dim_fused_native::<T>(
                         op,
                         in_ptr as *const T,
                         out_ptr as *mut T,
@@ -81,21 +85,36 @@ pub(super) fn reduce_multi_dim_fused(
                         &kept_axes,
                         &out_strides,
                         reduce_count,
-                    )
+                    ),
+                    AccumulationPrecision::FP32 | AccumulationPrecision::BF16 => {
+                        reduce_multi_dim_fused_acc::<T, f32>(
+                            op,
+                            in_ptr as *const T,
+                            out_ptr as *mut T,
+                            numel,
+                            out_numel,
+                            shape,
+                            &reduce_mask,
+                            keepdim,
+                            &kept_axes,
+                            &out_strides,
+                            reduce_count,
+                        )
+                    }
+                    AccumulationPrecision::FP64 => reduce_multi_dim_fused_acc::<T, f64>(
+                        op,
+                        in_ptr as *const T,
+                        out_ptr as *mut T,
+                        numel,
+                        out_numel,
+                        shape,
+                        &reduce_mask,
+                        keepdim,
+                        &kept_axes,
+                        &out_strides,
+                        reduce_count,
+                    ),
                 }
-                AccumulationPrecision::FP64 => reduce_multi_dim_fused_acc::<T, f64>(
-                    op,
-                    in_ptr as *const T,
-                    out_ptr as *mut T,
-                    numel,
-                    out_numel,
-                    shape,
-                    &reduce_mask,
-                    keepdim,
-                    &kept_axes,
-                    &out_strides,
-                    reduce_count,
-                ),
             }
         }
     }, op_name);
@@ -197,6 +216,38 @@ unsafe fn reduce_multi_dim_fused_native<T: Element>(
             let scaled = (*output.add(i)).to_f64() / reduce_count as f64;
             *output.add(i) = T::from_f64(scaled);
         }
+    }
+}
+
+/// Fused multi-dimension integer `mean`, accumulating in i128.
+#[allow(unsafe_op_in_unsafe_fn)]
+#[allow(clippy::too_many_arguments)]
+unsafe fn reduce_multi_dim_fused_int_mean<T: Element>(
+    input: *const T,
+    output: *mut T,
+    numel: usize,
+    out_numel: usize,
+    shape: &[usize],
+    reduce_mask: &[bool],
+    keepdim: bool,
+    kept_axes: &[usize],
+    out_strides: &[usize],
+    reduce_count: usize,
+) {
+    let mut acc = vec![0i128; out_numel];
+
+    let mut coord = vec![0usize; shape.len()];
+    for linear in 0..numel {
+        let out_idx = out_index_from_coord(&coord, reduce_mask, keepdim, kept_axes, out_strides);
+        acc[out_idx] = acc[out_idx].saturating_add((*input.add(linear)).to_i128());
+
+        if linear + 1 < numel {
+            advance_coord(&mut coord, shape);
+        }
+    }
+
+    for (i, &sum) in acc.iter().enumerate() {
+        *output.add(i) = int_mean_from_sum::<T>(sum, reduce_count);
     }
 }
 

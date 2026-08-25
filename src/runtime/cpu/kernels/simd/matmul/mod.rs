@@ -8,7 +8,8 @@ pub(crate) mod avx2;
 pub(crate) mod avx512;
 pub(crate) mod dispatch;
 pub(crate) mod gemv_bt;
-pub(crate) mod int32;
+// No int32 module: i32 matmul accumulates in i128 via `matmul_kernel`, because
+// an AVX2 kernel with `_mm256_add_epi32` accumulators wraps mid-dot-product.
 pub(crate) mod int8;
 pub(crate) mod macros;
 pub(crate) mod packing;

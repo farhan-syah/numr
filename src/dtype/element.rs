@@ -72,6 +72,29 @@ pub trait Element:
         Self::from_f64(v as f64)
     }
 
+    /// Widen to the integer accumulator used by integer kernels.
+    ///
+    /// Integer dtypes convert exactly. The default goes through `to_f64` and so
+    /// truncates toward zero, which is correct for every dtype an integer
+    /// accumulator path can reach; the eight integer types override it to stay
+    /// exact past f64's 53-bit mantissa.
+    #[inline]
+    fn to_i128(self) -> i128 {
+        self.to_f64() as i128
+    }
+
+    /// Narrow an integer accumulator back to this dtype, clamping to its range.
+    ///
+    /// Saturation is deliberate: it matches [`Element::from_f64`], which already
+    /// saturates because Rust's float-to-int `as` cast saturates. A kernel that
+    /// widened its accumulator therefore reports the closest representable value
+    /// instead of a wrapped one when the true result does not fit the output
+    /// dtype at all.
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        Self::from_f64(v as f64)
+    }
+
     /// Total-order comparison used by all sorting operations.
     ///
     /// `PartialOrd` is not total for floats, and a non-transitive comparator makes
@@ -192,6 +215,16 @@ impl Element for i64 {
     }
 
     #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    }
+
+    #[inline]
     fn zero() -> Self {
         0
     }
@@ -213,6 +246,16 @@ impl Element for i32 {
     #[inline]
     fn from_f64(v: f64) -> Self {
         v as i32
+    }
+
+    #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(i32::MIN as i128, i32::MAX as i128) as i32
     }
 
     #[inline]
@@ -240,6 +283,16 @@ impl Element for i16 {
     }
 
     #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(i16::MIN as i128, i16::MAX as i128) as i16
+    }
+
+    #[inline]
     fn zero() -> Self {
         0
     }
@@ -261,6 +314,16 @@ impl Element for i8 {
     #[inline]
     fn from_f64(v: f64) -> Self {
         v as i8
+    }
+
+    #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(i8::MIN as i128, i8::MAX as i128) as i8
     }
 
     #[inline]
@@ -288,6 +351,16 @@ impl Element for u64 {
     }
 
     #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(0, u64::MAX as i128) as u64
+    }
+
+    #[inline]
     fn zero() -> Self {
         0
     }
@@ -309,6 +382,16 @@ impl Element for u32 {
     #[inline]
     fn from_f64(v: f64) -> Self {
         v as u32
+    }
+
+    #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(0, u32::MAX as i128) as u32
     }
 
     #[inline]
@@ -336,6 +419,16 @@ impl Element for u16 {
     }
 
     #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(0, u16::MAX as i128) as u16
+    }
+
+    #[inline]
     fn zero() -> Self {
         0
     }
@@ -357,6 +450,16 @@ impl Element for u8 {
     #[inline]
     fn from_f64(v: f64) -> Self {
         v as u8
+    }
+
+    #[inline]
+    fn to_i128(self) -> i128 {
+        self as i128
+    }
+
+    #[inline]
+    fn from_i128_saturating(v: i128) -> Self {
+        v.clamp(0, u8::MAX as i128) as u8
     }
 
     #[inline]
