@@ -136,7 +136,10 @@ pub const BLOCK_SIZE: u32 = 256;
 /// Uses a 1D grid with blocks of `BLOCK_SIZE` threads each.
 #[inline]
 pub fn elementwise_launch_config(numel: usize) -> (u32, u32, u32) {
-    let grid_size = ((numel as u32) + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    // Floored at 1: a grid extent of 0 is itself a launch error, even though
+    // `numel == 0` needs no work. Callers that reach this helper with an
+    // empty tensor rely on the kernel's own bounds guard (`idx < n`) to no-op.
+    let grid_size = (((numel as u32) + BLOCK_SIZE - 1) / BLOCK_SIZE).max(1);
     (grid_size, 1, 1)
 }
 

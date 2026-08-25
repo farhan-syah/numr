@@ -288,3 +288,30 @@ compare_case!(
         ),
     ]
 );
+
+/// `native_compare_op` shares the zero-grid exposure the other elementwise
+/// dispatch helpers had: with `numel == 0`, `elementwise_launch_config` used to
+/// return `grid.x == 0`, which the CUDA driver rejects outright
+/// (`CUDA_ERROR_INVALID_VALUE`). An empty comparison must return an empty mask,
+/// matching CPU, not fail to launch.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_eq_empty_cuda() {
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let a = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let b = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let result = cuda_client.eq(&a, &b);
+        assert!(
+            result.is_ok(),
+            "eq on empty CUDA tensors should succeed, got {:?}",
+            result.err()
+        );
+        let result = result.unwrap();
+        assert_eq!(result.shape(), &[0]);
+        // Deliberately not pinned to a dtype: this file's header notes that a
+        // compare op's mask dtype differs by backend (CUDA returns the input
+        // dtype here, others use u8/u32). Shape and emptiness are the parity
+        // properties that matter for an empty input.
+        assert_eq!(result.numel(), 0);
+    });
+}

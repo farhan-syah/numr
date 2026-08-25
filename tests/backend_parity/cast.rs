@@ -6,6 +6,8 @@
 
 use numr::dtype::DType;
 use numr::ops::TypeConversionOps;
+#[cfg(feature = "cuda")]
+use numr::tensor::Tensor;
 
 use crate::backend_parity::dtype_helpers::tensor_from_f64;
 #[cfg(feature = "cuda")]
@@ -387,4 +389,31 @@ fn test_cast_all_pairs_cpu() {
             test_cast_parity(src, dst);
         }
     }
+}
+
+// ============================================================================
+// Empty tensor - CUDA parity
+// ============================================================================
+
+/// Before the fix, `elementwise_launch_config(0)` produced `grid.x == 0`,
+/// which is an invalid CUDA launch (`launch_cast` in
+/// `runtime/cuda/kernels/cast.rs` uses this helper directly). Casting a `[0]`
+/// F32 tensor to F64 must succeed and return an empty tensor, matching the
+/// CPU backend's natural no-op.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_cast_empty_cuda() {
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let empty = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let result = cuda_client.cast(&empty, DType::F64);
+        assert!(
+            result.is_ok(),
+            "cast on empty CUDA tensor should succeed, got {:?}",
+            result.err()
+        );
+        let result = result.unwrap();
+        assert_eq!(result.shape(), &[0]);
+        assert_eq!(result.dtype(), DType::F64);
+        assert_eq!(result.numel(), 0);
+    });
 }

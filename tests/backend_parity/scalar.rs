@@ -320,3 +320,29 @@ fn test_pow_scalar_negative_base_parity() {
         }
     }
 }
+
+// ============================================================================
+// Empty tensor - CUDA parity (native_scalar_op)
+// ============================================================================
+
+/// Before the fix, `elementwise_launch_config(0)` produced `grid.x == 0`,
+/// which is an invalid CUDA launch. `add_scalar` on a `[0]` F32 tensor must
+/// succeed and return an empty tensor, matching the CPU backend's natural
+/// no-op.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_add_scalar_empty_cuda() {
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let empty = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let result = cuda_client.add_scalar(&empty, 1.0);
+        assert!(
+            result.is_ok(),
+            "add_scalar on empty CUDA tensor should succeed, got {:?}",
+            result.err()
+        );
+        let result = result.unwrap();
+        assert_eq!(result.shape(), &[0]);
+        assert_eq!(result.dtype(), DType::F32);
+        assert_eq!(result.numel(), 0);
+    });
+}

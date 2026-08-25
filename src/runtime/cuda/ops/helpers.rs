@@ -319,6 +319,12 @@ pub(crate) fn native_binary_op(
     let dtype = validate_binary_dtypes(a, b)?;
     let out_shape = compute_broadcast_shape(a, b)?;
 
+    // A zero-element output has nothing to compute, and an empty launch grid
+    // is itself invalid, so skip the launch entirely.
+    if out_shape.iter().product::<usize>() == 0 {
+        return Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    }
+
     // For same-shape tensors, use the optimized element-wise kernel
     if a.shape() == b.shape() {
         let a_contig = ensure_contiguous(a)?;
@@ -404,6 +410,12 @@ pub(crate) fn native_binary_op_into(
         ));
     }
 
+    // A zero-element destination has nothing to compute, and an empty launch
+    // grid is itself invalid, so skip the launch entirely.
+    if out.numel() == 0 {
+        return Ok(());
+    }
+
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
 
@@ -459,6 +471,12 @@ pub(crate) fn native_unary_op(
     let a_contig = ensure_contiguous(a)?;
     let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &client.device)?;
 
+    // A zero-element tensor has nothing to compute, and an empty launch grid
+    // is itself invalid, so skip the launch entirely.
+    if out.numel() == 0 {
+        return Ok(out);
+    }
+
     unsafe {
         launch_unary_op(
             &client.context,
@@ -499,6 +517,25 @@ pub(crate) fn native_scalar_op(
             dtype,
             op: "pow_scalar",
         });
+    }
+
+    // A zero-element tensor has nothing to compute, and an empty launch grid
+    // is itself invalid, so skip the launch entirely. Still fall through to
+    // the dtype match below for a dtype this op doesn't support at all, so an
+    // empty tensor errors exactly like a non-empty one would.
+    let dtype_supported = matches!(
+        dtype,
+        DType::F32
+            | DType::F64
+            | DType::I32
+            | DType::I64
+            | DType::FP8E4M3
+            | DType::FP8E5M2
+            | DType::Complex64
+            | DType::Complex128
+    ) || (cfg!(feature = "f16") && matches!(dtype, DType::F16 | DType::BF16));
+    if out.numel() == 0 && dtype_supported {
+        return Ok(out);
     }
 
     unsafe {
@@ -701,6 +738,14 @@ pub(crate) fn native_compare_op(
 ) -> Result<Tensor<CudaRuntime>> {
     let dtype = validate_binary_dtypes(a, b)?;
     let out_shape = compute_broadcast_shape(a, b)?;
+
+    // A zero-element output has nothing to compute, and an empty launch grid
+    // is itself invalid, so skip the launch entirely. Placed after the
+    // dtype/shape checks so a mismatched pair still reports its error rather
+    // than succeeding because it was empty.
+    if out_shape.iter().product::<usize>() == 0 {
+        return Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    }
 
     // For same-shape tensors, use the optimized element-wise kernel
     if a.shape() == b.shape() {

@@ -405,3 +405,53 @@ fn test_add_into_matches_add() {
         test_add_into_parity(&cases, dtype);
     }
 }
+
+// ============================================================================
+// Empty tensor - CUDA parity (native_binary_op / native_binary_op_into)
+// ============================================================================
+
+/// Before the fix, `elementwise_launch_config(0)` produced `grid.x == 0`,
+/// which is an invalid CUDA launch. `add` on same-shape `[0]` F32 tensors must
+/// succeed and return an empty tensor, matching the CPU backend's natural
+/// no-op.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_add_empty_cuda() {
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let a = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let b = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let result = cuda_client.add(&a, &b);
+        assert!(
+            result.is_ok(),
+            "add on empty CUDA tensors should succeed, got {:?}",
+            result.err()
+        );
+        let result = result.unwrap();
+        assert_eq!(result.shape(), &[0]);
+        assert_eq!(result.dtype(), DType::F32);
+        assert_eq!(result.numel(), 0);
+    });
+}
+
+/// Same as `test_add_empty_cuda` but through the destination-passing
+/// `add_into` path (`native_binary_op_into`), which writes into a
+/// caller-provided `out` tensor instead of allocating.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_add_into_empty_cuda() {
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let a = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let b = Tensor::from_slice::<f32>(&[], &[0], &cuda_device).unwrap();
+        let out = Tensor::<numr::runtime::cuda::CudaRuntime>::zeros(&[0], DType::F32, &cuda_device)
+            .unwrap();
+        let result = cuda_client.add_into(&out, &a, &b);
+        assert!(
+            result.is_ok(),
+            "add_into on empty CUDA tensors should succeed, got {:?}",
+            result.err()
+        );
+        assert_eq!(out.shape(), &[0]);
+        assert_eq!(out.dtype(), DType::F32);
+        assert_eq!(out.numel(), 0);
+    });
+}
