@@ -20,6 +20,29 @@ use super::{SimdLevel, detect_simd};
 /// Minimum elements to justify SIMD overhead for dot products
 const DOT_SIMD_THRESHOLD: usize = 32;
 
+/// SIMD iterations between spills of the i32 lane accumulator into an i64 total.
+///
+/// Every backend here accumulates products in i32 SIMD lanes, and every one of
+/// them adds at most `2^16` to a single lane per iteration: a product of two i8
+/// is bounded by `128 * 128 = 2^14`, and each lane receives at most four of them
+/// per iteration. `2^14 * 2^16 = 2^30` stays inside i32, so spilling this often
+/// is provably safe with a full bit of headroom.
+///
+/// Without a spill the lanes wrap after roughly a million elements and the dot
+/// product returns a value with the wrong sign — silently, in release.
+pub(super) const DOT_SPILL_ITERS: usize = 16_384;
+
+/// Narrow an exact i64 total to the i32 this op returns, clamping on overflow.
+///
+/// Saturating rather than wrapping, matching
+/// [`crate::runtime::cpu::kernels::wide_acc`]: a wrapped total reports the
+/// wrong sign and magnitude, while a clamped one is at least ordered correctly
+/// and stays a total function.
+#[inline]
+pub(super) fn saturate_i64_to_i32(acc: i64) -> i32 {
+    acc.clamp(i32::MIN as i64, i32::MAX as i64) as i32
+}
+
 /// Dot product of signed i8 vectors, accumulated in i32.
 ///
 /// Automatically dispatches to the best SIMD implementation available:
@@ -69,121 +92,20 @@ pub unsafe fn i8xi8_dot_f32(a: *const i8, b: *const i8, scale: f32, len: usize) 
     (i8xi8_dot_i32(a, b, len) as f32) * scale
 }
 
-/// Scalar fallback for i8 dot product
+/// Scalar fallback for i8 dot product.
+///
+/// Accumulates in i64 and clamps once at the end. An i32 accumulator wraps
+/// after about 131k terms (`i32::MAX / 128^2`), which is well inside the sizes
+/// a quantized matmul reaches along K. The i64 accumulator cannot overflow for
+/// any reachable length: it would take `2^63 / 2^14` terms.
 #[inline]
 unsafe fn i8xi8_dot_scalar(a: *const i8, b: *const i8, len: usize) -> i32 {
-    let mut acc = 0i32;
+    let mut acc = 0i64;
     for i in 0..len {
-        acc += (*a.add(i) as i32) * (*b.add(i) as i32);
+        acc += (*a.add(i) as i64) * (*b.add(i) as i64);
     }
-    acc
+    saturate_i64_to_i32(acc)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_i8xi8_dot_basic() {
-        let a: Vec<i8> = (0..100).map(|x| (x % 127) as i8).collect();
-        let b: Vec<i8> = (0..100).map(|x| ((x * 3) % 127) as i8).collect();
-
-        let result = unsafe { i8xi8_dot_i32(a.as_ptr(), b.as_ptr(), a.len()) };
-
-        // Compute expected
-        let expected: i32 = a
-            .iter()
-            .zip(b.iter())
-            .map(|(&x, &y)| x as i32 * y as i32)
-            .sum();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_i8xi8_dot_negative() {
-        let a: Vec<i8> = (0..64).map(|x| (x as i8) - 32).collect();
-        let b: Vec<i8> = (0..64).map(|x| (x as i8) - 16).collect();
-
-        let result = unsafe { i8xi8_dot_i32(a.as_ptr(), b.as_ptr(), a.len()) };
-        let expected: i32 = a
-            .iter()
-            .zip(b.iter())
-            .map(|(&x, &y)| x as i32 * y as i32)
-            .sum();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_i8xi8_dot_tail() {
-        // Non-aligned length to exercise scalar tail
-        let a: Vec<i8> = (0..67).map(|x| (x % 50) as i8).collect();
-        let b: Vec<i8> = (0..67).map(|x| ((x * 2) % 50) as i8).collect();
-
-        let result = unsafe { i8xi8_dot_i32(a.as_ptr(), b.as_ptr(), a.len()) };
-        let expected: i32 = a
-            .iter()
-            .zip(b.iter())
-            .map(|(&x, &y)| x as i32 * y as i32)
-            .sum();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_i8xi8_dot_small() {
-        let a: Vec<i8> = vec![1, 2, 3, 4];
-        let b: Vec<i8> = vec![5, 6, 7, 8];
-
-        let result = unsafe { i8xi8_dot_i32(a.as_ptr(), b.as_ptr(), a.len()) };
-        assert_eq!(result, 1 * 5 + 2 * 6 + 3 * 7 + 4 * 8);
-    }
-
-    #[test]
-    fn test_i8xi8_dot_f32_scaled() {
-        let a: Vec<i8> = vec![10, 20, 30, 40];
-        let b: Vec<i8> = vec![1, 2, 3, 4];
-        let scale = 0.5f32;
-
-        let result = unsafe { i8xi8_dot_f32(a.as_ptr(), b.as_ptr(), scale, a.len()) };
-        let expected = (10 + 40 + 90 + 160) as f32 * scale;
-        assert!((result - expected).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_i8xi8_dot_extremes() {
-        // Test with extreme i8 values
-        let a: Vec<i8> = vec![
-            -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127,
-            -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127,
-        ];
-        let b: Vec<i8> = vec![
-            127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128,
-            127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128, 127, -128,
-        ];
-
-        let result = unsafe { i8xi8_dot_i32(a.as_ptr(), b.as_ptr(), a.len()) };
-        let expected: i32 = a
-            .iter()
-            .zip(b.iter())
-            .map(|(&x, &y)| x as i32 * y as i32)
-            .sum();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_i8xi8_dot_large() {
-        let a: Vec<i8> = (0..1024)
-            .map(|x| ((x * 7 + 13) % 256 - 128) as i8)
-            .collect();
-        let b: Vec<i8> = (0..1024)
-            .map(|x| ((x * 11 + 5) % 256 - 128) as i8)
-            .collect();
-
-        let result = unsafe { i8xi8_dot_i32(a.as_ptr(), b.as_ptr(), a.len()) };
-        let expected: i32 = a
-            .iter()
-            .zip(b.iter())
-            .map(|(&x, &y)| x as i32 * y as i32)
-            .sum();
-        assert_eq!(result, expected);
-    }
-}
+mod tests;
