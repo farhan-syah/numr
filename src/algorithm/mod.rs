@@ -44,6 +44,7 @@
 //! ```
 
 pub mod fft;
+pub mod fft_bluestein;
 pub mod linalg;
 pub mod matmul;
 pub mod polynomial;

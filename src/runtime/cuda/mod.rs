@@ -31,6 +31,7 @@ mod communicator;
 mod device;
 mod env_config;
 mod fft;
+mod fft_bluestein;
 mod graph;
 pub mod kernels;
 mod linalg;

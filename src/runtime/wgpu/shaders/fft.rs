@@ -490,3 +490,58 @@ pub fn launch_copy_complex(
     queue.submit(std::iter::once(encoder.finish()));
     Ok(())
 }
+
+const FFT_BLUESTEIN_SHADER: &str = include_str!("fft_bluestein.wgsl");
+// entry points: "bluestein_premultiply", "bluestein_pointwise_mul",
+//               "bluestein_postmultiply"
+
+/// Launch one Bluestein stage.
+///
+/// All three stages share a binding set and a dispatch shape — `input`,
+/// `table`, `output`, `params` — so they share a launcher. `entry_point` picks
+/// the stage; `rows` is the per-batch element count that stage writes (`m` for
+/// premultiply and pointwise, `out_n` for postmultiply).
+pub fn launch_bluestein_stage(
+    pipeline_cache: &PipelineCache,
+    queue: &Queue,
+    entry_point: &'static str,
+    input: &Buffer,
+    table: &Buffer,
+    output: &Buffer,
+    params: &Buffer,
+    rows: usize,
+    batch_size: usize,
+) -> Result<()> {
+    let module = pipeline_cache.get_or_create_module("fft_bluestein", FFT_BLUESTEIN_SHADER);
+
+    let layout = pipeline_cache.get_or_create_layout(LayoutKey {
+        num_storage_buffers: 3,
+        num_uniform_buffers: 1,
+        num_readonly_storage: 0,
+    });
+
+    let pipeline =
+        pipeline_cache.get_or_create_pipeline("fft_bluestein", entry_point, &module, &layout);
+
+    let bind_group = pipeline_cache.create_bind_group(&layout, &[input, table, output, params]);
+
+    let mut encoder =
+        pipeline_cache
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("bluestein_encoder"),
+            });
+
+    {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("bluestein_pass"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, Some(&bind_group), &[]);
+        pass.dispatch_workgroups(workgroup_count(rows), batch_size as u32, 1);
+    }
+
+    queue.submit(std::iter::once(encoder.finish()));
+    Ok(())
+}

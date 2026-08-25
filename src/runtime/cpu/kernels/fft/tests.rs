@@ -649,7 +649,7 @@ fn test_bluestein_size_one() {
 
     // A 3-point plan used directly, checked against the closed-form DFT.
     let plan = BluesteinPlan::new(3, false);
-    assert_eq!(plan.n, 3);
+    assert_eq!(plan.n(), 3);
     let x = [
         Complex128::new(1.0, 0.0),
         Complex128::new(2.0, 0.0),

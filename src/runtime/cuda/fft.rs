@@ -8,10 +8,11 @@
 
 use super::CudaRuntime;
 use super::client::CudaClient;
+use super::fft_bluestein::{BluesteinInput, bluestein_transform};
 use super::kernels;
 use crate::algorithm::fft::{
     FftAlgorithms, FftDirection, FftNormalization, complex_dtype_for_real, real_dtype_for_complex,
-    validate_fft_complex_dtype, validate_fft_size, validate_rfft_real_dtype,
+    validate_fft_complex_dtype, validate_rfft_real_dtype,
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -38,7 +39,12 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         }
 
         let n = input.shape()[ndim - 1];
-        validate_fft_size(n, "fft")?;
+        if n == 0 {
+            return Err(Error::InvalidArgument {
+                arg: "input",
+                reason: "FFT requires size >= 1 along the last dim, got 0".to_string(),
+            });
+        }
 
         // Ensure contiguous input
         let input_contig = if input.is_contiguous() {
@@ -52,6 +58,25 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         let batch_size = batch_size.max(1);
         let scale = norm.factor(direction, n);
         let inverse = direction == FftDirection::Inverse;
+
+        // Non-power-of-two lengths go through Bluestein, which reduces them to a
+        // power-of-two convolution the Stockham kernels below can run.
+        if !n.is_power_of_two() {
+            let guard = bluestein_transform(
+                self,
+                dtype,
+                BluesteinInput::Complex,
+                input_contig.ptr(),
+                n,
+                n,
+                batch_size,
+                inverse,
+                scale,
+            )?;
+            return Ok(unsafe {
+                Self::tensor_from_raw(guard.release(), input_contig.shape(), dtype, self.device())
+            });
+        }
 
         let device = self.device();
         let total_elements = batch_size * n;
@@ -212,7 +237,12 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         }
 
         let n = input.shape()[ndim - 1];
-        validate_fft_size(n, "rfft")?;
+        if n == 0 {
+            return Err(Error::InvalidArgument {
+                arg: "input",
+                reason: "rfft requires size >= 1 along the last dim, got 0".to_string(),
+            });
+        }
 
         let input_contig = if input.is_contiguous() {
             input.clone()
@@ -225,6 +255,28 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
 
         let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
         let batch_size = batch_size.max(1);
+
+        // Bluestein for non-power-of-two. `out_n` keeps the Hermitian half
+        // directly, so no separate truncate pass is needed.
+        if !n.is_power_of_two() {
+            let out_n = n / 2 + 1;
+            let guard = bluestein_transform(
+                self,
+                complex_dtype,
+                BluesteinInput::Real,
+                input_contig.ptr(),
+                n,
+                out_n,
+                batch_size,
+                false,
+                norm.factor(FftDirection::Forward, n),
+            )?;
+            let mut out_shape = input_contig.shape().to_vec();
+            out_shape[ndim - 1] = out_n;
+            return Ok(unsafe {
+                Self::tensor_from_raw(guard.release(), &out_shape, complex_dtype, device)
+            });
+        }
 
         // Allocate complex buffer for full FFT
         let complex_size = batch_size * n * complex_dtype.size_in_bytes();
@@ -363,8 +415,32 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         }
 
         let input_n = input.shape()[ndim - 1];
+        if input_n == 0 {
+            return Err(Error::InvalidArgument {
+                arg: "input",
+                reason: "irfft requires size >= 1 along the last dim, got 0".to_string(),
+            });
+        }
         let output_n = n.unwrap_or_else(|| 2 * (input_n - 1));
-        validate_fft_size(output_n, "irfft")?;
+        // Matching the CPU backend: the Hermitian half must be exactly the size
+        // the requested output implies, whatever `output_n` is.
+        if output_n / 2 + 1 != input_n {
+            return Err(Error::InvalidArgument {
+                arg: "n",
+                reason: format!(
+                    "For irfft with n={}, input must have size {}, got {}",
+                    output_n,
+                    output_n / 2 + 1,
+                    input_n
+                ),
+            });
+        }
+        if output_n == 0 {
+            return Err(Error::InvalidArgument {
+                arg: "n",
+                reason: "irfft requires output size >= 1, got 0".to_string(),
+            });
+        }
 
         let input_contig = if input.is_contiguous() {
             input.clone()
@@ -377,6 +453,65 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
 
         let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
         let batch_size = batch_size.max(1);
+
+        // Non-power-of-two: extend the Hermitian half to a full spectrum, run
+        // the inverse transform through Bluestein, then drop the (zero)
+        // imaginary parts. This is the path NeuCodec's n_fft = 1920 vocoder
+        // iSTFT takes.
+        if !output_n.is_power_of_two() {
+            let full_bytes = batch_size * output_n * dtype.size_in_bytes();
+            let full_guard = AllocGuard::new(self.allocator(), full_bytes)?;
+            unsafe {
+                kernels::launch_hermitian_extend(
+                    self.context(),
+                    self.stream(),
+                    device.index,
+                    dtype,
+                    input_contig.ptr(),
+                    full_guard.ptr(),
+                    input_n,
+                    output_n,
+                    batch_size,
+                )?;
+            }
+
+            let scale = norm.factor(FftDirection::Inverse, output_n);
+            let complex_guard = bluestein_transform(
+                self,
+                dtype,
+                BluesteinInput::Complex,
+                full_guard.ptr(),
+                output_n,
+                output_n,
+                batch_size,
+                true,
+                scale,
+            )?;
+
+            let real_bytes = batch_size * output_n * real_dtype.size_in_bytes();
+            let real_guard = AllocGuard::new(self.allocator(), real_bytes)?;
+            unsafe {
+                kernels::launch_irfft_unpack(
+                    self.context(),
+                    self.stream(),
+                    device.index,
+                    real_dtype,
+                    complex_guard.ptr(),
+                    real_guard.ptr(),
+                    output_n,
+                    // Normalization already applied by the Bluestein postmultiply.
+                    1.0,
+                    batch_size,
+                )?;
+            }
+            self.synchronize();
+
+            let mut out_shape = input_contig.shape().to_vec();
+            out_shape[ndim - 1] = output_n;
+            return Ok(unsafe {
+                Self::tensor_from_raw(real_guard.release(), &out_shape, real_dtype, device)
+            });
+        }
 
         // Extend Hermitian spectrum to full spectrum
         let full_complex_size = batch_size * output_n * dtype.size_in_bytes();

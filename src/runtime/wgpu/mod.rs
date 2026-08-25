@@ -29,6 +29,7 @@ mod cache;
 pub(crate) mod client;
 mod device;
 mod fft;
+mod fft_bluestein;
 mod linalg;
 mod ops;
 mod polynomial;

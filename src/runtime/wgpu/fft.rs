@@ -13,12 +13,13 @@
 //! - Non-last dimension FFT uses permute-based approach (transpose, FFT, transpose back)
 
 use super::client::get_buffer;
+use super::fft_bluestein::bluestein_transform;
 use super::shaders::fft as kernels;
 const MAX_WORKGROUP_FFT_SIZE: usize = 256;
 use super::{WgpuClient, WgpuRuntime};
 use crate::algorithm::fft::{
     FftAlgorithms, FftDirection, FftNormalization, complex_dtype_for_real, real_dtype_for_complex,
-    validate_fft_complex_dtype, validate_fft_size, validate_rfft_real_dtype,
+    validate_fft_complex_dtype, validate_rfft_real_dtype,
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -84,7 +85,12 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
         let input_contig = input.contiguous()?;
 
         let n = input_contig.shape()[dim_usize];
-        validate_fft_size(n, "wgpu_fft")?;
+        if n == 0 {
+            return Err(Error::InvalidArgument {
+                arg: "input",
+                reason: "FFT requires size >= 1 along the transform dim, got 0".to_string(),
+            });
+        }
 
         // Calculate batch size (product of all dims except the FFT dim)
         let mut batch_size = 1usize;
@@ -121,6 +127,27 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
 
         // If FFT is on last dimension and data is contiguous, we can do batched FFT directly
         if dim_usize == ndim - 1 {
+            // Non-power-of-two goes through Bluestein, which reduces it to a
+            // power-of-two convolution the Stockham shader below can run. rfft
+            // and irfft both pack/extend and then call back into this function,
+            // so wiring it here covers all three entry points.
+            if !n.is_power_of_two() {
+                let guard = bluestein_transform(
+                    self,
+                    input_contig.ptr(),
+                    n,
+                    n,
+                    batch_size,
+                    inverse,
+                    scale as f32,
+                )?;
+                let storage = unsafe {
+                    Storage::<WgpuRuntime>::from_ptr(guard.release(), total_elements, dtype, device)
+                };
+                let layout = Layout::contiguous(input_contig.shape());
+                return Ok(Tensor::from_parts(storage, layout));
+            }
+
             // Create params buffer
             // FftParams: n, log_n, inverse, scale, batch_size, pad1, pad2, pad3
             let params: [u32; 8] = [
@@ -281,7 +308,6 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
             arg: "input",
             reason: format!("expected at least 1D tensor, got shape {:?}", shape),
         })?;
-        validate_fft_size(n, "wgpu_rfft")?;
 
         // Calculate batch size
         let batch_size: usize = shape[..shape.len() - 1].iter().product();
@@ -397,7 +423,17 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
 
         // Determine full FFT size
         let full_n = n.unwrap_or_else(|| 2 * (half_n - 1));
-        validate_fft_size(full_n, "wgpu_irfft")?;
+        if full_n / 2 + 1 != half_n {
+            return Err(Error::InvalidArgument {
+                arg: "n",
+                reason: format!(
+                    "For irfft with n={}, input must have size {}, got {}",
+                    full_n,
+                    full_n / 2 + 1,
+                    half_n
+                ),
+            });
+        }
 
         // Calculate batch size
         let batch_size: usize = shape[..shape.len() - 1].iter().product();

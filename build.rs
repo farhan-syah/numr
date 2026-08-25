@@ -48,6 +48,7 @@ fn compile_cuda_kernels() {
         "distance.cu",
         "distributions.cu",
         "fft.cu",
+        "fft_bluestein.cu",
         "fused_activation_mul.cu",
         "fused_activation_mul_bwd.cu",
         "fused_add_norm.cu",

@@ -56,6 +56,7 @@ mod cumulative;
 mod distance;
 mod distributions;
 mod fft;
+mod fft_bluestein;
 #[cfg(feature = "fp8")]
 mod fp8_matmul;
 mod fused_activation_mul;
@@ -110,6 +111,7 @@ pub use cumulative::*;
 pub use distance::*;
 pub use distributions::*;
 pub use fft::*;
+pub use fft_bluestein::*;
 #[cfg(feature = "fp8")]
 pub use fp8_matmul::*;
 pub use fused_activation_mul::*;
