@@ -637,6 +637,64 @@ __global__ void depthwise_conv2d_fp8_e4m3(
     output[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(sum));
 }
 
+// ConvTranspose1d: gather form, see DEFINE_CONV_TRANSPOSE1D_KERNEL comment above
+// for the scatter/gather index relation (t = j*stride - padding + k*dilation).
+__global__ void conv_transpose1d_fp8_e4m3(
+    const numr_fp8_e4m3* __restrict__ input,
+    const numr_fp8_e4m3* __restrict__ weight,
+    const numr_fp8_e4m3* __restrict__ bias,
+    numr_fp8_e4m3* __restrict__ output,
+    unsigned int batch,
+    unsigned int c_in,
+    unsigned int length,
+    unsigned int c_out,
+    unsigned int kernel_size,
+    unsigned int output_length,
+    unsigned int stride,
+    unsigned int padding,
+    unsigned int dilation,
+    unsigned int groups,
+    unsigned int has_bias
+) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int total = batch * c_out * output_length;
+    if (idx >= total) return;
+
+    unsigned int ox = idx % output_length;
+    unsigned int oc = (idx / output_length) % c_out;
+    unsigned int b = idx / (c_out * output_length);
+
+    unsigned int c_in_per_group = c_in / groups;
+    unsigned int c_out_per_group = c_out / groups;
+    unsigned int g = oc / c_out_per_group;
+    unsigned int oc_local = oc % c_out_per_group;
+    unsigned int c_in_start = g * c_in_per_group;
+
+    float sum = 0.0f;
+
+    for (unsigned int kx = 0; kx < kernel_size; kx++) {
+        int shifted = (int)(ox + padding) - (int)(kx * dilation);
+        if (shifted < 0) continue;
+        if ((unsigned int)shifted % stride != 0u) continue;
+        unsigned int j = (unsigned int)shifted / stride;
+        if (j >= length) continue;
+
+        for (unsigned int ic = 0; ic < c_in_per_group; ic++) {
+            unsigned int c_in_idx = c_in_start + ic;
+            unsigned int input_idx = b * c_in * length + c_in_idx * length + j;
+            unsigned int weight_idx = c_in_idx * c_out_per_group * kernel_size
+                                    + oc_local * kernel_size + kx;
+            sum += fp8_e4m3_to_f32(input[input_idx].data) * fp8_e4m3_to_f32(weight[weight_idx].data);
+        }
+    }
+
+    if (has_bias != 0u && bias != nullptr) {
+        sum += fp8_e4m3_to_f32(bias[oc].data);
+    }
+
+    output[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(sum));
+}
+
 // FP8 E5M2 kernels (compute in float, load/store as FP8)
 __global__ void conv1d_fp8_e5m2(
     const numr_fp8_e5m2* __restrict__ input,
@@ -796,6 +854,64 @@ __global__ void depthwise_conv2d_fp8_e5m2(
 
     if (has_bias != 0u && bias != nullptr) {
         sum += fp8_e5m2_to_f32(bias[c].data);
+    }
+
+    output[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(sum));
+}
+
+// ConvTranspose1d: gather form, see DEFINE_CONV_TRANSPOSE1D_KERNEL comment above
+// for the scatter/gather index relation (t = j*stride - padding + k*dilation).
+__global__ void conv_transpose1d_fp8_e5m2(
+    const numr_fp8_e5m2* __restrict__ input,
+    const numr_fp8_e5m2* __restrict__ weight,
+    const numr_fp8_e5m2* __restrict__ bias,
+    numr_fp8_e5m2* __restrict__ output,
+    unsigned int batch,
+    unsigned int c_in,
+    unsigned int length,
+    unsigned int c_out,
+    unsigned int kernel_size,
+    unsigned int output_length,
+    unsigned int stride,
+    unsigned int padding,
+    unsigned int dilation,
+    unsigned int groups,
+    unsigned int has_bias
+) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int total = batch * c_out * output_length;
+    if (idx >= total) return;
+
+    unsigned int ox = idx % output_length;
+    unsigned int oc = (idx / output_length) % c_out;
+    unsigned int b = idx / (c_out * output_length);
+
+    unsigned int c_in_per_group = c_in / groups;
+    unsigned int c_out_per_group = c_out / groups;
+    unsigned int g = oc / c_out_per_group;
+    unsigned int oc_local = oc % c_out_per_group;
+    unsigned int c_in_start = g * c_in_per_group;
+
+    float sum = 0.0f;
+
+    for (unsigned int kx = 0; kx < kernel_size; kx++) {
+        int shifted = (int)(ox + padding) - (int)(kx * dilation);
+        if (shifted < 0) continue;
+        if ((unsigned int)shifted % stride != 0u) continue;
+        unsigned int j = (unsigned int)shifted / stride;
+        if (j >= length) continue;
+
+        for (unsigned int ic = 0; ic < c_in_per_group; ic++) {
+            unsigned int c_in_idx = c_in_start + ic;
+            unsigned int input_idx = b * c_in * length + c_in_idx * length + j;
+            unsigned int weight_idx = c_in_idx * c_out_per_group * kernel_size
+                                    + oc_local * kernel_size + kx;
+            sum += fp8_e5m2_to_f32(input[input_idx].data) * fp8_e5m2_to_f32(weight[weight_idx].data);
+        }
+    }
+
+    if (has_bias != 0u && bias != nullptr) {
+        sum += fp8_e5m2_to_f32(bias[oc].data);
     }
 
     output[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(sum));
