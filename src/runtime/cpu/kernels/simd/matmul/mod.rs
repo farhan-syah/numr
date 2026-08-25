@@ -8,8 +8,12 @@ pub(crate) mod avx2;
 pub(crate) mod avx512;
 pub(crate) mod dispatch;
 pub(crate) mod gemv_bt;
-// No int32 module: i32 matmul accumulates in i128 via `matmul_kernel`, because
-// an AVX2 kernel with `_mm256_add_epi32` accumulators wraps mid-dot-product.
+// i32 matmul: AVX2 with an i64 accumulator when a magnitude prescan proves
+// every partial sum fits, otherwise the exact i128 scalar path. An earlier AVX2
+// kernel accumulated with `_mm256_add_epi32` and wrapped mid-dot-product; the
+// guard is what makes a wider-but-still-finite accumulator safe.
+#[cfg(target_arch = "x86_64")]
+pub(crate) mod int32;
 pub(crate) mod int8;
 pub(crate) mod macros;
 pub(crate) mod packing;

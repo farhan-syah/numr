@@ -502,11 +502,37 @@ pub unsafe fn matmul_kernel<T: Element>(
     ldb: usize,
     ldc: usize,
 ) {
-    // Integers accumulate in i128 on every architecture. The AVX2 i32 kernel
-    // this replaces accumulated in i32 with `_mm256_add_epi32`, so a dot product
-    // whose partial sums left i32's range wrapped and reported a value with the
+    // Integers accumulate exactly, never in the element type. An older AVX2 i32
+    // kernel used `_mm256_add_epi32` and wrapped mid-dot-product, reporting the
     // wrong sign even when the final result was representable.
+    //
+    // i32 on AVX2 gets a 64-bit accumulator when a magnitude prescan proves
+    // every partial sum fits; the scan is O(mk + kn) against the matmul's
+    // O(mnk). Everything else — every other integer dtype, non-AVX2 hardware,
+    // and operands the scan rejects — takes the exact i128 scalar path. Both
+    // produce the same clamped result, so which one ran is invisible.
     if T::DTYPE.is_int() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            use crate::dtype::DType;
+            if T::DTYPE == DType::I32 && std::arch::is_x86_feature_detected!("avx2") {
+                let (ai, bi) = (a as *const i32, b as *const i32);
+                if super::simd::matmul::int32::matmul_i32_fits_i64(ai, bi, m, n, k, lda, ldb) {
+                    super::simd::matmul::int32::matmul_i32_avx2(
+                        ai,
+                        bi,
+                        out as *mut i32,
+                        m,
+                        n,
+                        k,
+                        lda,
+                        ldb,
+                        ldc,
+                    );
+                    return;
+                }
+            }
+        }
         matmul_scalar_acc::<T, i128>(a, b, out, m, n, k, lda, ldb, ldc);
         return;
     }
