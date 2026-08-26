@@ -69,7 +69,7 @@ pub unsafe fn i8xi8_dot_i32(a: *const i8, b: *const i8, len: usize) -> i32 {
 /// Widened for the same reason as the AVX2 version: a lane can hold `2^30`
 /// between spills, so summing sixteen of them in i32 would overflow even when
 /// no lane has.
-#[target_feature(enable = "avx512f", enable = "avx512bw")]
+#[target_feature(enable = "avx512f")]
 unsafe fn hsum_epi32_512_wide(v: __m512i) -> i64 {
     let mut lanes = [0i32; 16];
     _mm512_storeu_si512(lanes.as_mut_ptr() as *mut __m512i, v);

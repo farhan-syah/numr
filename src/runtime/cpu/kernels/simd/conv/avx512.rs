@@ -24,9 +24,13 @@ const F64_LANES: usize = 8;
 #[target_feature(enable = "avx512f")]
 #[inline]
 unsafe fn hsum_f32(v: __m512) -> f32 {
-    // Extract low and high 256-bit halves, add them
+    // Extract low and high 256-bit halves, add them.
+    // The high half is taken with `_mm512_shuffle_f32x4` (AVX-512F) instead of
+    // `_mm512_extractf32x8_ps`, which requires AVX-512DQ. Mask 0b11_10_11_10
+    // selects source 128-bit lane 2 into result lane 0 and lane 3 into result
+    // lane 1, so the low 256 bits of the shuffle are the upper 256 bits of `v`.
     let low = _mm512_castps512_ps256(v);
-    let high = _mm512_extractf32x8_ps::<1>(v);
+    let high = _mm512_castps512_ps256(_mm512_shuffle_f32x4::<0b11_10_11_10>(v, v));
     let sum256 = _mm256_add_ps(low, high);
 
     // Now reduce 256 bits to scalar

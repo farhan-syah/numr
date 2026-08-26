@@ -1017,9 +1017,15 @@ pub unsafe fn acos_f64(x: __m512d) -> __m512d {
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn cbrt_f32(x: __m512) -> __m512 {
-    let sign_bit = _mm512_set1_ps(-0.0);
-    let sign = _mm512_and_ps(x, sign_bit);
-    let abs_x = _mm512_andnot_ps(sign_bit, x);
+    // Bit masks are applied through the integer domain: `_mm512_and_si512` and
+    // `_mm512_andnot_si512` are AVX-512F, while `_mm512_and_ps`/`_mm512_andnot_ps`
+    // require AVX-512DQ, which `detect_simd` does not check for. The casts are
+    // reinterpretations and emit no code. `_mm512_andnot_si512(a, b)` computes
+    // `(!a) & b`, matching `_mm512_andnot_ps(a, b)`.
+    let sign_bit = _mm512_set1_epi32(0x8000_0000u32 as i32);
+    let x_bits = _mm512_castps_si512(x);
+    let sign = _mm512_and_si512(x_bits, sign_bit);
+    let abs_x = _mm512_castsi512_ps(_mm512_andnot_si512(sign_bit, x_bits));
 
     let one_third = _mm512_set1_ps(1.0 / 3.0);
     let log_x = log_f32(abs_x);
@@ -1035,16 +1041,22 @@ pub unsafe fn cbrt_f32(x: __m512) -> __m512 {
     let y2 = _mm512_mul_ps(y_new, y_new);
     let result = _mm512_div_ps(_mm512_fmadd_ps(two, y_new, _mm512_div_ps(abs_x, y2)), three);
 
-    _mm512_or_ps(result, sign)
+    _mm512_castsi512_ps(_mm512_or_si512(_mm512_castps_si512(result), sign))
 }
 
 /// Fast SIMD cbrt (cube root) for f64 using AVX-512
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn cbrt_f64(x: __m512d) -> __m512d {
-    let sign_bit = _mm512_set1_pd(-0.0);
-    let sign = _mm512_and_pd(x, sign_bit);
-    let abs_x = _mm512_andnot_pd(sign_bit, x);
+    // Bit masks are applied through the integer domain: `_mm512_and_si512` and
+    // `_mm512_andnot_si512` are AVX-512F, while `_mm512_and_pd`/`_mm512_andnot_pd`
+    // require AVX-512DQ, which `detect_simd` does not check for. The casts are
+    // reinterpretations and emit no code. `_mm512_andnot_si512(a, b)` computes
+    // `(!a) & b`, matching `_mm512_andnot_pd(a, b)`.
+    let sign_bit = _mm512_set1_epi64(0x8000_0000_0000_0000u64 as i64);
+    let x_bits = _mm512_castpd_si512(x);
+    let sign = _mm512_and_si512(x_bits, sign_bit);
+    let abs_x = _mm512_castsi512_pd(_mm512_andnot_si512(sign_bit, x_bits));
 
     let one_third = _mm512_set1_pd(1.0 / 3.0);
     let log_x = log_f64(abs_x);
@@ -1060,5 +1072,5 @@ pub unsafe fn cbrt_f64(x: __m512d) -> __m512d {
     let y2 = _mm512_mul_pd(y_new, y_new);
     let result = _mm512_div_pd(_mm512_fmadd_pd(two, y_new, _mm512_div_pd(abs_x, y2)), three);
 
-    _mm512_or_pd(result, sign)
+    _mm512_castsi512_pd(_mm512_or_si512(_mm512_castpd_si512(result), sign))
 }

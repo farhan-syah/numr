@@ -23,7 +23,7 @@
 //!
 //! | Architecture | Instruction Set | Vector Width | Status    |
 //! |--------------|-----------------|--------------|-----------|
-//! | x86-64       | AVX-512F + FMA  | 512 bits     | Supported |
+//! | x86-64       | AVX-512F/VL/DQ/BW + FMA | 512 bits | Supported |
 //! | x86-64       | AVX2 + FMA      | 256 bits     | Supported |
 //! | ARM64        | NEON + FP16     | 128 bits     | Supported |
 //! | ARM64        | NEON            | 128 bits     | Supported |
@@ -79,7 +79,7 @@ use std::sync::OnceLock;
 #[allow(dead_code)] // Variants may not be constructed on all architectures
 pub enum SimdLevel {
     // x86-64 variants (highest capability)
-    /// AVX-512F with FMA support (512-bit vectors, 16 f32s or 8 f64s)
+    /// AVX-512F + VL + DQ + BW with FMA (512-bit vectors, 16 f32s or 8 f64s)
     Avx512 = 4,
     /// AVX2 with FMA support (256-bit vectors, 8 f32s or 4 f64s)
     Avx2Fma = 3,
@@ -187,8 +187,23 @@ pub fn detect_simd() -> SimdLevel {
 fn detect_simd_uncached() -> SimdLevel {
     #[cfg(target_arch = "x86_64")]
     {
+        // All five features are required by kernels dispatched on
+        // `SimdLevel::Avx512`, so all five are checked here. Removing any one
+        // check makes the kernels named below fault with #UD on a CPU that
+        // lacks that feature:
+        // - `avx512f`: the 512-bit core (loads, arithmetic, masks).
+        // - `avx512vl`: the 128/256-bit AVX-512 forms used by tail handling.
+        // - `avx512dq`: the packed 64-bit integer conversions
+        //   `_mm512_cvtpd_epi64` and `_mm512_cvtepi64_pd` in the f64 math
+        //   kernels (`exp_f64`, `log_f64`, `sin_f64`, `tan_f64`).
+        // - `avx512bw`: the byte and word ops in the i8 dot kernel
+        //   (`_mm512_cvtepi8_epi16`, `_mm512_madd_epi16`) and in the index
+        //   kernel `masked_count` (`_mm512_cmpneq_epi8_mask`).
+        // - `fma`: the fused multiply-add used by every polynomial kernel.
         if is_x86_feature_detected!("avx512f")
             && is_x86_feature_detected!("avx512vl")
+            && is_x86_feature_detected!("avx512dq")
+            && is_x86_feature_detected!("avx512bw")
             && is_x86_feature_detected!("fma")
         {
             return SimdLevel::Avx512;

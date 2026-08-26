@@ -11,7 +11,7 @@ const F32_LANES: usize = 16;
 const F64_LANES: usize = 8;
 
 /// AVX-512 where for f32
-#[target_feature(enable = "avx512f", enable = "avx512bw")]
+#[target_feature(enable = "avx512f")]
 pub unsafe fn where_f32(cond: *const u8, x: *const f32, y: *const f32, out: *mut f32, len: usize) {
     let chunks = len / F32_LANES;
     let zeros = _mm_setzero_si128();
@@ -51,7 +51,7 @@ pub unsafe fn where_f32(cond: *const u8, x: *const f32, y: *const f32, out: *mut
 }
 
 /// AVX-512 where for f64
-#[target_feature(enable = "avx512f", enable = "avx512bw")]
+#[target_feature(enable = "avx512f")]
 pub unsafe fn where_f64(cond: *const u8, x: *const f64, y: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let zeros = _mm_setzero_si128();

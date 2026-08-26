@@ -237,11 +237,14 @@ unsafe fn unary_neg_f32(a: *const f32, out: *mut f32, chunks: usize) {
 
 #[target_feature(enable = "avx512f")]
 unsafe fn unary_abs_f32(a: *const f32, out: *mut f32, chunks: usize) {
-    let mask = _mm512_set1_ps(f32::from_bits(0x7FFF_FFFF)); // Clear sign bit
+    // The sign bit is cleared through the integer domain: `_mm512_and_si512` is
+    // AVX-512F, while `_mm512_and_ps` requires AVX-512DQ, which `detect_simd`
+    // does not check for. The casts are reinterpretations and emit no code.
+    let mask = _mm512_set1_epi32(0x7FFF_FFFF); // Clear sign bit
     for i in 0..chunks {
         let offset = i * F32_LANES;
         let va = _mm512_loadu_ps(a.add(offset));
-        let vr = _mm512_and_ps(va, mask);
+        let vr = _mm512_castsi512_ps(_mm512_and_si512(_mm512_castps_si512(va), mask));
         _mm512_storeu_ps(out.add(offset), vr);
     }
 }
@@ -602,11 +605,14 @@ unsafe fn unary_neg_f64(a: *const f64, out: *mut f64, chunks: usize) {
 
 #[target_feature(enable = "avx512f")]
 unsafe fn unary_abs_f64(a: *const f64, out: *mut f64, chunks: usize) {
-    let mask = _mm512_set1_pd(f64::from_bits(0x7FFF_FFFF_FFFF_FFFF));
+    // The sign bit is cleared through the integer domain: `_mm512_and_si512` is
+    // AVX-512F, while `_mm512_and_pd` requires AVX-512DQ, which `detect_simd`
+    // does not check for. The casts are reinterpretations and emit no code.
+    let mask = _mm512_set1_epi64(0x7FFF_FFFF_FFFF_FFFF);
     for i in 0..chunks {
         let offset = i * F64_LANES;
         let va = _mm512_loadu_pd(a.add(offset));
-        let vr = _mm512_and_pd(va, mask);
+        let vr = _mm512_castsi512_pd(_mm512_and_si512(_mm512_castpd_si512(va), mask));
         _mm512_storeu_pd(out.add(offset), vr);
     }
 }
