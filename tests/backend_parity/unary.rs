@@ -72,6 +72,7 @@ fn apply_unary_op<R: Runtime>(
         "floor" => client.floor(x),
         "ceil" => client.ceil(x),
         "round" => client.round(x),
+        "round_ties_even" => client.round_ties_even(x),
         "trunc" => client.trunc(x),
         _ => panic!("Unknown unary op: {}", op),
     }
@@ -416,6 +417,18 @@ unary_case!(
     &[
         TestInput::new(vec![1.1, -2.3, 3.9, -4.7], vec![4]),
         TestInput::new(vec![0.5, 1.5, -0.5, -1.5], vec![2, 2]),
+    ]
+);
+
+// Every element of the second case is a tie, where round (ties away from zero)
+// and round_ties_even disagree; a backend that reused the wrong rounding mode
+// shows up here.
+unary_case!(
+    test_round_ties_even_parity,
+    "round_ties_even",
+    &[
+        TestInput::new(vec![1.1, -2.3, 3.9, -4.7], vec![4]),
+        TestInput::new(vec![0.5, 1.5, -0.5, -1.5, 2.5, 3.5, -2.5, -3.5], vec![2, 4]),
     ]
 );
 

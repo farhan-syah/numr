@@ -123,8 +123,18 @@ pub enum UnaryOp {
     Floor,
     /// Ceiling: ceil(a)
     Ceil,
-    /// Round to nearest: round(a)
+    /// Round to nearest, ties away from zero: round(a).
+    ///
+    /// Matches Rust's `f32::round`/`f64::round`. A tie such as 2.5 goes to 3.0
+    /// and -2.5 goes to -3.0. For the IEEE roundTiesToEven behaviour that
+    /// `np.round` and `torch.round` use, see [`UnaryOp::RoundTiesEven`].
     Round,
+    /// Round to nearest, ties to even: IEEE 754 roundTiesToEven.
+    ///
+    /// Matches Rust's `f32::round_ties_even`/`f64::round_ties_even`, and the
+    /// semantics of `np.round` and `torch.round`. A tie such as 2.5 goes to 2.0
+    /// and 3.5 goes to 4.0.
+    RoundTiesEven,
     /// Truncate toward zero: trunc(a)
     Trunc,
 }

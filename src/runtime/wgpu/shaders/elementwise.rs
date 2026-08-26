@@ -214,6 +214,7 @@ pub fn launch_unary_op(
                 "floor" => "floor_f32",
                 "ceil" => "ceil_f32",
                 "round" => "round_f32",
+                "round_ties_even" => "round_ties_even_f32",
                 "trunc" => "trunc_f32",
                 "rsqrt" => "rsqrt_f32",
                 "cbrt" => "cbrt_f32",

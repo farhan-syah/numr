@@ -128,6 +128,10 @@ impl UnaryOps<CpuRuntime> for CpuClient {
         unary_op_impl(self, UnaryOp::Round, a, "round")
     }
 
+    fn round_ties_even(&self, a: &Tensor<CpuRuntime>) -> Result<Tensor<CpuRuntime>> {
+        unary_op_impl(self, UnaryOp::RoundTiesEven, a, "round_ties_even")
+    }
+
     fn trunc(&self, a: &Tensor<CpuRuntime>) -> Result<Tensor<CpuRuntime>> {
         unary_op_impl(self, UnaryOp::Trunc, a, "trunc")
     }

@@ -122,7 +122,7 @@ numr implements a comprehensive set of tensor operations across CPU, CUDA, and W
 
 ### Core Arithmetic
 
-- **UnaryOps**: neg, abs, sqrt, exp, log, sin, cos, tan, sinh, cosh, tanh, floor, ceil, round, and more
+- **UnaryOps**: neg, abs, sqrt, exp, log, sin, cos, tan, sinh, cosh, tanh, floor, ceil, round (ties away from zero), round_ties_even (IEEE roundTiesToEven, matching `np.round`/`torch.round`), and more
 - **BinaryOps**: add, sub, mul, div, pow, maximum, minimum (all with NumPy-style broadcasting)
 - **ScalarOps**: tensor-scalar arithmetic
 - **TypeConversionOps**: cast (convert between dtypes)

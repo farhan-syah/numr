@@ -81,6 +81,7 @@ pub unsafe fn unary_f32(op: UnaryOp, a: *const f32, out: *mut f32, len: usize) {
         UnaryOp::Floor => unary_floor_f32(a, out, chunks),
         UnaryOp::Ceil => unary_ceil_f32(a, out, chunks),
         UnaryOp::Round => unary_round_f32(a, out, chunks),
+        UnaryOp::RoundTiesEven => unary_round_ties_even_f32(a, out, chunks),
         UnaryOp::Trunc => unary_trunc_f32(a, out, chunks),
     }
 
@@ -138,6 +139,7 @@ pub unsafe fn unary_f64(op: UnaryOp, a: *const f64, out: *mut f64, len: usize) {
         UnaryOp::Floor => unary_floor_f64(a, out, chunks),
         UnaryOp::Ceil => unary_ceil_f64(a, out, chunks),
         UnaryOp::Round => unary_round_f64(a, out, chunks),
+        UnaryOp::RoundTiesEven => unary_round_ties_even_f64(a, out, chunks),
         UnaryOp::Trunc => unary_trunc_f64(a, out, chunks),
     }
 
@@ -294,8 +296,35 @@ unsafe fn unary_ceil_f32(a: *const f32, out: *mut f32, chunks: usize) {
     }
 }
 
+/// Round to nearest with ties away from zero, matching `f32::round`.
+///
+/// AVX2 has no ties-away rounding mode, so this rounds the magnitude to nearest
+/// (ties to even) and then pushes the exact-tie lanes one step further out.
+/// `n - mag` is exact for every finite input, so the `<= -0.5` test fires only
+/// on a true tie that rounded toward zero.
 #[target_feature(enable = "avx2")]
 unsafe fn unary_round_f32(a: *const f32, out: *mut f32, chunks: usize) {
+    let sign_mask = _mm256_set1_ps(-0.0);
+    let neg_half = _mm256_set1_ps(-0.5);
+    let one = _mm256_set1_ps(1.0);
+    for i in 0..chunks {
+        let offset = i * F32_LANES;
+        let va = _mm256_loadu_ps(a.add(offset));
+        let sign = _mm256_and_ps(va, sign_mask);
+        let mag = _mm256_andnot_ps(sign_mask, va);
+        // _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC = 0x08 (ties to even)
+        let n = _mm256_round_ps::<0x08>(mag);
+        let y = _mm256_sub_ps(n, mag);
+        // NaN and infinity compare false here, so they pass through as `n`.
+        let tie = _mm256_cmp_ps::<_CMP_LE_OQ>(y, neg_half);
+        let vr = _mm256_or_ps(_mm256_add_ps(n, _mm256_and_ps(tie, one)), sign);
+        _mm256_storeu_ps(out.add(offset), vr);
+    }
+}
+
+/// Round to nearest with ties to even, matching `f32::round_ties_even`.
+#[target_feature(enable = "avx2")]
+unsafe fn unary_round_ties_even_f32(a: *const f32, out: *mut f32, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F32_LANES;
         let va = _mm256_loadu_ps(a.add(offset));
@@ -622,8 +651,30 @@ unsafe fn unary_ceil_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
+/// Round to nearest with ties away from zero, matching `f64::round`.
+///
+/// Same magnitude-then-correct construction as `unary_round_f32`.
 #[target_feature(enable = "avx2")]
 unsafe fn unary_round_f64(a: *const f64, out: *mut f64, chunks: usize) {
+    let sign_mask = _mm256_set1_pd(-0.0);
+    let neg_half = _mm256_set1_pd(-0.5);
+    let one = _mm256_set1_pd(1.0);
+    for i in 0..chunks {
+        let offset = i * F64_LANES;
+        let va = _mm256_loadu_pd(a.add(offset));
+        let sign = _mm256_and_pd(va, sign_mask);
+        let mag = _mm256_andnot_pd(sign_mask, va);
+        let n = _mm256_round_pd::<0x08>(mag);
+        let y = _mm256_sub_pd(n, mag);
+        let tie = _mm256_cmp_pd::<_CMP_LE_OQ>(y, neg_half);
+        let vr = _mm256_or_pd(_mm256_add_pd(n, _mm256_and_pd(tie, one)), sign);
+        _mm256_storeu_pd(out.add(offset), vr);
+    }
+}
+
+/// Round to nearest with ties to even, matching `f64::round_ties_even`.
+#[target_feature(enable = "avx2")]
+unsafe fn unary_round_ties_even_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
         let va = _mm256_loadu_pd(a.add(offset));

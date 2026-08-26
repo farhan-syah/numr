@@ -177,6 +177,11 @@ pub unsafe fn unary_scalar_f32(op: UnaryOp, a: *const f32, out: *mut f32, len: u
                 *out.add(i) = (*a.add(i)).round();
             }
         }
+        UnaryOp::RoundTiesEven => {
+            for i in 0..len {
+                *out.add(i) = (*a.add(i)).round_ties_even();
+            }
+        }
         UnaryOp::Trunc => {
             for i in 0..len {
                 *out.add(i) = (*a.add(i)).trunc();
@@ -356,6 +361,11 @@ pub unsafe fn unary_scalar_f64(op: UnaryOp, a: *const f64, out: *mut f64, len: u
         UnaryOp::Round => {
             for i in 0..len {
                 *out.add(i) = (*a.add(i)).round();
+            }
+        }
+        UnaryOp::RoundTiesEven => {
+            for i in 0..len {
+                *out.add(i) = (*a.add(i)).round_ties_even();
             }
         }
         UnaryOp::Trunc => {

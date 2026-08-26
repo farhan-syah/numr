@@ -81,6 +81,7 @@ pub unsafe fn unary_f32(op: UnaryOp, a: *const f32, out: *mut f32, len: usize) {
         UnaryOp::Floor => unary_floor_f32(a, out, chunks),
         UnaryOp::Ceil => unary_ceil_f32(a, out, chunks),
         UnaryOp::Round => unary_round_f32(a, out, chunks),
+        UnaryOp::RoundTiesEven => unary_round_ties_even_f32(a, out, chunks),
         UnaryOp::Trunc => unary_trunc_f32(a, out, chunks),
     }
 
@@ -139,6 +140,7 @@ pub unsafe fn unary_f64(op: UnaryOp, a: *const f64, out: *mut f64, len: usize) {
         UnaryOp::Floor => unary_floor_f64(a, out, chunks),
         UnaryOp::Ceil => unary_ceil_f64(a, out, chunks),
         UnaryOp::Round => unary_round_f64(a, out, chunks),
+        UnaryOp::RoundTiesEven => unary_round_ties_even_f64(a, out, chunks),
         UnaryOp::Trunc => unary_trunc_f64(a, out, chunks),
     }
 
@@ -297,8 +299,43 @@ unsafe fn unary_ceil_f32(a: *const f32, out: *mut f32, chunks: usize) {
     }
 }
 
+/// Round to nearest with ties away from zero, matching `f32::round`.
+///
+/// AVX-512 has no ties-away rounding mode, so this rounds the magnitude to
+/// nearest (ties to even) and then pushes the exact-tie lanes one step further
+/// out. `n - mag` is exact for every finite input, so the `<= -0.5` test fires
+/// only on a true tie that rounded toward zero.
 #[target_feature(enable = "avx512f")]
 unsafe fn unary_round_f32(a: *const f32, out: *mut f32, chunks: usize) {
+    // Bit masks are applied through the integer domain: `_mm512_and_si512` and
+    // `_mm512_or_si512` are AVX-512F, while `_mm512_and_ps`/`_mm512_or_ps`
+    // require AVX-512DQ, which `detect_simd` does not check for.
+    let sign_mask = _mm512_set1_epi32(0x8000_0000u32 as i32);
+    let abs_mask = _mm512_set1_epi32(0x7fff_ffff);
+    let neg_half = _mm512_set1_ps(-0.5);
+    let one = _mm512_set1_ps(1.0);
+    let zero = _mm512_setzero_ps();
+    for i in 0..chunks {
+        let offset = i * F32_LANES;
+        let va = _mm512_loadu_ps(a.add(offset));
+        let bits = _mm512_castps_si512(va);
+        let sign = _mm512_and_si512(bits, sign_mask);
+        let mag = _mm512_castsi512_ps(_mm512_and_si512(bits, abs_mask));
+        // _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC = 0x08 (ties to even)
+        let n = _mm512_roundscale_ps::<0x08>(mag);
+        let y = _mm512_sub_ps(n, mag);
+        // NaN and infinity compare false here, so they pass through as `n`.
+        let tie = _mm512_cmp_ps_mask::<_CMP_LE_OQ>(y, neg_half);
+        let adj = _mm512_mask_blend_ps(tie, zero, one);
+        let magnitude = _mm512_castps_si512(_mm512_add_ps(n, adj));
+        let vr = _mm512_castsi512_ps(_mm512_or_si512(magnitude, sign));
+        _mm512_storeu_ps(out.add(offset), vr);
+    }
+}
+
+/// Round to nearest with ties to even, matching `f32::round_ties_even`.
+#[target_feature(enable = "avx512f")]
+unsafe fn unary_round_ties_even_f32(a: *const f32, out: *mut f32, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F32_LANES;
         let va = _mm512_loadu_ps(a.add(offset));
@@ -627,8 +664,35 @@ unsafe fn unary_ceil_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
+/// Round to nearest with ties away from zero, matching `f64::round`.
+///
+/// Same magnitude-then-correct construction as `unary_round_f32`.
 #[target_feature(enable = "avx512f")]
 unsafe fn unary_round_f64(a: *const f64, out: *mut f64, chunks: usize) {
+    let sign_mask = _mm512_set1_epi64(0x8000_0000_0000_0000u64 as i64);
+    let abs_mask = _mm512_set1_epi64(0x7fff_ffff_ffff_ffffu64 as i64);
+    let neg_half = _mm512_set1_pd(-0.5);
+    let one = _mm512_set1_pd(1.0);
+    let zero = _mm512_setzero_pd();
+    for i in 0..chunks {
+        let offset = i * F64_LANES;
+        let va = _mm512_loadu_pd(a.add(offset));
+        let bits = _mm512_castpd_si512(va);
+        let sign = _mm512_and_si512(bits, sign_mask);
+        let mag = _mm512_castsi512_pd(_mm512_and_si512(bits, abs_mask));
+        let n = _mm512_roundscale_pd::<0x08>(mag);
+        let y = _mm512_sub_pd(n, mag);
+        let tie = _mm512_cmp_pd_mask::<_CMP_LE_OQ>(y, neg_half);
+        let adj = _mm512_mask_blend_pd(tie, zero, one);
+        let magnitude = _mm512_castpd_si512(_mm512_add_pd(n, adj));
+        let vr = _mm512_castsi512_pd(_mm512_or_si512(magnitude, sign));
+        _mm512_storeu_pd(out.add(offset), vr);
+    }
+}
+
+/// Round to nearest with ties to even, matching `f64::round_ties_even`.
+#[target_feature(enable = "avx512f")]
+unsafe fn unary_round_ties_even_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
         let va = _mm512_loadu_pd(a.add(offset));

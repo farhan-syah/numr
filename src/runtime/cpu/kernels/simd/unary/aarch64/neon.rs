@@ -6,7 +6,7 @@
 //!
 //! Direct SIMD operations (native NEON instructions):
 //! - Neg, Abs, Sqrt, Recip, Rsqrt
-//! - Floor, Ceil, Round, Trunc (AArch64 NEON has rounding modes)
+//! - Floor, Ceil, Round, RoundTiesEven, Trunc (AArch64 NEON has rounding modes)
 //! - Sign (comparison-based)
 //! - Square (mul x * x)
 //!
@@ -40,6 +40,7 @@ const fn has_neon_support(op: UnaryOp) -> bool {
             | UnaryOp::Floor
             | UnaryOp::Ceil
             | UnaryOp::Round
+            | UnaryOp::RoundTiesEven
             | UnaryOp::Trunc
             | UnaryOp::Sign
             // Transcendentals from math module
@@ -94,6 +95,7 @@ pub unsafe fn unary_f32(op: UnaryOp, a: *const f32, out: *mut f32, len: usize) {
         UnaryOp::Floor => unary_floor_f32(a, out, chunks),
         UnaryOp::Ceil => unary_ceil_f32(a, out, chunks),
         UnaryOp::Round => unary_round_f32(a, out, chunks),
+        UnaryOp::RoundTiesEven => unary_round_ties_even_f32(a, out, chunks),
         UnaryOp::Trunc => unary_trunc_f32(a, out, chunks),
         UnaryOp::Sign => unary_sign_f32(a, out, chunks),
         // Transcendentals from math module
@@ -153,6 +155,7 @@ pub unsafe fn unary_f64(op: UnaryOp, a: *const f64, out: *mut f64, len: usize) {
         UnaryOp::Floor => unary_floor_f64(a, out, chunks),
         UnaryOp::Ceil => unary_ceil_f64(a, out, chunks),
         UnaryOp::Round => unary_round_f64(a, out, chunks),
+        UnaryOp::RoundTiesEven => unary_round_ties_even_f64(a, out, chunks),
         UnaryOp::Trunc => unary_trunc_f64(a, out, chunks),
         UnaryOp::Sign => unary_sign_f64(a, out, chunks),
         // Transcendentals from math module
@@ -348,13 +351,26 @@ unsafe fn unary_ceil_f32(a: *const f32, out: *mut f32, chunks: usize) {
     }
 }
 
+/// Round to nearest with ties away from zero, matching `f32::round`.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn unary_round_f32(a: *const f32, out: *mut f32, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F32_LANES;
         let va = vld1q_f32(a.add(offset));
-        let vr = vrndnq_f32(va); // Round to nearest, ties to even
+        let vr = vrndaq_f32(va); // FRINTA: round to nearest, ties away from zero
+        vst1q_f32(out.add(offset), vr);
+    }
+}
+
+/// Round to nearest with ties to even, matching `f32::round_ties_even`.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn unary_round_ties_even_f32(a: *const f32, out: *mut f32, chunks: usize) {
+    for i in 0..chunks {
+        let offset = i * F32_LANES;
+        let va = vld1q_f32(a.add(offset));
+        let vr = vrndnq_f32(va); // FRINTN: round to nearest, ties to even
         vst1q_f32(out.add(offset), vr);
     }
 }
@@ -509,13 +525,26 @@ unsafe fn unary_ceil_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
+/// Round to nearest with ties away from zero, matching `f64::round`.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn unary_round_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
         let va = vld1q_f64(a.add(offset));
-        let vr = vrndnq_f64(va);
+        let vr = vrndaq_f64(va); // FRINTA: ties away from zero
+        vst1q_f64(out.add(offset), vr);
+    }
+}
+
+/// Round to nearest with ties to even, matching `f64::round_ties_even`.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn unary_round_ties_even_f64(a: *const f64, out: *mut f64, chunks: usize) {
+    for i in 0..chunks {
+        let offset = i * F64_LANES;
+        let va = vld1q_f64(a.add(offset));
+        let vr = vrndnq_f64(va); // FRINTN: ties to even
         vst1q_f64(out.add(offset), vr);
     }
 }

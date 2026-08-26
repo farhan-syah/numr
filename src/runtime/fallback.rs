@@ -298,6 +298,7 @@ where
             UnaryOp::Floor => cpu.client.floor(&a_cpu)?,
             UnaryOp::Ceil => cpu.client.ceil(&a_cpu)?,
             UnaryOp::Round => cpu.client.round(&a_cpu)?,
+            UnaryOp::RoundTiesEven => cpu.client.round_ties_even(&a_cpu)?,
             UnaryOp::Trunc => cpu.client.trunc(&a_cpu)?,
             UnaryOp::Sign => cpu.client.sign(&a_cpu)?,
         };

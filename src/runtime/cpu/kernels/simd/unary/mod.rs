@@ -6,7 +6,8 @@
 //! # SIMD Support
 //!
 //! ALL operations now have SIMD implementations:
-//! - Neg, Abs, Sqrt, Square, Recip, Floor, Ceil, Round, Trunc (direct SIMD)
+//! - Neg, Abs, Sqrt, Square, Recip, Floor, Ceil, Round, RoundTiesEven, Trunc
+//!   (direct SIMD)
 //! - Exp, Log, Sin, Cos, Tan, Atan, Tanh (polynomial approximations from math module)
 //! - Sign (comparison-based)
 //! - ReLU (critical for ML)
@@ -69,6 +70,7 @@ const fn is_simd_supported(op: UnaryOp) -> bool {
             | UnaryOp::Floor
             | UnaryOp::Ceil
             | UnaryOp::Round
+            | UnaryOp::RoundTiesEven
             | UnaryOp::Trunc
             | UnaryOp::Sign
     )
@@ -368,6 +370,168 @@ mod tests {
                 out[i],
                 expected
             );
+        }
+    }
+
+    /// Inputs that stress both rounding modes: every tie between -4.5 and 4.5,
+    /// the largest f32 below 0.5 (where a naive `floor(|x| + 0.5)` rounds the
+    /// wrong way), values above 2^23 that are already integers, and infinities.
+    fn rounding_probe_f32() -> Vec<f32> {
+        let mut v = vec![
+            -4.5,
+            -3.5,
+            -2.5,
+            -1.5,
+            -0.5,
+            0.5,
+            1.5,
+            2.5,
+            3.5,
+            4.5,
+            0.0,
+            -0.0,
+            1.1,
+            -1.1,
+            3.9,
+            -4.7,
+            f32::from_bits(0x3EFF_FFFF),
+            -f32::from_bits(0x3EFF_FFFF),
+            8_388_609.0,
+            -8_388_609.0,
+            1e30,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ];
+        // Pad past SIMD_THRESHOLD with a length that leaves a scalar tail for
+        // every vector width in use (16, 8 and 4 lanes).
+        while v.len() < 35 {
+            v.push(v.len() as f32 * 0.25);
+        }
+        v
+    }
+
+    #[test]
+    fn test_unary_round_f32_ties_away_from_zero() {
+        let a = rounding_probe_f32();
+        let len = a.len();
+        let mut out = vec![0.0f32; len];
+
+        unsafe { unary_f32(UnaryOp::Round, a.as_ptr(), out.as_mut_ptr(), len) }
+
+        for i in 0..len {
+            let expected = a[i].round();
+            assert_eq!(
+                out[i].to_bits(),
+                expected.to_bits(),
+                "round mismatch at {}: input {}, got {}, expected {}",
+                i,
+                a[i],
+                out[i],
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_round_ties_even_f32() {
+        let a = rounding_probe_f32();
+        let len = a.len();
+        let mut out = vec![0.0f32; len];
+
+        unsafe { unary_f32(UnaryOp::RoundTiesEven, a.as_ptr(), out.as_mut_ptr(), len) }
+
+        for i in 0..len {
+            let expected = a[i].round_ties_even();
+            assert_eq!(
+                out[i].to_bits(),
+                expected.to_bits(),
+                "round_ties_even mismatch at {}: input {}, got {}, expected {}",
+                i,
+                a[i],
+                out[i],
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_round_f64_ties_away_from_zero() {
+        let a: Vec<f64> = rounding_probe_f32().iter().map(|&x| f64::from(x)).collect();
+        let len = a.len();
+        let mut out = vec![0.0f64; len];
+
+        unsafe { unary_f64(UnaryOp::Round, a.as_ptr(), out.as_mut_ptr(), len) }
+
+        for i in 0..len {
+            let expected = a[i].round();
+            assert_eq!(
+                out[i].to_bits(),
+                expected.to_bits(),
+                "round mismatch at {}: input {}, got {}, expected {}",
+                i,
+                a[i],
+                out[i],
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_round_ties_even_f64() {
+        let a: Vec<f64> = rounding_probe_f32().iter().map(|&x| f64::from(x)).collect();
+        let len = a.len();
+        let mut out = vec![0.0f64; len];
+
+        unsafe { unary_f64(UnaryOp::RoundTiesEven, a.as_ptr(), out.as_mut_ptr(), len) }
+
+        for i in 0..len {
+            let expected = a[i].round_ties_even();
+            assert_eq!(
+                out[i].to_bits(),
+                expected.to_bits(),
+                "round_ties_even mismatch at {}: input {}, got {}, expected {}",
+                i,
+                a[i],
+                out[i],
+                expected
+            );
+        }
+    }
+
+    /// The SIMD kernels only run at or above `SIMD_THRESHOLD`, so a short input
+    /// silently tests the scalar path alone. Sweep the lengths around and past
+    /// the threshold to cover both.
+    #[test]
+    fn test_round_ops_across_simd_threshold_f32() {
+        let probe = rounding_probe_f32();
+        for len in [1usize, 7, 31, 32, 33, 35, 64, 65] {
+            let a: Vec<f32> = probe.iter().copied().cycle().take(len).collect();
+            let mut away = vec![0.0f32; len];
+            let mut even = vec![0.0f32; len];
+
+            unsafe {
+                unary_f32(UnaryOp::Round, a.as_ptr(), away.as_mut_ptr(), len);
+                unary_f32(UnaryOp::RoundTiesEven, a.as_ptr(), even.as_mut_ptr(), len);
+            }
+
+            for i in 0..len {
+                assert_eq!(
+                    away[i].to_bits(),
+                    a[i].round().to_bits(),
+                    "round mismatch at len {} index {} (input {})",
+                    len,
+                    i,
+                    a[i]
+                );
+                assert_eq!(
+                    even[i].to_bits(),
+                    a[i].round_ties_even().to_bits(),
+                    "round_ties_even mismatch at len {} index {} (input {})",
+                    len,
+                    i,
+                    a[i]
+                );
+            }
         }
     }
 

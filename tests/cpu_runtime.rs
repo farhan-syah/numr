@@ -581,6 +581,138 @@ fn test_tensor_round() {
     assert_eq!(result, [1.0, 2.0, 3.0, -2.0]);
 }
 
+/// Every tie in this sequence, and the two ops disagree on all but -1.5 and 3.5.
+const TIES: [f32; 7] = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5];
+
+/// `torch.round` / `np.round` output for `TIES`.
+const TIES_TO_EVEN: [f32; 7] = [-2.0, -2.0, -0.0, 0.0, 2.0, 2.0, 4.0];
+
+/// Rust `f32::round` output for `TIES`.
+const TIES_AWAY: [f32; 7] = [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0, 4.0];
+
+#[test]
+fn test_tensor_round_ties_even() {
+    let device = CpuDevice::new();
+    let client = CpuRuntime::default_client(&device);
+
+    let a = Tensor::<CpuRuntime>::from_slice(&TIES, &[7], &device).unwrap();
+    let b = client.round_ties_even(&a).unwrap();
+
+    let result: Vec<f32> = b.to_vec();
+    assert_eq!(result, TIES_TO_EVEN);
+    // -0.5 must produce negative zero, which `==` cannot distinguish from 0.0.
+    assert!(
+        result[2].is_sign_negative(),
+        "round_ties_even(-0.5) lost -0.0"
+    );
+    assert!(
+        result[3].is_sign_positive(),
+        "round_ties_even(0.5) lost +0.0"
+    );
+}
+
+#[test]
+fn test_tensor_round_still_ties_away_from_zero() {
+    let device = CpuDevice::new();
+    let client = CpuRuntime::default_client(&device);
+
+    let a = Tensor::<CpuRuntime>::from_slice(&TIES, &[7], &device).unwrap();
+    let b = client.round(&a).unwrap();
+
+    let result: Vec<f32> = b.to_vec();
+    assert_eq!(result, TIES_AWAY);
+}
+
+/// The CPU backend takes the SIMD path only at 32 elements or more, and handles
+/// the trailing lanes with the scalar kernel. 35 elements is short of a whole
+/// number of vectors for every supported width (16, 8, 4 and 2 lanes), so both
+/// paths run and a divergence between them cannot hide.
+#[test]
+fn test_round_ops_agree_across_simd_and_scalar_paths_f32() {
+    let device = CpuDevice::new();
+    let client = CpuRuntime::default_client(&device);
+
+    let data: Vec<f32> = TIES.iter().copied().cycle().take(35).collect();
+    let expected_even: Vec<f32> = TIES_TO_EVEN.iter().copied().cycle().take(35).collect();
+    let expected_away: Vec<f32> = TIES_AWAY.iter().copied().cycle().take(35).collect();
+
+    let a = Tensor::<CpuRuntime>::from_slice(&data, &[35], &device).unwrap();
+
+    let even: Vec<f32> = client.round_ties_even(&a).unwrap().to_vec();
+    assert_eq!(even, expected_even);
+
+    let away: Vec<f32> = client.round(&a).unwrap().to_vec();
+    assert_eq!(away, expected_away);
+}
+
+#[test]
+fn test_round_ops_agree_across_simd_and_scalar_paths_f64() {
+    let device = CpuDevice::new();
+    let client = CpuRuntime::default_client(&device);
+
+    let data: Vec<f64> = TIES
+        .iter()
+        .map(|&x| f64::from(x))
+        .cycle()
+        .take(35)
+        .collect();
+    let expected_even: Vec<f64> = TIES_TO_EVEN
+        .iter()
+        .map(|&x| f64::from(x))
+        .cycle()
+        .take(35)
+        .collect();
+    let expected_away: Vec<f64> = TIES_AWAY
+        .iter()
+        .map(|&x| f64::from(x))
+        .cycle()
+        .take(35)
+        .collect();
+
+    let a = Tensor::<CpuRuntime>::from_slice(&data, &[35], &device).unwrap();
+
+    let even: Vec<f64> = client.round_ties_even(&a).unwrap().to_vec();
+    assert_eq!(even, expected_even);
+
+    let away: Vec<f64> = client.round(&a).unwrap().to_vec();
+    assert_eq!(away, expected_away);
+}
+
+/// Away from a tie the two ops must agree, including at the largest f32 below
+/// 0.5, where a naive `floor(|x| + 0.5)` implementation of ties-away rounds up
+/// to 1.0 instead of down to 0.0.
+#[test]
+fn test_round_ops_agree_off_ties() {
+    let device = CpuDevice::new();
+    let client = CpuRuntime::default_client(&device);
+
+    let just_under_half = f32::from_bits(0x3EFF_FFFF); // 0.49999997
+    let base: Vec<f32> = vec![
+        0.0,
+        1.1,
+        -2.3,
+        3.9,
+        -4.7,
+        just_under_half,
+        -just_under_half,
+        1e7,
+        -1e7,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+    ];
+    // Long enough to take the SIMD path, with a scalar tail.
+    let data: Vec<f32> = base.iter().copied().cycle().take(35).collect();
+    let expected: Vec<f32> = data.iter().map(|x| x.round()).collect();
+
+    let a = Tensor::<CpuRuntime>::from_slice(&data, &[35], &device).unwrap();
+
+    let away: Vec<f32> = client.round(&a).unwrap().to_vec();
+    assert_eq!(away, expected);
+
+    let even: Vec<f32> = client.round_ties_even(&a).unwrap().to_vec();
+    assert_eq!(even, expected);
+}
+
 // ===== New Element-wise Binary Operations Tests =====
 
 #[test]

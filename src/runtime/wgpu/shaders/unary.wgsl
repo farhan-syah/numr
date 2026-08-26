@@ -114,12 +114,24 @@ fn ceil_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 }
 
+// Ties away from zero, matching Rust's f32::round. The WGSL builtin round()
+// breaks ties to even, so it cannot be used here.
 @compute @workgroup_size(256)
 fn round_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     if (idx < unary_params.numel) {
         let x = unary_a[idx];
         unary_out[idx] = select(ceil(x - 0.5), floor(x + 0.5), x >= 0.0);
+    }
+}
+
+// Ties to even. The WGSL builtin round() is specified as roundTiesToEven, which
+// is exactly IEEE 754 roundTiesToEven and matches np.round / torch.round.
+@compute @workgroup_size(256)
+fn round_ties_even_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        unary_out[idx] = round(unary_a[idx]);
     }
 }
 

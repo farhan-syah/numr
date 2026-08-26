@@ -168,6 +168,12 @@ unsafe fn unary_op_scalar<T: Element>(op: UnaryOp, a: *const T, out: *mut T, len
                 out_slice[i] = T::from_f64(v.round());
             }
         }
+        UnaryOp::RoundTiesEven => {
+            for i in 0..len {
+                let v = a_slice[i].to_f64();
+                out_slice[i] = T::from_f64(v.round_ties_even());
+            }
+        }
         UnaryOp::Sign => {
             for i in 0..len {
                 let v = a_slice[i].to_f64();

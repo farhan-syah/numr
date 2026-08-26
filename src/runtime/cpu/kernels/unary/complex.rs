@@ -91,6 +91,7 @@ fn complex_unary_op(op: UnaryOp, re: f64, im: f64) -> (f64, f64) {
                 UnaryOp::Floor => mag.floor(),
                 UnaryOp::Ceil => mag.ceil(),
                 UnaryOp::Round => mag.round(),
+                UnaryOp::RoundTiesEven => mag.round_ties_even(),
                 UnaryOp::Trunc => mag.trunc(),
                 UnaryOp::Rsqrt => 1.0 / mag.sqrt(),
                 UnaryOp::Cbrt => mag.cbrt(),

@@ -69,6 +69,10 @@ impl UnaryOps<CudaRuntime> for CudaClient {
         native_unary_op(self, a, "round")
     }
 
+    fn round_ties_even(&self, a: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
+        native_unary_op(self, a, "round_ties_even")
+    }
+
     fn sign(&self, a: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         native_unary_op(self, a, "sign")
     }

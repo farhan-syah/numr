@@ -29,7 +29,9 @@ use crate::error::{Error, Result};
 /// - `tanh`: Hyperbolic tangent
 /// - `recip`: Reciprocal (1/x)
 /// - `square`: Square (x*x)
-/// - `floor`, `ceil`, `round`: Rounding functions
+/// - `floor`, `ceil`, `trunc`: Rounding functions
+/// - `round`: Round to nearest, ties away from zero
+/// - `round_ties_even`: Round to nearest, ties to even (IEEE roundTiesToEven)
 /// - `sign`: Sign function (-1, 0, or 1)
 ///
 /// # Safety

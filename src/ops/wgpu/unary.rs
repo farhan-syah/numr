@@ -69,6 +69,10 @@ impl UnaryOps<WgpuRuntime> for WgpuClient {
         native_unary_op(self, "round", a)
     }
 
+    fn round_ties_even(&self, a: &Tensor<WgpuRuntime>) -> Result<Tensor<WgpuRuntime>> {
+        native_unary_op(self, "round_ties_even", a)
+    }
+
     fn sign(&self, a: &Tensor<WgpuRuntime>) -> Result<Tensor<WgpuRuntime>> {
         native_unary_op(self, "sign", a)
     }

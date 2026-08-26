@@ -144,10 +144,23 @@ where
         client.ceil(self)
     }
 
-    /// Element-wise round
+    /// Element-wise round to nearest integer, ties away from zero.
+    ///
+    /// Follows Rust's `f32::round`: 2.5 becomes 3.0, -2.5 becomes -3.0.
+    /// For the `np.round`/`torch.round` behaviour, use
+    /// [`Tensor::round_ties_even`].
     pub fn round(&self) -> Result<Tensor<R>> {
         let client = R::default_client(self.device());
         client.round(self)
+    }
+
+    /// Element-wise round to nearest integer, ties to even.
+    ///
+    /// IEEE 754 roundTiesToEven, matching `np.round` and `torch.round`:
+    /// 2.5 becomes 2.0, 3.5 becomes 4.0.
+    pub fn round_ties_even(&self) -> Result<Tensor<R>> {
+        let client = R::default_client(self.device());
+        client.round_ties_even(self)
     }
 }
 

@@ -108,8 +108,23 @@ pub trait UnaryOps<R: Runtime> {
     /// Ceiling: ceil(a)
     fn ceil(&self, a: &Tensor<R>) -> Result<Tensor<R>>;
 
-    /// Round: round(a) to nearest integer
+    /// Round to nearest integer, ties away from zero.
+    ///
+    /// Delegates to Rust's `f32::round`/`f64::round`: 0.5 becomes 1.0, 2.5
+    /// becomes 3.0, and -2.5 becomes -3.0.
+    ///
+    /// This is NOT what `np.round` and `torch.round` do — they break ties to
+    /// even. Use [`UnaryOps::round_ties_even`] to match them.
     fn round(&self, a: &Tensor<R>) -> Result<Tensor<R>>;
+
+    /// Round to nearest integer, ties to even (IEEE 754 roundTiesToEven).
+    ///
+    /// Delegates to Rust's `f32::round_ties_even`/`f64::round_ties_even`: 0.5
+    /// becomes 0.0, 2.5 becomes 2.0, and 3.5 becomes 4.0. This matches
+    /// `np.round` and `torch.round` element for element.
+    ///
+    /// Use [`UnaryOps::round`] for half-away-from-zero rounding.
+    fn round_ties_even(&self, a: &Tensor<R>) -> Result<Tensor<R>>;
 
     /// Truncate toward zero: trunc(a)
     fn trunc(&self, a: &Tensor<R>) -> Result<Tensor<R>>;

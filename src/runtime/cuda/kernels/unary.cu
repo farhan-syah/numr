@@ -7,7 +7,11 @@
 //   Logarithmic: log, log2, log10, log1p
 //   Trigonometric: sin, cos, tan, asin, acos, atan
 //   Hyperbolic:  sinh, cosh, tanh, asinh, acosh, atanh
-//   Rounding:    floor, ceil, round, trunc
+//   Rounding:    floor, ceil, round, round_ties_even, trunc
+//
+//   round          = roundf/round: ties away from zero (matches Rust f32::round)
+//   round_ties_even = rintf/rint under the default round-to-nearest-even mode:
+//                     IEEE roundTiesToEven (matches np.round and torch.round)
 //   Special:     clamp, isnan, isinf
 //
 // Types: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, i32, i64, u8 (bool)
@@ -182,6 +186,13 @@ __global__ void round_f32(const float* a, float* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         out[idx] = roundf(a[idx]);
+    }
+}
+
+__global__ void round_ties_even_f32(const float* a, float* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = rintf(a[idx]);
     }
 }
 
@@ -397,6 +408,13 @@ __global__ void round_f64(const double* a, double* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         out[idx] = round(a[idx]);
+    }
+}
+
+__global__ void round_ties_even_f64(const double* a, double* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = rint(a[idx]);
     }
 }
 
@@ -618,6 +636,14 @@ __global__ void round_f16(const __half* a, __half* out, unsigned int n) {
     if (idx < n) {
         float fa = __half2float(a[idx]);
         out[idx] = __float2half(roundf(fa));
+    }
+}
+
+__global__ void round_ties_even_f16(const __half* a, __half* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        float fa = __half2float(a[idx]);
+        out[idx] = __float2half(rintf(fa));
     }
 }
 
@@ -843,6 +869,13 @@ __global__ void round_bf16(const __nv_bfloat16* a, __nv_bfloat16* out, unsigned 
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         out[idx] = __float2bfloat16(roundf(__bfloat162float(a[idx])));
+    }
+}
+
+__global__ void round_ties_even_bf16(const __nv_bfloat16* a, __nv_bfloat16* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = __float2bfloat16(rintf(__bfloat162float(a[idx])));
     }
 }
 
@@ -1128,6 +1161,14 @@ __global__ void round_fp8_e4m3(const numr_fp8_e4m3* a, numr_fp8_e4m3* out, unsig
     }
 }
 
+__global__ void round_ties_even_fp8_e4m3(const numr_fp8_e4m3* a, numr_fp8_e4m3* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        float fa = fp8_e4m3_to_f32(a[idx].data);
+        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(rintf(fa)));
+    }
+}
+
 __global__ void trunc_fp8_e4m3(const numr_fp8_e4m3* a, numr_fp8_e4m3* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
@@ -1369,6 +1410,14 @@ __global__ void round_fp8_e5m2(const numr_fp8_e5m2* a, numr_fp8_e5m2* out, unsig
     if (idx < n) {
         float fa = fp8_e5m2_to_f32(a[idx].data);
         out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(roundf(fa)));
+    }
+}
+
+__global__ void round_ties_even_fp8_e5m2(const numr_fp8_e5m2* a, numr_fp8_e5m2* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        float fa = fp8_e5m2_to_f32(a[idx].data);
+        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(rintf(fa)));
     }
 }
 
