@@ -24,6 +24,12 @@ mod normalization;
 #[path = "../../ops/cpu/matmul.rs"]
 mod matmul;
 
+// Column-split parallelism for the tiled matmul paths. Rayon-only: without it
+// there is no pool to split across and `matmul` takes its serial branch.
+#[cfg(feature = "rayon")]
+#[path = "../../ops/cpu/matmul_columns.rs"]
+mod matmul_columns;
+
 #[path = "../../ops/cpu/conv.rs"]
 mod conv;
 

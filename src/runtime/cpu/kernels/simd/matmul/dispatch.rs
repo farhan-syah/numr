@@ -170,6 +170,23 @@ pub fn matmul_bt_is_tiled(m: usize, n: usize, k: usize) -> bool {
         && tiled_level_available(detect_simd())
 }
 
+/// Fewest output columns that keep an `m × n × k` product on the tiled path.
+///
+/// A caller splitting N across threads uses this as its chunk floor. A chunk
+/// narrower than this drops below `SMALL_MATRIX_THRESHOLD` and runs the
+/// small-matrix kernel instead, which both accumulates in a different order
+/// and — for a transposed B — is a *different* kernel from the contiguous
+/// case, breaking the bit-for-bit agreement [`matmul_bt_is_tiled`] promises.
+///
+/// Returns `usize::MAX` when `m * k` is zero, so no split can clear the floor.
+pub fn min_tiled_columns(m: usize, k: usize) -> usize {
+    let rows = m.saturating_mul(k);
+    if rows == 0 {
+        return usize::MAX;
+    }
+    SMALL_MATRIX_THRESHOLD.div_ceil(rows)
+}
+
 /// Does this SIMD level have a tiled microkernel, rather than the scalar path?
 #[cfg(target_arch = "x86_64")]
 fn tiled_level_available(level: SimdLevel) -> bool {

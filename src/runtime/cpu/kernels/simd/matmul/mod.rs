@@ -30,7 +30,7 @@ pub(crate) mod half_convert;
 
 pub use dispatch::{
     KC, MC, MR, NC, matmul_bias_f32, matmul_bias_f64, matmul_bt_f32, matmul_bt_f64,
-    matmul_bt_is_tiled, matmul_f32, matmul_f64,
+    matmul_bt_is_tiled, matmul_f32, matmul_f64, min_tiled_columns,
 };
 
 pub use dispatch::{

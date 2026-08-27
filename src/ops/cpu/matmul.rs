@@ -1,5 +1,15 @@
 //! CPU implementation of matrix multiplication operations.
 
+#[cfg(feature = "rayon")]
+use super::matmul_columns::{column_chunk_count, matmul_bt_columns, matmul_columns};
+/// Fixed column-chunk width for the GEMV-BT (`m <= 16`) parallel path.
+///
+/// Deliberately a constant rather than `n / num_threads`: the chunk boundaries
+/// must be a pure function of the shape so results do not depend on how many
+/// cores the machine has. 64 matches the historical minimum this path used and
+/// still yields 64 chunks at `n = 4096`, more units than any common core count.
+const GEMV_COLUMN_CHUNK_WIDTH: usize = 64;
+
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::{Kernel, MatmulOps};
@@ -83,13 +93,22 @@ impl MatmulOps<CpuRuntime> for CpuClient {
                     {
                         use rayon::prelude::*;
 
-                        // Parallelize over output columns for large N
-                        // Each thread computes a chunk of columns independently
-                        let min_cols_per_thread = 64usize;
-                        let num_threads = rayon::current_num_threads();
-                        let chunk_size = ((n + num_threads - 1) / num_threads).max(min_cols_per_thread);
+                        // Parallelize over output columns for large N.
+                        // Each thread computes a chunk of columns independently.
+                        //
+                        // The chunk WIDTH is fixed, never derived from the
+                        // thread count, for the same reason the tiled path's
+                        // split is (see `matmul_columns`): sizing chunks by
+                        // `n / num_threads` moves the block boundaries with the
+                        // machine, so float rounding at a boundary differs
+                        // between a 4-core laptop and a 24-core workstation and
+                        // the same input yields different output. Measured on a
+                        // VoxCPM2 decode: 1 thread and 24 threads produced
+                        // different speech. Only the SCHEDULING of this fixed
+                        // chunk list may vary with the pool.
+                        let chunk_size = GEMV_COLUMN_CHUNK_WIDTH;
 
-                        if n > min_cols_per_thread && num_threads > 1 {
+                        if n > chunk_size {
                             // Convert to usize for Send safety - each thread
                             // accesses disjoint memory regions
                             let a_send = (a_ptr as usize) + a_offset * std::mem::size_of::<T>();
@@ -172,7 +191,24 @@ impl MatmulOps<CpuRuntime> for CpuClient {
                 {
                     use rayon::prelude::*;
 
-                    if batch_size > 1 {
+                    // Column split when the columns offer more units than the
+                    // batches — every decode shape on this path is
+                    // single-batch. Never both, and never a thread count in the
+                    // test: see `matmul_columns` for the axis rule and for why
+                    // the boundaries must not depend on the machine.
+                    if let Some(chunks) = column_chunk_count(batch_size, m, n, k) {
+                        for batch in 0..batch_size {
+                            unsafe {
+                                matmul_bt_columns::<T>(
+                                    self,
+                                    (a_ptr as *const T).add(a_batch_idx[batch] * m * k),
+                                    (b_ptr as *const T).add(b_batch_idx[batch] * n * k),
+                                    (out_ptr as *mut T).add(batch * m * n),
+                                    m, n, k, ldc, chunks,
+                                );
+                            }
+                        }
+                    } else if batch_size > 1 {
                         let min_len = self.rayon_min_len();
                         self.install_parallelism(|| {
                             (0..batch_size)
@@ -314,7 +350,22 @@ impl MatmulOps<CpuRuntime> for CpuClient {
             {
                 use rayon::prelude::*;
 
-                if batch_size > 1 {
+                // Same axis rule as the transposed-B path above: columns when
+                // they offer more units than the batch axis, batches otherwise,
+                // never both.
+                if let Some(chunks) = column_chunk_count(batch_size, m, n, k) {
+                    for batch in 0..batch_size {
+                        unsafe {
+                            matmul_columns::<T>(
+                                self,
+                                (a_ptr as *const T).add(a_batch_idx[batch] * m * k),
+                                (b_ptr as *const T).add(b_batch_idx[batch] * k * n),
+                                (out_ptr as *mut T).add(batch * m * n),
+                                m, n, k, lda, ldb, ldc, chunks,
+                            );
+                        }
+                    }
+                } else if batch_size > 1 {
                     let min_len = self.rayon_min_len();
                     self.install_parallelism(|| {
                         (0..batch_size)
