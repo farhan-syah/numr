@@ -625,6 +625,84 @@ DEFINE_MASKED_FILL_KERNEL(fp8_e5m2, numr_fp8_e5m2)
 DEFINE_EMBEDDING_LOOKUP_KERNEL(fp8_e5m2, numr_fp8_e5m2)
 
 // ============================================================================
+// Narrow integer and bool kernels
+//
+// The CPU backend dispatches indexing over EVERY dtype (`dispatch_dtype!`),
+// so a tensor these kernels do not cover is one that indexes on CPU and
+// fails on CUDA with "named symbol not found" at launch — a gap that only
+// shows up on the device, never at compile time. `index_select` on U8 is a
+// real caller, not a hypothetical: a block-quantized tensor's storage is
+// U8, so gathering embedding rows out of a GGUF weight table indexes U8
+// bytes. The whole family is instantiated together so the next narrow-int
+// caller does not rediscover this the same way.
+// ============================================================================
+
+DEFINE_GATHER_KERNEL(u8, unsigned char)
+DEFINE_SCATTER_KERNEL(u8, unsigned char)
+DEFINE_COPY_KERNEL(u8, unsigned char)
+DEFINE_INDEX_SELECT_KERNEL(u8, unsigned char)
+DEFINE_INDEX_PUT_KERNEL(u8, unsigned char)
+DEFINE_MASKED_SELECT_KERNEL(u8, unsigned char)
+DEFINE_MASKED_FILL_KERNEL(u8, unsigned char)
+DEFINE_EMBEDDING_LOOKUP_KERNEL(u8, unsigned char)
+
+DEFINE_GATHER_KERNEL(i8, signed char)
+DEFINE_SCATTER_KERNEL(i8, signed char)
+DEFINE_COPY_KERNEL(i8, signed char)
+DEFINE_INDEX_SELECT_KERNEL(i8, signed char)
+DEFINE_INDEX_PUT_KERNEL(i8, signed char)
+DEFINE_MASKED_SELECT_KERNEL(i8, signed char)
+DEFINE_MASKED_FILL_KERNEL(i8, signed char)
+DEFINE_EMBEDDING_LOOKUP_KERNEL(i8, signed char)
+
+DEFINE_GATHER_KERNEL(u16, unsigned short)
+DEFINE_SCATTER_KERNEL(u16, unsigned short)
+DEFINE_COPY_KERNEL(u16, unsigned short)
+DEFINE_INDEX_SELECT_KERNEL(u16, unsigned short)
+DEFINE_INDEX_PUT_KERNEL(u16, unsigned short)
+DEFINE_MASKED_SELECT_KERNEL(u16, unsigned short)
+DEFINE_MASKED_FILL_KERNEL(u16, unsigned short)
+DEFINE_EMBEDDING_LOOKUP_KERNEL(u16, unsigned short)
+
+DEFINE_GATHER_KERNEL(i16, short)
+DEFINE_SCATTER_KERNEL(i16, short)
+DEFINE_COPY_KERNEL(i16, short)
+DEFINE_INDEX_SELECT_KERNEL(i16, short)
+DEFINE_INDEX_PUT_KERNEL(i16, short)
+DEFINE_MASKED_SELECT_KERNEL(i16, short)
+DEFINE_MASKED_FILL_KERNEL(i16, short)
+DEFINE_EMBEDDING_LOOKUP_KERNEL(i16, short)
+
+DEFINE_GATHER_KERNEL(u32, unsigned int)
+DEFINE_SCATTER_KERNEL(u32, unsigned int)
+DEFINE_COPY_KERNEL(u32, unsigned int)
+DEFINE_INDEX_SELECT_KERNEL(u32, unsigned int)
+DEFINE_INDEX_PUT_KERNEL(u32, unsigned int)
+DEFINE_MASKED_SELECT_KERNEL(u32, unsigned int)
+DEFINE_MASKED_FILL_KERNEL(u32, unsigned int)
+DEFINE_EMBEDDING_LOOKUP_KERNEL(u32, unsigned int)
+
+DEFINE_GATHER_KERNEL(u64, unsigned long long)
+DEFINE_SCATTER_KERNEL(u64, unsigned long long)
+DEFINE_COPY_KERNEL(u64, unsigned long long)
+DEFINE_INDEX_SELECT_KERNEL(u64, unsigned long long)
+DEFINE_INDEX_PUT_KERNEL(u64, unsigned long long)
+DEFINE_MASKED_SELECT_KERNEL(u64, unsigned long long)
+DEFINE_MASKED_FILL_KERNEL(u64, unsigned long long)
+DEFINE_EMBEDDING_LOOKUP_KERNEL(u64, unsigned long long)
+
+// `bool` is stored as one byte per element, matching the CPU backend's
+// `Bool` layout, so the kernels are byte kernels like U8's.
+DEFINE_GATHER_KERNEL(bool, unsigned char)
+DEFINE_SCATTER_KERNEL(bool, unsigned char)
+DEFINE_COPY_KERNEL(bool, unsigned char)
+DEFINE_INDEX_SELECT_KERNEL(bool, unsigned char)
+DEFINE_INDEX_PUT_KERNEL(bool, unsigned char)
+DEFINE_MASKED_SELECT_KERNEL(bool, unsigned char)
+DEFINE_MASKED_FILL_KERNEL(bool, unsigned char)
+DEFINE_EMBEDDING_LOOKUP_KERNEL(bool, unsigned char)
+
+// ============================================================================
 // Gather ND - N-dimensional gather operation
 // Gathers slices from input at positions specified by indices tensor.
 // indices: (num_slices, index_depth) where index_depth <= ndim
