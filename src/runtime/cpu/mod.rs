@@ -33,6 +33,7 @@ pub(crate) mod sort;
 pub(crate) mod sparse;
 pub mod special;
 pub(crate) mod statistics;
+mod strided_copy;
 
 pub use crate::tensor::Tensor;
 pub use client::{CpuAllocator, CpuClient, ParallelismConfig};

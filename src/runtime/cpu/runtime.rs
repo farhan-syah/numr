@@ -124,37 +124,16 @@ impl Runtime for CpuRuntime {
             return Ok(());
         }
 
-        // For CPU, we can use pointer arithmetic directly
+        // For CPU, we can use pointer arithmetic directly. Folding the byte
+        // offset into the base pointer is what lets a contiguous-but-offset
+        // view (every `narrow()` result) take the single-memcpy fast path.
         let src_base = (src_handle as usize + src_byte_offset) as *const u8;
         let dst_base = dst_handle as *mut u8;
 
-        // Iterate over all elements using indices
-        let mut indices = vec![0usize; shape.len()];
-
-        for dst_offset in 0..numel {
-            // Calculate source byte offset for current indices
-            let mut src_elem_offset: isize = 0;
-            for (i, &idx) in indices.iter().enumerate() {
-                src_elem_offset += (idx as isize) * strides[i];
-            }
-
-            // Copy element
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    src_base.offset(src_elem_offset * elem_size as isize),
-                    dst_base.add(dst_offset * elem_size),
-                    elem_size,
-                );
-            }
-
-            // Increment indices (row-major order)
-            for dim in (0..shape.len()).rev() {
-                indices[dim] += 1;
-                if indices[dim] < shape[dim] {
-                    break;
-                }
-                indices[dim] = 0;
-            }
+        // The destination is freshly allocated row-major storage, so it cannot
+        // alias the source. See `strided_copy` for the tier structure.
+        unsafe {
+            super::strided_copy::copy_strided_impl(src_base, dst_base, shape, strides, elem_size);
         }
         Ok(())
     }
