@@ -177,6 +177,40 @@ pub fn matmul_batch_indices(
     (a_indices, b_indices)
 }
 
+/// Is `B` a plain transpose of a contiguous `[.., N, K]` buffer?
+///
+/// A `[K, N]` operand with strides `[1, K]` is the transposed view of a
+/// contiguous `[N, K]` weight matrix — the layout every `Linear` weight has.
+/// Backends that can read that layout directly skip materializing the view,
+/// which otherwise copies the whole weight matrix on every call.
+///
+/// Returns true only when the underlying buffer is densely packed as
+/// `[.., N, K]`, so a batch `i` of the operand starts at element `i * N * K`:
+/// - the last two strides are exactly `[1, K]` (this rejects stride 0 and every
+///   negative stride, neither of which is a simple transpose)
+/// - every batch dim of size > 1 carries the dense stride for that layout
+///   (a size-1 dim always projects to index 0, so its stride is irrelevant)
+/// - `K` and `N` are both non-zero, so the stride pattern is unambiguous
+pub fn is_transposed_b(b_shape: &[usize], b_strides: &[isize], k: usize, n: usize) -> bool {
+    let ndim = b_shape.len();
+    if ndim < 2 || b_strides.len() != ndim || k == 0 || n == 0 {
+        return false;
+    }
+    if b_strides[ndim - 2] != 1 || b_strides[ndim - 1] != k as isize {
+        return false;
+    }
+
+    // Batch dims, right to left: dense packing of `[.., N, K]`.
+    let mut expected = (n * k) as isize;
+    for d in (0..ndim - 2).rev() {
+        if b_shape[d] != 1 && b_strides[d] != expected {
+            return false;
+        }
+        expected *= b_shape[d] as isize;
+    }
+    true
+}
+
 /// Validate matmul_bias shapes and return dimensions (m, k, n)
 ///
 /// Checks that:
@@ -400,5 +434,51 @@ mod tests {
             }
             _ => panic!("Expected DTypeMismatch error"),
         }
+    }
+
+    #[test]
+    fn test_is_transposed_b_simple_transpose() {
+        // [4, 3] view of a contiguous [3, 4] buffer.
+        assert!(is_transposed_b(&[4, 3], &[1, 4], 4, 3));
+    }
+
+    #[test]
+    fn test_is_transposed_b_rejects_contiguous() {
+        // Row-major [4, 3] is not a transpose (unless K == 1, where both agree).
+        assert!(!is_transposed_b(&[4, 3], &[3, 1], 4, 3));
+    }
+
+    #[test]
+    fn test_is_transposed_b_rejects_zero_and_negative_strides() {
+        assert!(!is_transposed_b(&[4, 3], &[0, 4], 4, 3));
+        assert!(!is_transposed_b(&[4, 3], &[1, -4], 4, 3));
+        assert!(!is_transposed_b(&[4, 3], &[-1, 4], 4, 3));
+    }
+
+    #[test]
+    fn test_is_transposed_b_rejects_degenerate_dims() {
+        assert!(!is_transposed_b(&[0, 3], &[1, 0], 0, 3));
+        assert!(!is_transposed_b(&[4, 0], &[1, 4], 4, 0));
+        assert!(!is_transposed_b(&[3], &[1], 3, 1));
+    }
+
+    #[test]
+    fn test_is_transposed_b_batched_dense() {
+        // [2, 4, 3] view of a contiguous [2, 3, 4] buffer: batch stride 12.
+        assert!(is_transposed_b(&[2, 4, 3], &[12, 1, 4], 4, 3));
+        assert!(is_transposed_b(&[5, 2, 4, 3], &[24, 12, 1, 4], 4, 3));
+    }
+
+    #[test]
+    fn test_is_transposed_b_rejects_sliced_batch() {
+        // Batch dim striding over a larger buffer: batch i does NOT start at
+        // i * N * K, so the flat batch offset would read the wrong matrix.
+        assert!(!is_transposed_b(&[2, 4, 3], &[24, 1, 4], 4, 3));
+    }
+
+    #[test]
+    fn test_is_transposed_b_ignores_size_one_batch_stride() {
+        // A size-1 batch dim always projects to index 0.
+        assert!(is_transposed_b(&[1, 4, 3], &[999, 1, 4], 4, 3));
     }
 }

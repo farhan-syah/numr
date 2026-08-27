@@ -5,7 +5,7 @@
 //! - Beta=0/1 microkernel (no separate zero pass over output)
 //! - Optimized pack_b with bulk copies for full NR blocks
 
-use super::packing::{pack_a_f32, pack_a_f64, pack_b_f32, pack_b_f64};
+use super::packing::{pack_a_f32, pack_a_f64, pack_b_f32, pack_b_f64, pack_b_t_f32, pack_b_t_f64};
 use super::scalar::{microkernel_edge_f32, microkernel_edge_f64};
 use super::{KC, MC, MR, NC};
 use super::{
@@ -77,7 +77,39 @@ pub unsafe fn matmul_tiled_f32<const NR: usize>(
     level: SimdLevel,
 ) {
     with_pack_f32(|packed_a, packed_b| {
-        tiled_loop_f32::<NR>(a, b, c, m, n, k, lda, ldb, ldc, level, packed_a, packed_b);
+        tiled_loop_f32::<NR>(
+            a, b, c, m, n, k, lda, ldb, ldc, level, packed_a, packed_b, false,
+        );
+    });
+}
+
+/// Tiled matmul with a transposed B operand: C = A @ B (f32)
+///
+/// `b` points at a contiguous `[N, K]` buffer holding the transpose of the
+/// logical `[K, N]` operand, with row stride `ldb_t` (the contraction extent).
+/// Nothing is materialized: only the B packing step changes its index
+/// arithmetic, so the packed panels, and therefore the accumulation order and
+/// the result, are identical to [`matmul_tiled_f32`] on a materialized B.
+///
+/// # Safety
+/// Same as [`matmul_tiled_f32`], with `b` valid for `n * ldb_t` elements.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn matmul_bt_tiled_f32<const NR: usize>(
+    a: *const f32,
+    b: *const f32,
+    c: *mut f32,
+    m: usize,
+    n: usize,
+    k: usize,
+    lda: usize,
+    ldb_t: usize,
+    ldc: usize,
+    level: SimdLevel,
+) {
+    with_pack_f32(|packed_a, packed_b| {
+        tiled_loop_f32::<NR>(
+            a, b, c, m, n, k, lda, ldb_t, ldc, level, packed_a, packed_b, true,
+        );
     });
 }
 
@@ -124,7 +156,36 @@ pub unsafe fn matmul_tiled_f64<const NR: usize>(
     level: SimdLevel,
 ) {
     with_pack_f64(|packed_a, packed_b| {
-        tiled_loop_f64::<NR>(a, b, c, m, n, k, lda, ldb, ldc, level, packed_a, packed_b);
+        tiled_loop_f64::<NR>(
+            a, b, c, m, n, k, lda, ldb, ldc, level, packed_a, packed_b, false,
+        );
+    });
+}
+
+/// Tiled matmul with a transposed B operand: C = A @ B (f64)
+///
+/// See [`matmul_bt_tiled_f32`]; `b` is a contiguous `[N, K]` buffer with row
+/// stride `ldb_t`.
+///
+/// # Safety
+/// Same as [`matmul_tiled_f64`], with `b` valid for `n * ldb_t` elements.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn matmul_bt_tiled_f64<const NR: usize>(
+    a: *const f64,
+    b: *const f64,
+    c: *mut f64,
+    m: usize,
+    n: usize,
+    k: usize,
+    lda: usize,
+    ldb_t: usize,
+    ldc: usize,
+    level: SimdLevel,
+) {
+    with_pack_f64(|packed_a, packed_b| {
+        tiled_loop_f64::<NR>(
+            a, b, c, m, n, k, lda, ldb_t, ldc, level, packed_a, packed_b, true,
+        );
     });
 }
 
@@ -173,6 +234,7 @@ unsafe fn tiled_loop_f32<const NR: usize>(
     level: SimdLevel,
     packed_a: &mut [f32],
     packed_b: &mut [f32],
+    b_transposed: bool,
 ) {
     for jc in (0..n).step_by(NC) {
         let nc = (n - jc).min(NC);
@@ -181,7 +243,12 @@ unsafe fn tiled_loop_f32<const NR: usize>(
             let kc = (k - pc).min(KC);
             let first_k = pc == 0;
 
-            pack_b_f32::<NR>(b.add(pc * ldb + jc), packed_b.as_mut_ptr(), nc, kc, ldb);
+            // Tested once per packed panel, never inside the microkernel loops.
+            if b_transposed {
+                pack_b_t_f32::<NR>(b.add(jc * ldb + pc), packed_b.as_mut_ptr(), nc, kc, ldb);
+            } else {
+                pack_b_f32::<NR>(b.add(pc * ldb + jc), packed_b.as_mut_ptr(), nc, kc, ldb);
+            }
 
             for ic in (0..m).step_by(MC) {
                 let mc = (m - ic).min(MC);
@@ -313,6 +380,7 @@ unsafe fn tiled_loop_f64<const NR: usize>(
     level: SimdLevel,
     packed_a: &mut [f64],
     packed_b: &mut [f64],
+    b_transposed: bool,
 ) {
     for jc in (0..n).step_by(NC) {
         let nc = (n - jc).min(NC);
@@ -321,7 +389,12 @@ unsafe fn tiled_loop_f64<const NR: usize>(
             let kc = (k - pc).min(KC);
             let first_k = pc == 0;
 
-            pack_b_f64::<NR>(b.add(pc * ldb + jc), packed_b.as_mut_ptr(), nc, kc, ldb);
+            // Tested once per packed panel, never inside the microkernel loops.
+            if b_transposed {
+                pack_b_t_f64::<NR>(b.add(jc * ldb + pc), packed_b.as_mut_ptr(), nc, kc, ldb);
+            } else {
+                pack_b_f64::<NR>(b.add(pc * ldb + jc), packed_b.as_mut_ptr(), nc, kc, ldb);
+            }
 
             for ic in (0..m).step_by(MC) {
                 let mc = (m - ic).min(MC);

@@ -30,12 +30,15 @@ use super::aarch64;
 use super::avx2;
 #[cfg(target_arch = "x86_64")]
 use super::avx512;
+use super::gemv_bt;
 use super::scalar::{matmul_bias_scalar_f32, matmul_bias_scalar_f64};
 use super::scalar::{matmul_scalar_f32, matmul_scalar_f64};
 use super::scalar::{microkernel_edge_f32, microkernel_edge_f64};
 use super::small;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use super::tiling::{matmul_bias_tiled_f32, matmul_bias_tiled_f64};
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use super::tiling::{matmul_bt_tiled_f32, matmul_bt_tiled_f64};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use super::tiling::{matmul_tiled_f32, matmul_tiled_f64};
 use crate::runtime::cpu::kernels::simd::{SimdLevel, detect_simd};
@@ -152,6 +155,133 @@ pub unsafe fn matmul_f64(
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     matmul_scalar_f64(a, b, out, m, n, k, lda, ldb, ldc);
+}
+
+/// Do the transposed-B entry points take the tiled path for this shape?
+///
+/// The tiled path is the one that packs B panels straight out of the `[N, K]`
+/// buffer, producing panels byte-identical to a materialized `[K, N]` operand —
+/// so on that path, and only on that path, [`matmul_bt_f32`] and [`matmul_f32`]
+/// agree bit for bit. Anywhere else the transposed operand runs a different
+/// kernel (the dot-product GEMV-BT one), which agrees within tolerance but
+/// accumulates in its own order. Callers that require identity gate on this.
+pub fn matmul_bt_is_tiled(m: usize, n: usize, k: usize) -> bool {
+    m.saturating_mul(n).saturating_mul(k) >= SMALL_MATRIX_THRESHOLD
+        && tiled_level_available(detect_simd())
+}
+
+/// Does this SIMD level have a tiled microkernel, rather than the scalar path?
+#[cfg(target_arch = "x86_64")]
+fn tiled_level_available(level: SimdLevel) -> bool {
+    matches!(level, SimdLevel::Avx512 | SimdLevel::Avx2Fma)
+}
+
+/// Does this SIMD level have a tiled microkernel, rather than the scalar path?
+#[cfg(target_arch = "aarch64")]
+fn tiled_level_available(level: SimdLevel) -> bool {
+    matches!(level, SimdLevel::Neon | SimdLevel::NeonFp16)
+}
+
+/// Does this SIMD level have a tiled microkernel, rather than the scalar path?
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn tiled_level_available(_level: SimdLevel) -> bool {
+    false
+}
+
+/// SIMD matrix multiplication with a transposed B operand: C = A @ B
+///
+/// `b` holds the logical `[K, N]` operand as a contiguous `[N, K]` buffer — the
+/// layout a transposed weight matrix already has. Nothing is materialized: the
+/// tiled kernel packs its B panels straight out of that buffer, and the packed
+/// panels are byte-identical to the ones a materialized `[K, N]` operand would
+/// produce, so the result matches [`matmul_f32`] exactly.
+///
+/// Below the small-matrix threshold the dot-product GEMV-BT kernel wins, which
+/// is the same kernel the decode path uses.
+///
+/// # Safety
+/// - `a` must be valid for `m * k` contiguous elements (row stride `k`)
+/// - `b` must be valid for `n * k` contiguous elements (row stride `k`)
+/// - `out` must be valid for `m * ldc` writable elements
+/// - `out` must not alias `a` or `b`
+#[inline]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn matmul_bt_f32(
+    a: *const f32,
+    b: *const f32,
+    out: *mut f32,
+    m: usize,
+    n: usize,
+    k: usize,
+    ldc: usize,
+) {
+    let level = detect_simd();
+
+    if m * n * k < SMALL_MATRIX_THRESHOLD {
+        gemv_bt::gemv_bt_f32(a, b, out, m, n, k, ldc, level);
+        return;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    match level {
+        SimdLevel::Avx512 => matmul_bt_tiled_f32::<32>(a, b, out, m, n, k, k, k, ldc, level),
+        SimdLevel::Avx2Fma => matmul_bt_tiled_f32::<16>(a, b, out, m, n, k, k, k, ldc, level),
+        _ => gemv_bt::gemv_bt_f32(a, b, out, m, n, k, ldc, level),
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    match level {
+        SimdLevel::Neon | SimdLevel::NeonFp16 => {
+            matmul_bt_tiled_f32::<8>(a, b, out, m, n, k, k, k, ldc, level)
+        }
+        _ => gemv_bt::gemv_bt_f32(a, b, out, m, n, k, ldc, level),
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    gemv_bt::gemv_bt_f32(a, b, out, m, n, k, ldc, level);
+}
+
+/// SIMD matrix multiplication with a transposed B operand for f64
+///
+/// See [`matmul_bt_f32`].
+///
+/// # Safety
+/// Same as [`matmul_bt_f32`].
+#[inline]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn matmul_bt_f64(
+    a: *const f64,
+    b: *const f64,
+    out: *mut f64,
+    m: usize,
+    n: usize,
+    k: usize,
+    ldc: usize,
+) {
+    let level = detect_simd();
+
+    if m * n * k < SMALL_MATRIX_THRESHOLD {
+        gemv_bt::gemv_bt_f64(a, b, out, m, n, k, ldc, level);
+        return;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    match level {
+        SimdLevel::Avx512 => matmul_bt_tiled_f64::<16>(a, b, out, m, n, k, k, k, ldc, level),
+        SimdLevel::Avx2Fma => matmul_bt_tiled_f64::<8>(a, b, out, m, n, k, k, k, ldc, level),
+        _ => gemv_bt::gemv_bt_f64(a, b, out, m, n, k, ldc, level),
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    match level {
+        SimdLevel::Neon | SimdLevel::NeonFp16 => {
+            matmul_bt_tiled_f64::<4>(a, b, out, m, n, k, k, k, ldc, level)
+        }
+        _ => gemv_bt::gemv_bt_f64(a, b, out, m, n, k, ldc, level),
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    gemv_bt::gemv_bt_f64(a, b, out, m, n, k, ldc, level);
 }
 
 /// Fused matmul with bias: C = A @ B + bias (single-pass, cache-efficient)

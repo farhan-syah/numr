@@ -28,7 +28,10 @@ pub(crate) mod aarch64;
 #[cfg(all(feature = "f16", target_arch = "x86_64"))]
 pub(crate) mod half_convert;
 
-pub use dispatch::{KC, MC, MR, NC, matmul_bias_f32, matmul_bias_f64, matmul_f32, matmul_f64};
+pub use dispatch::{
+    KC, MC, MR, NC, matmul_bias_f32, matmul_bias_f64, matmul_bt_f32, matmul_bt_f64,
+    matmul_bt_is_tiled, matmul_f32, matmul_f64,
+};
 
 pub use dispatch::{
     call_microkernel_2x_f32, call_microkernel_2x_f64, call_microkernel_f32, call_microkernel_f64,

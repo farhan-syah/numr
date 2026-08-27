@@ -53,96 +53,166 @@ impl MatmulOps<CpuRuntime> for CpuClient {
         let (a_batch_idx, b_batch_idx) =
             crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
 
-        // GEMV-BT fast path: detect transposed B and use dot-product kernel
-        // When B has shape [K,N] with strides [1,K], it's a transpose of contiguous [N,K].
-        // For small M (decode), we can dot A rows against B's original [N,K] rows directly,
-        // avoiding the costly contiguous copy (e.g. 500MB for lm_head weights).
-        if m <= 16 && b_shape.len() >= 2 && dtype != DType::I8 {
-            let b_strides = b.strides();
-            let ndim = b_shape.len();
-            let stride_row = b_strides[ndim - 2]; // stride for K dimension
-            let stride_col = b_strides[ndim - 1]; // stride for N dimension
+        // B is the transposed view of a contiguous [N,K] buffer — the layout every
+        // Linear weight has. Both paths below read that buffer directly instead of
+        // materializing the [K,N] view, which otherwise copies the whole weight
+        // matrix on every call (a profiled VoxCPM2 decode moved ~50 GB through
+        // copy_strided over four generated patches, 41% of all instructions).
+        let b_transposed = crate::ops::matmul::is_transposed_b(b_shape, b.strides(), k, n);
 
-            // Check if B is a simple transpose: shape [K,N], strides [1, K]
-            // meaning the underlying data is contiguous [N,K]
-            if stride_row == 1 && stride_col == k as isize {
-                let a_contig = ensure_contiguous(a)?;
-                let a_ptr = a_contig.ptr();
-                let b_ptr = b.ptr(); // Use original ptr - data is contiguous [N,K]
+        // GEMV-BT fast path: for small M (decode), dot A rows against B's original
+        // [N,K] rows directly. A different kernel from the tiled path below, and the
+        // faster one at this shape.
+        if m <= 16 && b_transposed && dtype != DType::I8 {
+            let a_contig = ensure_contiguous(a)?;
+            let a_ptr = a_contig.ptr();
+            let b_ptr = b.ptr(); // Use original ptr - data is contiguous [N,K]
 
-                // Create output tensor
-                let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
-                let out_ptr = out.ptr();
-                let ldc = n;
+            // Create output tensor
+            let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
+            let out_ptr = out.ptr();
+            let ldc = n;
 
-                dispatch_dtype!(dtype, T => {
-                    for batch in 0..batch_size {
-                        let a_offset = a_batch_idx[batch] * m * k;
-                        let b_offset = b_batch_idx[batch] * n * k;
-                        let out_offset = batch * m * n;
+            dispatch_dtype!(dtype, T => {
+                for batch in 0..batch_size {
+                    let a_offset = a_batch_idx[batch] * m * k;
+                    let b_offset = b_batch_idx[batch] * n * k;
+                    let out_offset = batch * m * n;
 
-                        #[cfg(feature = "rayon")]
-                        {
-                            use rayon::prelude::*;
+                    #[cfg(feature = "rayon")]
+                    {
+                        use rayon::prelude::*;
 
-                            // Parallelize over output columns for large N
-                            // Each thread computes a chunk of columns independently
-                            let min_cols_per_thread = 64usize;
-                            let num_threads = rayon::current_num_threads();
-                            let chunk_size = ((n + num_threads - 1) / num_threads).max(min_cols_per_thread);
+                        // Parallelize over output columns for large N
+                        // Each thread computes a chunk of columns independently
+                        let min_cols_per_thread = 64usize;
+                        let num_threads = rayon::current_num_threads();
+                        let chunk_size = ((n + num_threads - 1) / num_threads).max(min_cols_per_thread);
 
-                            if n > min_cols_per_thread && num_threads > 1 {
-                                // Convert to usize for Send safety - each thread
-                                // accesses disjoint memory regions
-                                let a_send = (a_ptr as usize) + a_offset * std::mem::size_of::<T>();
-                                let b_send = (b_ptr as usize) + b_offset * std::mem::size_of::<T>();
-                                let out_send = (out_ptr as usize) + out_offset * std::mem::size_of::<T>();
-                                let elem_size = std::mem::size_of::<T>();
+                        if n > min_cols_per_thread && num_threads > 1 {
+                            // Convert to usize for Send safety - each thread
+                            // accesses disjoint memory regions
+                            let a_send = (a_ptr as usize) + a_offset * std::mem::size_of::<T>();
+                            let b_send = (b_ptr as usize) + b_offset * std::mem::size_of::<T>();
+                            let out_send = (out_ptr as usize) + out_offset * std::mem::size_of::<T>();
+                            let elem_size = std::mem::size_of::<T>();
 
-                                self.install_parallelism(|| {
-                                    (0..n).into_par_iter().step_by(chunk_size).for_each(|col_start| {
-                                        let col_end = (col_start + chunk_size).min(n);
-                                        let chunk_n = col_end - col_start;
-                                        unsafe {
-                                            let a_base = a_send as *const T;
-                                            let b_chunk = (b_send + col_start * k * elem_size) as *const T;
-                                            let out_chunk = (out_send + col_start * elem_size) as *mut T;
+                            self.install_parallelism(|| {
+                                (0..n).into_par_iter().step_by(chunk_size).for_each(|col_start| {
+                                    let col_end = (col_start + chunk_size).min(n);
+                                    let chunk_n = col_end - col_start;
+                                    unsafe {
+                                        let a_base = a_send as *const T;
+                                        let b_chunk = (b_send + col_start * k * elem_size) as *const T;
+                                        let out_chunk = (out_send + col_start * elem_size) as *mut T;
 
-                                            crate::runtime::cpu::kernels::gemv_bt_kernel::<T>(
-                                                a_base,
-                                                b_chunk,
-                                                out_chunk,
-                                                m, chunk_n, k, n,
-                                            );
-                                        }
-                                    });
+                                        crate::runtime::cpu::kernels::gemv_bt_kernel::<T>(
+                                            a_base,
+                                            b_chunk,
+                                            out_chunk,
+                                            m, chunk_n, k, n,
+                                        );
+                                    }
                                 });
-                            } else {
-                                unsafe {
-                                    crate::runtime::cpu::kernels::gemv_bt_kernel::<T>(
-                                        (a_ptr as *const T).add(a_offset),
-                                        (b_ptr as *const T).add(b_offset),
-                                        (out_ptr as *mut T).add(out_offset),
-                                        m, n, k, ldc,
-                                    );
-                                }
+                            });
+                        } else {
+                            unsafe {
+                                crate::runtime::cpu::kernels::gemv_bt_kernel::<T>(
+                                    (a_ptr as *const T).add(a_offset),
+                                    (b_ptr as *const T).add(b_offset),
+                                    (out_ptr as *mut T).add(out_offset),
+                                    m, n, k, ldc,
+                                );
                             }
                         }
+                    }
 
-                        #[cfg(not(feature = "rayon"))]
+                    #[cfg(not(feature = "rayon"))]
+                    unsafe {
+                        crate::runtime::cpu::kernels::gemv_bt_kernel::<T>(
+                            (a_ptr as *const T).add(a_offset),
+                            (b_ptr as *const T).add(b_offset),
+                            (out_ptr as *mut T).add(out_offset),
+                            m, n, k, ldc,
+                        );
+                    }
+                }
+            }, "matmul_gemv_bt");
+
+            return Ok(out);
+        }
+
+        // Larger M with the same transposed weight: the tiled kernel packs its B
+        // panels straight out of the [N,K] buffer. Packing is a strided gather
+        // either way, so the packed panels — and therefore the accumulation order
+        // and the result — are identical to a materialized B, at no copy.
+        //
+        // The predicate is what keeps that guarantee: it holds only where both
+        // sides run the tiled kernel (f32/f64, tiled-sized shape, SIMD hardware).
+        // Every other dtype and shape reaches the transposed layout through a
+        // different kernel, which agrees within tolerance but not bit for bit, so
+        // those keep materializing B below.
+        if b_transposed
+            && crate::runtime::cpu::kernels::matmul_bt_matches_contiguous(dtype, m, n, k)
+        {
+            let a_contig = ensure_contiguous(a)?;
+            let a_ptr = a_contig.ptr();
+            let b_ptr = b.ptr(); // Use original ptr - data is contiguous [N,K]
+
+            let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
+            let out_ptr = out.ptr();
+            let ldc = n;
+
+            // A transposed B's batch stride is N*K, the same element count a
+            // contiguous [K,N] batch spans, so the batch index arithmetic is
+            // unchanged. `is_transposed_b` is what makes that hold: it accepts the
+            // layout only when the underlying buffer is densely packed [.., N, K].
+            dispatch_dtype!(dtype, T => {
+                #[cfg(feature = "rayon")]
+                {
+                    use rayon::prelude::*;
+
+                    if batch_size > 1 {
+                        let min_len = self.rayon_min_len();
+                        self.install_parallelism(|| {
+                            (0..batch_size)
+                                .into_par_iter()
+                                .with_min_len(min_len)
+                                .for_each(|batch| unsafe {
+                                    crate::runtime::cpu::kernels::matmul_bt_kernel::<T>(
+                                        (a_ptr as *const T).add(a_batch_idx[batch] * m * k),
+                                        (b_ptr as *const T).add(b_batch_idx[batch] * n * k),
+                                        (out_ptr as *mut T).add(batch * m * n),
+                                        m, n, k, ldc,
+                                    );
+                                });
+                        });
+                    } else {
                         unsafe {
-                            crate::runtime::cpu::kernels::gemv_bt_kernel::<T>(
-                                (a_ptr as *const T).add(a_offset),
-                                (b_ptr as *const T).add(b_offset),
-                                (out_ptr as *mut T).add(out_offset),
+                            crate::runtime::cpu::kernels::matmul_bt_kernel::<T>(
+                                a_ptr as *const T,
+                                b_ptr as *const T,
+                                out_ptr as *mut T,
                                 m, n, k, ldc,
                             );
                         }
                     }
-                }, "matmul_gemv_bt");
+                }
 
-                return Ok(out);
-            }
+                #[cfg(not(feature = "rayon"))]
+                unsafe {
+                    for batch in 0..batch_size {
+                        crate::runtime::cpu::kernels::matmul_bt_kernel::<T>(
+                            (a_ptr as *const T).add(a_batch_idx[batch] * m * k),
+                            (b_ptr as *const T).add(b_batch_idx[batch] * n * k),
+                            (out_ptr as *mut T).add(batch * m * n),
+                            m, n, k, ldc,
+                        );
+                    }
+                }
+            }, "matmul_bt");
+
+            return Ok(out);
         }
 
         // Require row-major contiguous tensors for SIMD-optimized packing

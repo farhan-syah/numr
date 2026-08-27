@@ -85,7 +85,10 @@ pub use index::{
     max_i64_kernel, scatter_kernel, scatter_reduce_kernel, slice_assign_kernel,
 };
 pub use logical::{logical_and_kernel, logical_not_kernel, logical_or_kernel, logical_xor_kernel};
-pub use matmul::{gemv_bt_kernel, matmul_bias_kernel, matmul_kernel};
+pub use matmul::{
+    gemv_bt_kernel, matmul_bias_kernel, matmul_bt_kernel, matmul_bt_matches_contiguous,
+    matmul_kernel,
+};
 pub use matmul_i8::matmul_i8_to_i32_kernel;
 pub use memory::{
     arange_kernel, cast_kernel, copy_kernel, eye_kernel, fill_kernel, linspace_kernel,
