@@ -31,8 +31,8 @@ where
     T: numr::dtype::Element + bytemuck::Pod + PartialEq + std::fmt::Debug,
 {
     let device = CudaDevice::new(0);
-    let client = <CudaRuntime as Runtime>::Client::new(device.clone())
-        .expect("CUDA client must initialise");
+    let client =
+        <CudaRuntime as Runtime>::Client::new(device.clone()).expect("CUDA client must initialise");
 
     let table = Tensor::<CudaRuntime>::from_slice(values, &[4, 3], &device)
         .unwrap_or_else(|e| panic!("{label}: staging the table failed: {e:?}"));
@@ -52,21 +52,13 @@ where
 #[test]
 fn index_select_covers_u8() {
     let table: Vec<u8> = (0..12u8).collect();
-    check_dtype(
-        &table,
-        &[6u8, 7, 8, 0, 1, 2, 9, 10, 11, 0, 1, 2],
-        "u8",
-    );
+    check_dtype(&table, &[6u8, 7, 8, 0, 1, 2, 9, 10, 11, 0, 1, 2], "u8");
 }
 
 #[test]
 fn index_select_covers_i8() {
     let table: Vec<i8> = (0..12i8).map(|i| i - 6).collect();
-    check_dtype(
-        &table,
-        &[0i8, 1, 2, -6, -5, -4, 3, 4, 5, -6, -5, -4],
-        "i8",
-    );
+    check_dtype(&table, &[0i8, 1, 2, -6, -5, -4, 3, 4, 5, -6, -5, -4], "i8");
 }
 
 #[test]
@@ -74,7 +66,9 @@ fn index_select_covers_u16() {
     let table: Vec<u16> = (0..12u16).map(|i| i * 1000).collect();
     check_dtype(
         &table,
-        &[6000u16, 7000, 8000, 0, 1000, 2000, 9000, 10000, 11000, 0, 1000, 2000],
+        &[
+            6000u16, 7000, 8000, 0, 1000, 2000, 9000, 10000, 11000, 0, 1000, 2000,
+        ],
         "u16",
     );
 }
