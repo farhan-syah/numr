@@ -29,7 +29,6 @@
 //! # Ok::<(), numr::error::Error>(())
 //! ```
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::autograd::{GradFn, Var, backward_wrt, var_mul, var_sum};
@@ -135,17 +134,14 @@ where
 
     let output = f(&detached, client)?;
 
-    // Every listed input is detached, so a retained graph means the segment read
-    // some OTHER grad-tracking value. Its gradient would be silently dropped by
-    // the pruned backward below, so refuse the segment instead. Nested
-    // checkpoints also retain a node, so the leaves decide, not the node.
-    if output.grad_fn().is_some() {
-        let unlisted = unlisted_leaf_ids(&output, &detached);
-        if !unlisted.is_empty() {
-            return Err(unlisted_leaf_error(&unlisted));
-        }
-    }
-    // output carries no reachable outside leaf — every intermediate is dropped
+    // NOT VALIDATED HERE, deliberately. A retained graph means the segment read
+    // some value that was not detached, but the retained graph cannot say
+    // whether that value is TRAINABLE: a leaf records no `grad_fn` whether its
+    // `requires_grad` is true or false, and a binary op saves BOTH operands
+    // when either one requires grad. So a frozen backbone weight — the ordinary
+    // case this function exists to serve — is indistinguishable by id from an
+    // unlisted trainable parameter. Rejecting on that signal breaks correct
+    // callers; see this module's docs for the rule the CALLER must keep.
 
     let checkpoint_backward = CheckpointBackward {
         func: Arc::new(f),
@@ -159,56 +155,6 @@ where
         output.tensor().clone(),
         Arc::new(checkpoint_backward),
     ))
-}
-
-/// Collect the leaf ids the segment reaches that are not detached segment inputs.
-///
-/// Walks the retained graph of `output`. Runs only when a graph was retained,
-/// which the happy path never does.
-fn unlisted_leaf_ids<R: Runtime>(output: &Var<R>, detached: &[Var<R>]) -> Vec<TensorId> {
-    let detached_ids: HashSet<TensorId> = detached.iter().map(Var::id).collect();
-
-    let mut visited: HashSet<TensorId> = HashSet::new();
-    let mut leaves: Vec<TensorId> = Vec::new();
-    let mut stack: Vec<(TensorId, Option<Arc<dyn GradFn<R>>>)> =
-        vec![(output.id(), output.grad_fn().cloned())];
-
-    while let Some((id, grad_fn)) = stack.pop() {
-        if !visited.insert(id) {
-            continue;
-        }
-        match grad_fn {
-            Some(grad_fn) => {
-                let input_ids = grad_fn.inputs().to_vec();
-                for (input_id, input_grad_fn) in input_ids.into_iter().zip(grad_fn.input_grad_fns())
-                {
-                    stack.push((input_id, input_grad_fn));
-                }
-            }
-            None => {
-                if !detached_ids.contains(&id) {
-                    leaves.push(id);
-                }
-            }
-        }
-    }
-
-    leaves
-}
-
-/// Build the error naming the leaves the recompute would never differentiate.
-fn unlisted_leaf_error(unlisted: &[TensorId]) -> Error {
-    Error::InvalidArgument {
-        arg: "inputs",
-        reason: format!(
-            "the checkpointed segment reads {} leaf value(s) that are not listed in `inputs` \
-             ({:?}); at least one of them has requires_grad = true and would receive no \
-             gradient. Add every trainable value the closure uses to `inputs`, or set \
-             requires_grad = false on the frozen ones.",
-            unlisted.len(),
-            unlisted
-        ),
-    }
 }
 
 struct CheckpointBackward<R: Runtime, C: 'static> {
@@ -528,11 +474,20 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_rejects_unlisted_parameter() {
-        // Defect 2: a trainable parameter inside the segment but absent from
-        // `inputs` used to get NO gradient while forward values stayed correct.
-        // It is now refused at forward time.
-        let (device, _client) = device_and_client();
+    fn test_checkpoint_unlisted_parameter_silently_gets_no_gradient() {
+        // PINS A KNOWN TRAP so it cannot regress unnoticed. A trainable
+        // parameter used inside the segment but absent from `inputs` receives
+        // NO gradient, while the forward value stays correct — so a
+        // forward-only test passes and training silently does nothing.
+        //
+        // This is NOT detectable inside `checkpoint`: the retained graph
+        // records ids and grad_fns only, a leaf has no `grad_fn` whether or not
+        // it requires grad, and a binary op saves both operands when either
+        // requires grad. A frozen backbone weight is therefore indistinguishable
+        // from an unlisted trainable one, and erroring on the signal would
+        // reject the frozen-backbone case checkpointing exists to serve. The
+        // rule is the CALLER's to keep; the module docs state it.
+        let (device, client) = device_and_client();
 
         let x = Var::new(
             Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
@@ -542,16 +497,27 @@ mod tests {
             Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             true,
         );
+        let w_id = w.id();
 
-        let err = checkpoint(
+        let y = checkpoint(
             move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &w, c),
             &[&x],
         )
-        .unwrap_err();
+        .unwrap();
+        let loss = var_sum(&y, &[], false, &client).unwrap();
+        let grads = backward(&loss, &client).unwrap();
 
-        let msg = err.to_string();
-        assert!(msg.contains("inputs"), "unhelpful error: {msg}");
-        assert!(msg.contains("requires_grad"), "unhelpful error: {msg}");
+        // x is listed, so it differentiates: d(x*w)/dx = w = 2.
+        let gx: Vec<f32> = grads.get(x.id()).unwrap().to_vec();
+        assert!((gx[0] - 2.0).abs() < 1e-6);
+
+        // w is NOT listed, so it gets nothing. List it in `inputs` to train it.
+        assert!(
+            grads.get(w_id).is_none(),
+            "an unlisted trainable parameter must be understood to get no \
+             gradient; if this now returns one, the trap is fixed and this \
+             test should assert the gradient instead"
+        );
     }
 
     #[test]
