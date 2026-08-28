@@ -128,7 +128,7 @@ pub use backward::{
     BackwardHook, NoOpHook, backward, backward_with_graph, backward_with_hooks, backward_wrt,
     backward_wrt_with_hooks,
 };
-pub use checkpoint::checkpoint;
+pub use checkpoint::{checkpoint, checkpoint_with_client};
 pub use grad_fn::GradFn;
 pub use grad_store::GradStore;
 pub use var::Var;
