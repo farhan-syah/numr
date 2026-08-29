@@ -62,6 +62,10 @@ pub(crate) fn alloc_output(
     Tensor::empty(shape, dtype, client.device())
 }
 
+/// Upper bound on how long a readback waits for the GPU, applied both to the
+/// device poll and to the wait for the map callback's result.
+const MAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Read a single u32 value from a GPU buffer (synchronous)
 pub(crate) fn read_u32_from_buffer(client: &WgpuClient, buffer: &wgpu::Buffer) -> Result<u32> {
     let staging_buffer = client.wgpu_device.create_buffer(&wgpu::BufferDescriptor {
@@ -79,25 +83,42 @@ pub(crate) fn read_u32_from_buffer(client: &WgpuClient, buffer: &wgpu::Buffer) -
     encoder.copy_buffer_to_buffer(buffer, 0, &staging_buffer, 0, 4);
     client.queue.submit(std::iter::once(encoder.finish()));
 
-    // Block until GPU work is done
+    // Block until GPU work is done.
     let (tx, rx) = std::sync::mpsc::channel();
     staging_buffer
         .slice(..)
         .map_async(wgpu::MapMode::Read, move |result| {
-            tx.send(result).unwrap();
+            // The callback cannot report to the caller, and a send error only
+            // means the waiter below is already gone. Dropping the result is
+            // the only total action here; the waiter turns the missing value
+            // into an error of its own.
+            let _ = tx.send(result);
         });
     let _ = client.wgpu_device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: Some(std::time::Duration::from_secs(60)),
+        timeout: Some(MAP_TIMEOUT),
     });
-    rx.recv()
-        .map_err(|_| Error::Internal("Failed to read from GPU buffer".to_string()))?
-        .map_err(|e| Error::Internal(format!("Buffer map failed: {:?}", e)))?;
+    rx.recv_timeout(MAP_TIMEOUT)
+        .map_err(|e| {
+            Error::Internal(format!(
+                "read_u32_from_buffer: no buffer map result after {:?} ({e})",
+                MAP_TIMEOUT
+            ))
+        })?
+        .map_err(|e| Error::Internal(format!("read_u32_from_buffer: buffer map failed: {e:?}")))?;
 
     let data = staging_buffer.slice(..).get_mapped_range();
-    let value = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    let bytes: [u8; 4] = data
+        .get(..4)
+        .and_then(|b| <[u8; 4]>::try_from(b).ok())
+        .ok_or_else(|| {
+            Error::Internal(format!(
+                "read_u32_from_buffer: mapped range holds {} bytes, expected 4",
+                data.len()
+            ))
+        })?;
     drop(data);
     staging_buffer.unmap();
 
-    Ok(value)
+    Ok(u32::from_le_bytes(bytes))
 }
