@@ -72,8 +72,24 @@ impl Runtime for WgpuRuntime {
             crate::error::Error::Backend("Buffer not found for copy_to_device".into())
         })?;
 
-        // Write data to buffer
-        client.queue.write_buffer(&buffer, 0, src);
+        // WebGPU copies whole 4-byte words, and `allocate` already rounded the
+        // buffer up to that. A payload whose length is not a multiple of 4 — a
+        // run of 18-byte GGUF blocks, a TCF payload with an odd super-block
+        // count — is written as its aligned prefix plus one zero-padded tail
+        // word, so it reaches the device intact instead of tripping wgpu's
+        // copy-alignment validation.
+        let tail = src.len() % 4;
+        if tail == 0 {
+            client.queue.write_buffer(&buffer, 0, src);
+        } else {
+            let head = src.len() - tail;
+            if head > 0 {
+                client.queue.write_buffer(&buffer, 0, &src[..head]);
+            }
+            let mut word = [0u8; 4];
+            word[..tail].copy_from_slice(&src[head..]);
+            client.queue.write_buffer(&buffer, head as u64, &word);
+        }
 
         // Ensure write is complete
         client.synchronize();
