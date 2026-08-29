@@ -108,6 +108,7 @@
 
 // Reverse-mode AD
 mod backward;
+mod capture;
 mod checkpoint;
 mod grad_fn;
 mod grad_store;

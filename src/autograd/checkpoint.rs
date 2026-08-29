@@ -3,12 +3,14 @@
 //! Discards intermediate activations during forward and recomputes them during
 //! backward. Trades ~33% extra compute for dramatically less activation memory.
 //!
-//! # Every trainable value inside the segment must be listed in `inputs`
+//! # Checkpointing is transparent to gradients
 //!
-//! The recompute differentiates the segment only with respect to the ids in
-//! `inputs`. A parameter the closure captures but the caller omits from `inputs`
-//! receives no gradient, while the forward value stays correct. Both entry
-//! points reject that case at forward time — see [`checkpoint`].
+//! Only memory behaviour changes. A trainable value the closure captures but the
+//! caller omits from `inputs` still receives its gradient: the forward runs on
+//! detached inputs, so any node the segment retains exists because it read a
+//! captured value, and the segment registers each such value as an input of its
+//! own graph node. Listing a value in `inputs` remains the clearer form, and is
+//! the only way to feed a value the closure does not already hold.
 //!
 //! # Example
 //!
@@ -20,7 +22,7 @@
 //! let x = Var::new(Tensor::from_slice(&[3.0f32], &[1], &device)?, true);
 //! let w = Var::new(Tensor::from_slice(&[2.0f32], &[1], &device)?, true);
 //!
-//! // `w` lives inside the segment, so it must appear in `inputs`.
+//! // `w` may be listed or simply captured; both give the same gradient.
 //! let y = checkpoint(|inputs, c| var_mul(&inputs[0], &inputs[1], c), &[&x, &w])?;
 //!
 //! let loss = var_sum(&y, &[], false, &client)?;
@@ -29,8 +31,10 @@
 //! # Ok::<(), numr::error::Error>(())
 //! ```
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use super::capture::collect_captures;
 use crate::autograd::{GradFn, Var, backward_wrt, var_mul, var_sum};
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -50,19 +54,9 @@ use crate::tensor::{Tensor, TensorId};
 /// graph nodes are retained. During backward, `f` is re-run with grad tracking
 /// to reconstruct the graph and propagate gradients.
 ///
-/// # Every trainable value inside the segment must be listed in `inputs`
-///
-/// The recompute differentiates only with respect to the ids in `inputs`. A
-/// parameter that lives inside the segment and is missing from `inputs` gets no
-/// gradient at all, and the forward values stay correct, so a forward-only test
-/// passes. List every such parameter in `inputs`, or mark it
-/// `requires_grad = false` when it is frozen.
-///
 /// # Errors
 ///
 /// - `inputs` is empty.
-/// - The segment reaches a value with `requires_grad = true` that is not one of
-///   `inputs`. This is the missing-gradient case above, caught at forward time.
 pub fn checkpoint<R, F>(f: F, inputs: &[&Var<R>]) -> Result<Var<R>>
 where
     R: Runtime<DType = DType>,
@@ -91,19 +85,15 @@ where
 ///
 /// The client is cloned into the graph node and outlives this call.
 ///
-/// # Every trainable value inside the segment must be listed in `inputs`
+/// # Captured values differentiate too
 ///
-/// The recompute differentiates only with respect to the ids in `inputs`. A
-/// parameter that lives inside the segment and is missing from `inputs` gets no
-/// gradient at all, and the forward values stay correct, so a forward-only test
-/// passes. List every such parameter in `inputs`, or mark it
-/// `requires_grad = false` when it is frozen.
+/// A value the closure captures rather than receives through `inputs` becomes an
+/// input of the checkpoint's graph node, so it gets the gradient it would have
+/// got without checkpointing. See this module's docs.
 ///
 /// # Errors
 ///
 /// - `inputs` is empty.
-/// - The segment reaches a value with `requires_grad = true` that is not one of
-///   `inputs`. This is the missing-gradient case above, caught at forward time.
 pub fn checkpoint_with_client<R, C, F>(f: F, inputs: &[&Var<R>], client: &C) -> Result<Var<R>>
 where
     R: Runtime<DType = DType>,
@@ -121,9 +111,9 @@ where
     }
 
     // Save original input info for backward
-    let input_ids: Vec<TensorId> = inputs.iter().map(|v| v.id()).collect();
+    let mut input_ids: Vec<TensorId> = inputs.iter().map(|v| v.id()).collect();
     let input_tensors: Vec<Tensor<R>> = inputs.iter().map(|v| v.tensor().clone()).collect();
-    let input_grad_fns: Vec<Option<Arc<dyn GradFn<R>>>> =
+    let mut input_grad_fns: Vec<Option<Arc<dyn GradFn<R>>>> =
         inputs.iter().map(|v| v.grad_fn().cloned()).collect();
 
     // Forward: run on detached inputs (no grad tracking inside the segment)
@@ -132,16 +122,26 @@ where
         .map(|v| Var::new(v.tensor().clone(), false))
         .collect();
 
+    // Ids the capture walk must not report: the detached copies it will meet in
+    // the graph, and the listed inputs, which already own a slot.
+    let mut known: HashSet<TensorId> = detached.iter().map(|v| v.id()).collect();
+    known.extend(input_ids.iter().copied());
+
+    // Every id minted from here on belongs to the segment, so an older id the
+    // retained graph reaches was captured from outside.
+    let boundary = TensorId::new();
+
     let output = f(&detached, client)?;
 
-    // NOT VALIDATED HERE, deliberately. A retained graph means the segment read
-    // some value that was not detached, but the retained graph cannot say
-    // whether that value is TRAINABLE: a leaf records no `grad_fn` whether its
-    // `requires_grad` is true or false, and a binary op saves BOTH operands
-    // when either one requires grad. So a frozen backbone weight — the ordinary
-    // case this function exists to serve — is indistinguishable by id from an
-    // unlisted trainable parameter. Rejecting on that signal breaks correct
-    // callers; see this module's docs for the rule the CALLER must keep.
+    // The closure may read values it never received through `inputs`. Those are
+    // real inputs of the segment: give each one a slot so the recompute
+    // differentiates it and the driver accumulates its gradient. Detached inputs
+    // build no node, so a segment reading nothing but frozen values finds none.
+    for capture_id in collect_captures(&output, boundary, &known) {
+        input_ids.push(capture_id);
+        // A capture is always a leaf, so the outer pass stops there.
+        input_grad_fns.push(None);
+    }
 
     let checkpoint_backward = CheckpointBackward {
         func: Arc::new(f),
@@ -161,7 +161,11 @@ struct CheckpointBackward<R: Runtime, C: 'static> {
     func: Arc<dyn Fn(&[Var<R>], &C) -> Result<Var<R>> + Send + Sync>,
     /// The caller's client. The recompute must run where the forward ran.
     client: C,
+    /// The listed inputs first, then the values the closure captured.
     input_ids: Vec<TensorId>,
+    /// The listed inputs only. A capture is held by the closure itself, and is
+    /// never rebuilt, so this is shorter than `input_ids` whenever the segment
+    /// captured anything.
     input_tensors: Vec<Tensor<R>>,
     input_grad_fns: Vec<Option<Arc<dyn GradFn<R>>>>,
 }
@@ -188,6 +192,8 @@ where
         // Reconstruct input Vars as LEAF nodes with original IDs.
         // They have no grad_fn so backward stops here — the outer backward
         // pass handles continuing through input_grad_fns() returned below.
+        // The zip stops at `input_tensors`, so the trailing capture slots are
+        // skipped: the closure supplies those values itself.
         let reconstructed: Vec<Var<R>> = self
             .input_ids
             .iter()
@@ -240,7 +246,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::autograd::{BackwardHook, backward, backward_with_hooks, var_add, var_mul, var_sum};
+    use crate::autograd::{
+        BackwardHook, backward, backward_with_hooks, backward_wrt, var_add, var_mul, var_sum,
+    };
     use crate::runtime::cpu::{CpuClient, CpuDevice, CpuRuntime, ParallelismConfig};
     use std::sync::Mutex;
 
@@ -474,19 +482,10 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_unlisted_parameter_silently_gets_no_gradient() {
-        // PINS A KNOWN TRAP so it cannot regress unnoticed. A trainable
-        // parameter used inside the segment but absent from `inputs` receives
-        // NO gradient, while the forward value stays correct — so a
-        // forward-only test passes and training silently does nothing.
-        //
-        // This is NOT detectable inside `checkpoint`: the retained graph
-        // records ids and grad_fns only, a leaf has no `grad_fn` whether or not
-        // it requires grad, and a binary op saves both operands when either
-        // requires grad. A frozen backbone weight is therefore indistinguishable
-        // from an unlisted trainable one, and erroring on the signal would
-        // reject the frozen-backbone case checkpointing exists to serve. The
-        // rule is the CALLER's to keep; the module docs state it.
+    fn test_checkpoint_unlisted_parameter_gets_its_gradient() {
+        // Checkpointing is transparent: a trainable parameter the closure
+        // captures but the caller never listed gets the gradient it would have
+        // got from a plain forward.
         let (device, client) = device_and_client();
 
         let x = Var::new(
@@ -498,32 +497,185 @@ mod tests {
             true,
         );
         let w_id = w.id();
+        let captured = w.alias();
 
         let y = checkpoint(
-            move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &w, c),
+            move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &captured, c),
             &[&x],
         )
         .unwrap();
         let loss = var_sum(&y, &[], false, &client).unwrap();
         let grads = backward(&loss, &client).unwrap();
 
-        // x is listed, so it differentiates: d(x*w)/dx = w = 2.
+        // Reference: the same segment with no checkpoint at all.
+        let plain = var_mul(&x, &w, &client).unwrap();
+        let plain_loss = var_sum(&plain, &[], false, &client).unwrap();
+        let plain_grads = backward(&plain_loss, &client).unwrap();
+
+        // d(x*w)/dx = w = 2
+        let gx: Vec<f32> = grads.get(x.id()).unwrap().to_vec();
+        let gx_plain: Vec<f32> = plain_grads.get(x.id()).unwrap().to_vec();
+        assert!((gx[0] - 2.0).abs() < 1e-6);
+        assert!((gx[0] - gx_plain[0]).abs() < 1e-6);
+
+        // d(x*w)/dw = x = 3
+        let gw: Vec<f32> = grads.get(w_id).unwrap().to_vec();
+        let gw_plain: Vec<f32> = plain_grads.get(w_id).unwrap().to_vec();
+        assert!((gw[0] - 3.0).abs() < 1e-6, "expected 3.0, got {}", gw[0]);
+        assert!((gw[0] - gw_plain[0]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_checkpoint_unlisted_parameter_honours_the_needed_mask() {
+        // `backward_wrt` asks for x only. The capture slot must stay unwanted,
+        // so no gradient is computed for it and none reaches the store.
+        let (device, client) = device_and_client();
+
+        let x = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let w = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let w_id = w.id();
+        let captured = w.alias();
+
+        let y = checkpoint(
+            move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &captured, c),
+            &[&x],
+        )
+        .unwrap();
+        let loss = var_sum(&y, &[], false, &client).unwrap();
+        let grads = backward_wrt(&loss, &[x.id()], &client).unwrap();
+
         let gx: Vec<f32> = grads.get(x.id()).unwrap().to_vec();
         assert!((gx[0] - 2.0).abs() < 1e-6);
+        assert!(grads.get(w_id).is_none(), "w was not asked for");
+    }
 
-        // w is NOT listed, so it gets nothing. List it in `inputs` to train it.
-        assert!(
-            grads.get(w_id).is_none(),
-            "an unlisted trainable parameter must be understood to get no \
-             gradient; if this now returns one, the trap is fixed and this \
-             test should assert the gradient instead"
+    #[test]
+    fn test_checkpoint_accumulates_across_two_runs() {
+        // The same parameter captured by two segments collects both gradients.
+        let (device, client) = device_and_client();
+
+        let x = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
+            true,
         );
+        let w = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let w_id = w.id();
+        let (first, second) = (w.alias(), w.alias());
+
+        let y1 = checkpoint(
+            move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &first, c),
+            &[&x],
+        )
+        .unwrap();
+        let y2 = checkpoint(
+            move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &second, c),
+            &[&x],
+        )
+        .unwrap();
+
+        let s1 = var_sum(&y1, &[], false, &client).unwrap();
+        let s2 = var_sum(&y2, &[], false, &client).unwrap();
+        let loss = var_add(&s1, &s2, &client).unwrap();
+        let grads = backward(&loss, &client).unwrap();
+
+        // loss = 2*x*w, so d/dx = 2w = 4 and d/dw = 2x = 6.
+        let gx: Vec<f32> = grads.get(x.id()).unwrap().to_vec();
+        let gw: Vec<f32> = grads.get(w_id).unwrap().to_vec();
+        assert!((gx[0] - 4.0).abs() < 1e-6, "expected 4.0, got {}", gx[0]);
+        assert!((gw[0] - 6.0).abs() < 1e-6, "expected 6.0, got {}", gw[0]);
+    }
+
+    #[test]
+    fn test_checkpoint_parameter_used_inside_and_outside() {
+        // w is captured by the segment AND read by the surrounding graph. Both
+        // contributions must land, and neither may be counted twice.
+        let (device, client) = device_and_client();
+
+        let x = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let w = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let w_id = w.id();
+        let captured = w.alias();
+
+        let inside = checkpoint(
+            move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &captured, c),
+            &[&x],
+        )
+        .unwrap();
+        let outside = var_mul(&w, &w, &client).unwrap();
+
+        let s_inside = var_sum(&inside, &[], false, &client).unwrap();
+        let s_outside = var_sum(&outside, &[], false, &client).unwrap();
+        let loss = var_add(&s_inside, &s_outside, &client).unwrap();
+        let grads = backward(&loss, &client).unwrap();
+
+        // loss = x*w + w^2, so d/dx = w = 2 and d/dw = x + 2w = 7.
+        let gx: Vec<f32> = grads.get(x.id()).unwrap().to_vec();
+        let gw: Vec<f32> = grads.get(w_id).unwrap().to_vec();
+        assert!((gx[0] - 2.0).abs() < 1e-6, "expected 2.0, got {}", gx[0]);
+        assert!((gw[0] - 7.0).abs() < 1e-6, "expected 7.0, got {}", gw[0]);
+    }
+
+    #[test]
+    fn test_checkpoint_listed_and_captured_together() {
+        // A listed input must keep behaving exactly as before when a capture
+        // shares the segment with it.
+        let (device, client) = device_and_client();
+
+        let x = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[3.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let listed = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[5.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let w = Var::new(
+            Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
+            true,
+        );
+        let w_id = w.id();
+        let captured = w.alias();
+
+        let y = checkpoint(
+            move |inputs: &[Var<CpuRuntime>], c: &CpuClient| {
+                let scaled = var_mul(&inputs[0], &inputs[1], c)?;
+                var_mul(&scaled, &captured, c)
+            },
+            &[&x, &listed],
+        )
+        .unwrap();
+
+        let loss = var_sum(&y, &[], false, &client).unwrap();
+        let grads = backward(&loss, &client).unwrap();
+
+        // loss = x*listed*w = 30, so d/dx = 10, d/dlisted = 6, d/dw = 15.
+        let gx: Vec<f32> = grads.get(x.id()).unwrap().to_vec();
+        let gl: Vec<f32> = grads.get(listed.id()).unwrap().to_vec();
+        let gw: Vec<f32> = grads.get(w_id).unwrap().to_vec();
+        assert!((gx[0] - 10.0).abs() < 1e-5, "expected 10.0, got {}", gx[0]);
+        assert!((gl[0] - 6.0).abs() < 1e-5, "expected 6.0, got {}", gl[0]);
+        assert!((gw[0] - 15.0).abs() < 1e-5, "expected 15.0, got {}", gw[0]);
     }
 
     #[test]
     fn test_checkpoint_accepts_frozen_capture() {
-        // A captured value with requires_grad = false needs no gradient, so the
-        // segment is accepted and the listed input still differentiates.
+        // A captured value with requires_grad = false builds no graph node, so
+        // the segment claims no slot for it and it receives no gradient.
         let (device, client) = device_and_client();
 
         let x = Var::new(
@@ -534,6 +686,7 @@ mod tests {
             Tensor::<CpuRuntime>::from_slice(&[2.0f32], &[1], &device).unwrap(),
             false,
         );
+        let frozen_id = frozen.id();
 
         let y = checkpoint(
             move |inputs: &[Var<CpuRuntime>], c: &CpuClient| var_mul(&inputs[0], &frozen, c),
@@ -547,11 +700,15 @@ mod tests {
         // d(2x)/dx = 2
         let gx: Vec<f32> = grads.get(x.id()).unwrap().to_vec();
         assert!((gx[0] - 2.0).abs() < 1e-6);
+        assert!(
+            grads.get(frozen_id).is_none(),
+            "a frozen capture claims no slot"
+        );
     }
 
     #[test]
     fn test_checkpoint_listed_parameter_gets_gradient() {
-        // The fix for the trap: list the parameter and it trains.
+        // Listing a parameter stays the clearer form, and still trains it.
         let (device, client) = device_and_client();
 
         let x = Var::new(
@@ -581,7 +738,7 @@ mod tests {
     #[test]
     fn test_checkpoint_nested() {
         // A nested checkpoint retains its own graph node, yet every leaf it
-        // reaches is a listed input, so the outer segment is accepted.
+        // reaches is a listed input, so the outer segment finds no capture.
         // f(x) = (x^2)^2 = x^4, df/dx = 4x^3 = 32 at x = 2
         let (device, client) = device_and_client();
 
