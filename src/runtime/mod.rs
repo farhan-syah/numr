@@ -38,8 +38,8 @@ pub(crate) use common::DefaultAllocator;
 pub(crate) use common::compute_contiguous_strides;
 pub use common::{AllocationStats, Allocator, Graph, NoOpGraph, TrackingAllocator};
 pub(crate) use common::{
-    compute_broadcast_shape, ensure_contiguous, normalize_dim, validate_arange,
-    validate_binary_dtypes, validate_eye,
+    compute_broadcast_shape, ensure_contiguous, normalize_dim, pow_scalar_output_dtype,
+    validate_arange, validate_binary_dtypes, validate_eye,
 };
 
 // Communicator re-exports

@@ -477,6 +477,52 @@ mod tests {
     }
 
     #[test]
+    fn test_binary_pow_i32_saturates_on_overflow() {
+        let a = [2i32, -2, 46341, -46341, 3];
+        let b = [40i32, 41, 2, 3, 30];
+        let mut out = [0i32; 5];
+
+        unsafe { binary_i32(BinaryOp::Pow, a.as_ptr(), b.as_ptr(), out.as_mut_ptr(), 5) }
+
+        assert_eq!(out[0], i32::MAX, "2^40 saturates");
+        assert_eq!(out[1], i32::MIN, "(-2)^41 saturates negative");
+        assert_eq!(out[2], i32::MAX, "46341^2 saturates");
+        assert_eq!(out[3], i32::MIN, "(-46341)^3 saturates negative");
+        assert_eq!(out[4], i32::MAX, "3^30 saturates");
+    }
+
+    #[test]
+    fn test_binary_pow_i32_negative_exponent_truncates() {
+        let a = [2i32, 1, -1, 5];
+        let b = [-1i32, -5, -3, -2];
+        let mut out = [0i32; 4];
+
+        unsafe { binary_i32(BinaryOp::Pow, a.as_ptr(), b.as_ptr(), out.as_mut_ptr(), 4) }
+
+        assert_eq!(out[0], 0, "2^-1 truncates to 0");
+        assert_eq!(out[1], 1, "1^-5 is 1");
+        assert_eq!(out[2], -1, "(-1)^-3 is -1");
+        assert_eq!(out[3], 0, "5^-2 truncates to 0");
+    }
+
+    #[test]
+    fn test_binary_pow_i64_is_exact_past_the_f64_mantissa() {
+        use crate::runtime::cpu::kernels::binary_op_kernel;
+
+        let a = [7i64, 3, 2, -2, 10];
+        let b = [20i64, 39, 62, 63, 18];
+        let mut out = [0i64; 5];
+
+        unsafe { binary_op_kernel(BinaryOp::Pow, a.as_ptr(), b.as_ptr(), out.as_mut_ptr(), 5) }
+
+        assert_eq!(out[0], 79792266297612001i64, "7^20");
+        assert_eq!(out[1], 4052555153018976267i64, "3^39");
+        assert_eq!(out[2], 4611686018427387904i64, "2^62");
+        assert_eq!(out[3], i64::MIN, "(-2)^63 is exactly i64::MIN");
+        assert_eq!(out[4], 1000000000000000000i64, "10^18");
+    }
+
+    #[test]
     fn test_binary_atan2_i32() {
         let a = [0i32, 1, -1, 10, 0, 100];
         let b = [1i32, 0, 0, 10, 0, 1];

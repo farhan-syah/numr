@@ -19,6 +19,7 @@ pub mod fused_add_norm;
 pub mod fused_elementwise;
 pub mod gemm_epilogue;
 pub mod index;
+pub mod ipow;
 pub mod logical;
 pub mod matmul;
 pub mod matmul_i8;

@@ -8,6 +8,7 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 #include "dtype_traits.cuh"
+#include "ipow.cuh"
 
 extern "C" {
 
@@ -263,6 +264,15 @@ __global__ void div_scalar_i32(const int* a, int scalar, int* out, unsigned int 
     }
 }
 
+// The exponent arrives as a double, not an int: a fractional or negative
+// exponent has to reach the double path unrounded so CPU and CUDA agree.
+__global__ void pow_scalar_i32(const int* a, double scalar, int* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_ipow_scalar<int32_t>(a[idx], scalar);
+    }
+}
+
 __global__ void rsub_scalar_i32(const int* a, int scalar, int* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
@@ -299,6 +309,14 @@ __global__ void div_scalar_i64(const long long* a, long long scalar, long long* 
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         out[idx] = a[idx] / scalar;
+    }
+}
+
+// See pow_scalar_i32 for why the exponent is a double.
+__global__ void pow_scalar_i64(const long long* a, double scalar, long long* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_ipow_scalar<int64_t>(a[idx], scalar);
     }
 }
 

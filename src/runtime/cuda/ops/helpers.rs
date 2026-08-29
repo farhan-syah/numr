@@ -9,7 +9,8 @@ use super::super::kernels::{
     launch_semiring_matmul_batched_kernel, launch_semiring_matmul_kernel, launch_unary_op,
 };
 use super::super::kernels::{
-    launch_scalar_op_c64, launch_scalar_op_c128, launch_scalar_op_i32, launch_scalar_op_i64,
+    launch_pow_scalar_int, launch_scalar_op_c64, launch_scalar_op_c128, launch_scalar_op_i32,
+    launch_scalar_op_i64,
 };
 use super::super::{CudaClient, CudaRuntime};
 use super::matmul_broadcast::resolve_batched_operands;
@@ -511,14 +512,6 @@ pub(crate) fn native_scalar_op(
     let a_contig = ensure_contiguous(a)?;
     let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &client.device)?;
 
-    // Check if pow is supported for this dtype (integers don't have pow kernel)
-    if op == "pow_scalar" && matches!(dtype, DType::I32 | DType::I64) {
-        return Err(Error::UnsupportedDType {
-            dtype,
-            op: "pow_scalar",
-        });
-    }
-
     // A zero-element tensor has nothing to compute, and an empty launch grid
     // is itself invalid, so skip the launch entirely. Still fall through to
     // the dtype match below for a dtype this op doesn't support at all, so an
@@ -535,6 +528,26 @@ pub(crate) fn native_scalar_op(
             | DType::Complex128
     ) || (cfg!(feature = "f16") && matches!(dtype, DType::F16 | DType::BF16));
     if out.numel() == 0 && dtype_supported {
+        return Ok(out);
+    }
+
+    // Integer `pow_scalar` takes the exponent as f64 rather than the element
+    // type: `scalar as i32` would round 2.5 to 2 and silently answer a
+    // different question. The op layer routes every non-integral exponent to an
+    // F64 output before this point, so only a non-negative whole number arrives.
+    if op == "pow_scalar" && matches!(dtype, DType::I32 | DType::I64) {
+        unsafe {
+            launch_pow_scalar_int(
+                &client.context,
+                &client.stream,
+                client.device.index,
+                dtype,
+                a_contig.ptr(),
+                scalar,
+                out.ptr(),
+                out.numel(),
+            )?;
+        }
         return Ok(out);
     }
 

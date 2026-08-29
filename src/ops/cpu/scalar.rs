@@ -1,11 +1,12 @@
 //! CPU implementation of scalar operations.
 
 use crate::error::Result;
-use crate::ops::{BinaryOp, ScalarOps};
+use crate::ops::{BinaryOp, ScalarOps, TypeConversionOps};
 use crate::runtime::cpu::{
     CpuClient, CpuRuntime, helpers::fused_mul_add_scalar_impl,
     helpers::scalar::rsub_scalar_op_impl, helpers::scalar_op_impl,
 };
+use crate::runtime::pow_scalar_output_dtype;
 use crate::tensor::Tensor;
 
 impl ScalarOps<CpuRuntime> for CpuClient {
@@ -26,6 +27,15 @@ impl ScalarOps<CpuRuntime> for CpuClient {
     }
 
     fn pow_scalar(&self, a: &Tensor<CpuRuntime>, scalar: f64) -> Result<Tensor<CpuRuntime>> {
+        let out_dtype = pow_scalar_output_dtype(a.dtype(), scalar);
+        if out_dtype != a.dtype() {
+            // An integer raised to a negative or fractional power is a
+            // non-integer real, so the result promotes to F64. Casting first
+            // reuses the existing float `pow` kernel instead of adding a
+            // mixed-dtype one, and leaves the input untouched.
+            let promoted = self.cast(a, out_dtype)?;
+            return scalar_op_impl(self, BinaryOp::Pow, &promoted, scalar, "pow_scalar");
+        }
         scalar_op_impl(self, BinaryOp::Pow, a, scalar, "pow_scalar")
     }
 
@@ -46,6 +56,7 @@ impl ScalarOps<CpuRuntime> for CpuClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dtype::DType;
     use crate::runtime::Runtime;
     use crate::runtime::cpu::CpuDevice;
 
@@ -83,6 +94,46 @@ mod tests {
         for (a, b) in data.iter().zip([0.9f32, 0.5, 0.1].iter()) {
             assert!((a - b).abs() < 1e-6, "{a} != {b}");
         }
+    }
+
+    #[test]
+    fn pow_scalar_promotes_an_integer_dtype_to_f64() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+
+        let ints = Tensor::<CpuRuntime>::from_slice(&[4i64, 9, 1, 2], &[4], &device).unwrap();
+
+        // A fractional exponent has no integer result, so the output dtype is
+        // F64. The input tensor keeps its dtype.
+        let roots = client.pow_scalar(&ints, 0.5).unwrap();
+        assert_eq!(roots.dtype(), DType::F64);
+        assert_eq!(ints.dtype(), DType::I64);
+        let roots: Vec<f64> = roots.to_vec();
+        assert_eq!(roots[0], 2.0);
+        assert_eq!(roots[1], 3.0);
+        assert_eq!(roots[2], 1.0);
+        assert!((roots[3] - std::f64::consts::SQRT_2).abs() < 1e-12);
+
+        // A negative exponent is a fraction, so it promotes too.
+        let inverse = client.pow_scalar(&ints, -1.0).unwrap();
+        assert_eq!(inverse.dtype(), DType::F64);
+        let inverse: Vec<f64> = inverse.to_vec();
+        assert_eq!(inverse[0], 0.25);
+        assert!((inverse[1] - 1.0 / 9.0).abs() < 1e-15);
+        assert_eq!(inverse[2], 1.0);
+        assert_eq!(inverse[3], 0.5);
+
+        // A non-negative whole exponent stays exact in the input dtype.
+        let whole = client.pow_scalar(&ints, 2.0).unwrap();
+        assert_eq!(whole.dtype(), DType::I64);
+        assert_eq!(whole.to_vec::<i64>(), vec![16, 81, 1, 4]);
+
+        // A float dtype is unchanged in and out.
+        let floats =
+            Tensor::<CpuRuntime>::from_slice(&[4.0f64, 9.0, 1.0, 0.0], &[4], &device).unwrap();
+        let float_roots = client.pow_scalar(&floats, 0.5).unwrap();
+        assert_eq!(float_roots.dtype(), DType::F64);
+        assert_eq!(float_roots.to_vec::<f64>(), vec![2.0, 3.0, 1.0, 0.0]);
     }
 
     #[test]

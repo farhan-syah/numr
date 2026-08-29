@@ -19,8 +19,8 @@ pub use graph::{Graph, NoOpGraph};
 
 // Helper re-exports
 pub(crate) use helpers::{
-    compute_broadcast_shape, ensure_contiguous, normalize_dim, validate_arange,
-    validate_binary_dtypes, validate_eye,
+    compute_broadcast_shape, ensure_contiguous, normalize_dim, pow_scalar_output_dtype,
+    validate_arange, validate_binary_dtypes, validate_eye,
 };
 
 /// Compute contiguous (row-major) strides for a given shape.

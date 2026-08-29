@@ -6,6 +6,7 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 #include "dtype_traits.cuh"
+#include "ipow.cuh"
 
 // ============================================================================
 // Broadcast Helper Device Functions (Templated)
@@ -47,35 +48,7 @@ __device__ __forceinline__ __nv_bfloat16 broadcast_pow(__nv_bfloat16 a, __nv_bfl
     return __float2bfloat16(numr_pow_safe(__bfloat162float(a), __bfloat162float(b)));
 }
 
-// Specializations for integers
-// Integer pow is computed EXACTLY, by squaring — never through floating point.
-// CUDA's `pow()` is accurate only to a few ULP, so a nearly-integer result
-// truncates to the wrong integer: powf(5,3) yields 124.99999 -> 124, and even
-// in double, pow(3.0, 1.0) yields 2.9999999999999996 -> 2. Widening the float
-// does not fix it; removing the float does.
-//
-// A negative exponent keeps the old double path, matching CPU: the true value
-// is a fraction, and CPU truncates it the same way (2^-1 -> 0.5 -> 0).
-template<typename I>
-__device__ __forceinline__ I numr_ipow(I base, I exp) {
-    if (exp < 0) {
-        return (I)numr_pow_safe((double)base, (double)exp);
-    }
-    I result = 1;
-    I acc = base;
-    I e = exp;
-    while (e > 0) {
-        if (e & 1) {
-            result *= acc;
-        }
-        e >>= 1;
-        if (e > 0) {
-            acc *= acc;
-        }
-    }
-    return result;
-}
-
+// Integer pow specializations use the shared exact, saturating helper.
 template<>
 __device__ __forceinline__ int32_t broadcast_pow(int32_t a, int32_t b) {
     return numr_ipow<int32_t>(a, b);

@@ -5,6 +5,7 @@ pub mod activation;
 pub mod advanced_random;
 pub mod autograd_indexing;
 pub mod binary;
+pub mod binary_ipow;
 pub mod cast;
 pub mod compare;
 pub mod complex;

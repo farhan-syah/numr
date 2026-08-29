@@ -190,3 +190,50 @@ define_scalar_launcher!(
     /// Same requirements as `launch_scalar_op_f64`.
     pub fn launch_scalar_op_c128, f64, DType::Complex128, "c128"
 );
+
+/// Launch `pow_scalar` for I32 or I64.
+///
+/// Separate from [`launch_scalar_op_i32`] because the integer `pow_scalar`
+/// kernels take the exponent as `f64`, not as the element type: a fractional or
+/// negative exponent must reach the kernel unrounded so it can take the same
+/// double path CPU takes.
+///
+/// # Safety
+///
+/// Same requirements as `launch_scalar_op_f32`.
+pub unsafe fn launch_pow_scalar_int(
+    context: &Arc<CudaContext>,
+    stream: &CudaStream,
+    device_index: usize,
+    dtype: DType,
+    a_ptr: u64,
+    scalar: f64,
+    out_ptr: u64,
+    numel: usize,
+) -> Result<()> {
+    unsafe {
+        let module = get_or_load_module(context, device_index, kernel_names::SCALAR_MODULE)?;
+        let func_name = kernel_name("pow_scalar", dtype);
+        let func = get_kernel_function(&module, &func_name)?;
+
+        let grid = elementwise_launch_config(numel);
+        let block = (BLOCK_SIZE, 1, 1);
+        let n = numel as u32;
+
+        let cfg = launch_config(grid, block, 0);
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&a_ptr);
+        builder.arg(&scalar);
+        builder.arg(&out_ptr);
+        builder.arg(&n);
+
+        builder.launch(cfg).map_err(|e| {
+            Error::Internal(format!(
+                "CUDA scalar kernel 'pow_scalar' ({:?}) launch failed: {:?}",
+                dtype, e
+            ))
+        })?;
+
+        Ok(())
+    }
+}

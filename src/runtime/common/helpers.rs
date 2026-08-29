@@ -186,6 +186,31 @@ pub fn validate_binary_dtypes<R: Runtime<DType = DType>>(
     Ok(a.dtype())
 }
 
+/// Output dtype of `pow_scalar` for a given input dtype and exponent.
+///
+/// An op's output dtype is a function of its input dtypes, never its input
+/// values. `pow_scalar`'s exponent is a host-side parameter, not tensor data, so
+/// it is known before launch and participates in that function.
+///
+/// An integer raised to a power is an integer only when the exponent is a
+/// non-negative whole number. Every other exponent — negative, fractional,
+/// infinite, or NaN — yields a non-integer real, so the result is F64. This is
+/// why numpy promotes `int ** 0.5` while refusing an integer array exponent:
+/// there the exponent is data, and dtype inference cannot read data.
+///
+/// Float, complex, and bool dtypes pass through unchanged.
+#[inline]
+pub fn pow_scalar_output_dtype(dtype: DType, scalar: f64) -> DType {
+    // `fract()` is NaN for an infinite exponent and for NaN itself, so both fail
+    // this test and promote, which is what their real-valued results require.
+    let integral_result = scalar >= 0.0 && scalar.fract() == 0.0;
+    if dtype.is_int() && !integral_result {
+        DType::F64
+    } else {
+        dtype
+    }
+}
+
 /// Compute broadcast shape for binary operations.
 ///
 /// Returns the output shape after broadcasting, or an error if shapes are incompatible.
@@ -220,6 +245,27 @@ pub fn compute_broadcast_shape<R: Runtime<DType = DType>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pow_scalar_output_dtype_promotes_only_non_integral_exponents() {
+        // A non-negative whole exponent keeps the integer dtype.
+        for scalar in [0.0, 1.0, 2.0, 63.0, 1e30] {
+            assert_eq!(pow_scalar_output_dtype(DType::I64, scalar), DType::I64);
+            assert_eq!(pow_scalar_output_dtype(DType::U32, scalar), DType::U32);
+        }
+
+        // Every other exponent yields a non-integer real.
+        for scalar in [0.5, -1.0, -0.5, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            assert_eq!(pow_scalar_output_dtype(DType::I64, scalar), DType::F64);
+            assert_eq!(pow_scalar_output_dtype(DType::I32, scalar), DType::F64);
+        }
+
+        // Float dtypes pass through for every exponent.
+        for scalar in [0.5, -1.0, 2.0, f64::NAN] {
+            assert_eq!(pow_scalar_output_dtype(DType::F32, scalar), DType::F32);
+            assert_eq!(pow_scalar_output_dtype(DType::F64, scalar), DType::F64);
+        }
+    }
 
     #[test]
     fn test_normalize_dim_positive() {

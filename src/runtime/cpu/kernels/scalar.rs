@@ -3,6 +3,7 @@
 //! Provides tensor-scalar operations with automatic SIMD dispatch.
 //! On x86-64, f32 and f64 operations use AVX-512 or AVX2 when available.
 
+use super::ipow::pow_elem_scalar;
 use crate::dtype::Element;
 use crate::ops::BinaryOp;
 
@@ -104,8 +105,7 @@ unsafe fn scalar_op_kernel_scalar<T: Element>(
         }
         BinaryOp::Pow => {
             for i in 0..len {
-                let base = a_slice[i].to_f64();
-                out_slice[i] = T::from_f64(base.powf(scalar));
+                out_slice[i] = pow_elem_scalar(a_slice[i], scalar);
             }
         }
         BinaryOp::Max => {

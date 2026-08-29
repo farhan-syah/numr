@@ -4,6 +4,7 @@
 //! On x86-64, f32 and f64 operations use AVX-512 or AVX2 when available.
 //! On aarch64, f32 and f64 operations use NEON when available.
 
+use super::ipow::pow_elem;
 use crate::dtype::Element;
 use crate::ops::BinaryOp;
 
@@ -110,11 +111,8 @@ unsafe fn binary_op_scalar<T: Element>(
             }
         }
         BinaryOp::Pow => {
-            // Pow requires conversion to f64 and back
             for i in 0..len {
-                let base = a_slice[i].to_f64();
-                let exp = b_slice[i].to_f64();
-                out_slice[i] = T::from_f64(base.powf(exp));
+                out_slice[i] = pow_elem(a_slice[i], b_slice[i]);
             }
         }
         BinaryOp::Max => {
@@ -315,9 +313,7 @@ pub unsafe fn binary_scalar_i32(
         }
         BinaryOp::Pow => {
             for i in 0..len {
-                let base = *a.add(i) as f64;
-                let exp = *b.add(i) as f64;
-                *out.add(i) = base.powf(exp) as i32;
+                *out.add(i) = pow_elem(*a.add(i), *b.add(i));
             }
         }
         BinaryOp::Atan2 => {
@@ -391,7 +387,7 @@ pub unsafe fn binary_op_strided_kernel<T: Element>(
             BinaryOp::Sub => a_val - b_val,
             BinaryOp::Mul => a_val * b_val,
             BinaryOp::Div => a_val / b_val,
-            BinaryOp::Pow => T::from_f64(a_val.to_f64().powf(b_val.to_f64())),
+            BinaryOp::Pow => pow_elem(a_val, b_val),
             BinaryOp::Max => {
                 if a_val > b_val {
                     a_val
