@@ -17,8 +17,8 @@
 #![cfg(feature = "cuda")]
 
 use numr::ops::IndexingOps;
+use numr::runtime::Runtime;
 use numr::runtime::cuda::{CudaDevice, CudaRuntime};
-use numr::runtime::{Runtime, RuntimeClient};
 use numr::tensor::Tensor;
 
 /// Gather rows `[2, 0, 3, 0]` out of a `[4, 3]` table and check every element.
