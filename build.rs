@@ -162,7 +162,12 @@ fn compile_cuda_kernels() {
     // Shared headers are pulled in by `#include`, so nvcc never sees them as
     // inputs cargo tracks. Without these the PTX goes stale when a header
     // changes and only the .cu files are watched.
-    for header in ["dtype_traits.cuh", "activation_deriv.cuh", "ipow.cuh"] {
+    for header in [
+        "dtype_traits.cuh",
+        "activation_deriv.cuh",
+        "ipow.cuh",
+        "numr128.cuh",
+    ] {
         println!(
             "cargo:rerun-if-changed={}",
             kernels_dir.join(header).display()

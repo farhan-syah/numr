@@ -10,6 +10,7 @@
 #include <cuda_bf16.h>
 #include <climits>
 #include "dtype_traits.cuh"
+#include "numr128.cuh"
 
 // ============================================================================
 // Constants
@@ -108,59 +109,16 @@ __device__ void cumsum_strided_wide_impl(
 }
 
 // ----------------------------------------------------------------------------
-// I64 cumsum: a 128-bit accumulator built from two 64-bit halves
+// I64 cumsum: accumulate in the shared 128-bit accumulator.
 //
-// `long long` cannot widen further natively and `__int128` is banned (see
-// above), so the accumulator is two's-complement, held as `{lo, hi}` unsigned
-// 64-bit halves - the same technique as `NumrI64` in
-// `runtime/wgpu/shaders/int_saturate.wgsl`, one limb size up. 128 bits holds
-// the sum of every I64 element a scan can hold without itself overflowing,
-// so this matches the CPU kernel's i128 accumulator (`WideAcc` in
-// `runtime/cpu/kernels/wide_acc.rs`) for any realistic scan length: the
-// accumulator never saturates mid-scan, only the narrow-back-to-i64 store
-// does, so a total that overflows I64 and later returns to I64's range
-// reports the true value instead of a wrong-sign wrapped one.
+// `long long` cannot widen further natively, so the running total lives in
+// `Numr128` (see `numr128.cuh`). 128 bits holds the sum of every I64 element a
+// scan can hold without itself overflowing, so this matches the CPU kernel's
+// i128 accumulator: the accumulator never saturates mid-scan, only the
+// narrow-back-to-i64 store does, so a total that overflows I64 and later
+// returns to I64's range reports the true value instead of a wrong-sign
+// wrapped one.
 // ----------------------------------------------------------------------------
-
-struct Numr128 {
-    unsigned long long lo;
-    unsigned long long hi;
-};
-
-__device__ __forceinline__ Numr128 numr128_from_i64(long long v) {
-    unsigned long long lo = (unsigned long long)v;
-    unsigned long long hi = (v < 0) ? 0xffffffffffffffffULL : 0ULL;
-    Numr128 r;
-    r.lo = lo;
-    r.hi = hi;
-    return r;
-}
-
-__device__ __forceinline__ Numr128 numr128_add(Numr128 a, Numr128 b) {
-    unsigned long long lo = a.lo + b.lo;
-    unsigned long long carry = (lo < a.lo) ? 1ULL : 0ULL;
-    Numr128 r;
-    r.lo = lo;
-    r.hi = a.hi + b.hi + carry;
-    return r;
-}
-
-// Narrow a 128-bit accumulator back to i64, saturating on overflow. `hi`'s
-// sign bit gives the 128-bit value's sign; a value that fits in i64 has `hi`
-// equal to the sign-extension of `lo`'s top bit.
-__device__ __forceinline__ long long numr128_to_i64_sat(Numr128 v) {
-    bool negative = (v.hi >> 63) != 0ULL;
-    if (!negative) {
-        if (v.hi == 0ULL && v.lo <= (unsigned long long)LLONG_MAX) {
-            return (long long)v.lo;
-        }
-        return LLONG_MAX;
-    }
-    if (v.hi == 0xffffffffffffffffULL && v.lo >= (unsigned long long)LLONG_MIN) {
-        return (long long)v.lo;
-    }
-    return LLONG_MIN;
-}
 
 __device__ void cumsum_simple_i64_wide_impl(
     const long long* __restrict__ input,
@@ -968,7 +926,7 @@ __global__ void cumsum_i32(const int* in, int* out, unsigned int scan_size, unsi
     cumsum_simple_wide_impl<int, long long>(in, out, scan_size, outer_size, (long long)INT_MIN, (long long)INT_MAX);
 }
 
-// I64: two-limb 128-bit accumulator (see `Numr128` above), saturating on narrow.
+// I64: two-limb 128-bit accumulator (see `Numr128` in `numr128.cuh`), saturating on narrow.
 __global__ void cumsum_i64(const long long* in, long long* out, unsigned int scan_size, unsigned int outer_size) {
     cumsum_simple_i64_wide_impl(in, out, scan_size, outer_size);
 }

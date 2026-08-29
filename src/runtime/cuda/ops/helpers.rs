@@ -2,7 +2,7 @@
 
 use super::super::kernels::launch_scalar_op_half;
 use super::super::kernels::{
-    AccumulationPrecision, launch_binary_op, launch_broadcast_binary_op,
+    AccumulationPrecision, has_gemv_kernel, launch_binary_op, launch_broadcast_binary_op,
     launch_broadcast_compare_op, launch_compare_op, launch_gemv_kernel_bt_mr,
     launch_matmul_batched_kernel, launch_matmul_bias_batched_kernel, launch_matmul_bias_kernel,
     launch_matmul_kernel, launch_reduce_dim_op, launch_scalar_op_f32, launch_scalar_op_f64,
@@ -59,7 +59,8 @@ pub(crate) fn matmul_native(
 
     // Fast path: if B is a transposed view of contiguous [N,K] and M is small,
     // use gemv_bt kernel directly — avoids copying the entire weight matrix.
-    if m <= 16 && is_simple_transpose_2d(b) {
+    // `gemv.cu` has no integer instantiation, so integers keep the tiled path.
+    if m <= 16 && has_gemv_kernel(dtype) && is_simple_transpose_2d(b) {
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
@@ -144,8 +145,9 @@ pub(crate) fn matmul_batched_native(
     let (a, b) = (&operands.a, &operands.b);
     let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
-    // Fast path: transposed B with small M → gemv_bt
-    if m <= 16 && is_batched_transpose_last2(b) {
+    // Fast path: transposed B with small M → gemv_bt. Integers have no gemv
+    // instantiation, so they always take the tiled path.
+    if m <= 16 && has_gemv_kernel(dtype) && is_batched_transpose_last2(b) {
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 

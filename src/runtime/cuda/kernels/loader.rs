@@ -364,6 +364,18 @@ pub fn kernel_name(base: &str, dtype: DType) -> String {
     format!("{}_{}", base, dtype_suffix(dtype))
 }
 
+/// Whether `gemv.cu` carries a kernel for this dtype.
+///
+/// `gemv.cu` instantiates F32, F64, F16 and BF16 only. Integer matmul therefore
+/// takes the tiled path at every M, including the small-M shapes the GEMV fast
+/// path exists for. Correctness does not depend on the shortcut - the tiled
+/// kernel computes the same product - so an integer GEMV kernel is a possible
+/// future optimisation, not a gap.
+#[inline]
+pub fn has_gemv_kernel(dtype: DType) -> bool {
+    matches!(dtype, DType::F32 | DType::F64 | DType::F16 | DType::BF16)
+}
+
 // ============================================================================
 // Generic Kernel Launch Helpers
 // ============================================================================
@@ -549,8 +561,11 @@ pub fn matmul_batched_launch_config(
 #[inline]
 pub fn default_tile_config(dtype: DType) -> TileConfig {
     match dtype {
-        // F64 uses smaller tiles due to larger element size
-        DType::F64 => TileConfig {
+        // F64 and the integer dtypes use smaller tiles. F64 and I64 for the
+        // larger element size; I32 because its accumulator is a 128-bit
+        // `Numr128`, so a 4x4 thread tile already costs 16 accumulators per
+        // thread and a wider tile spills further into local memory.
+        DType::F64 | DType::I64 | DType::I32 => TileConfig {
             block_m: 64,
             block_n: 64,
             block_k: 8,
@@ -629,7 +644,7 @@ pub unsafe fn launch_matmul_kernel(
 ) -> Result<()> {
     // Use GEMV kernel for small M (single-token decode in LLM inference)
     // The tiled GEMM wastes 99%+ compute when M < block_m (typically 128)
-    if m <= 16 {
+    if m <= 16 && has_gemv_kernel(dtype) {
         unsafe {
             return launch_gemv_kernel(
                 context,
@@ -1114,7 +1129,7 @@ pub unsafe fn launch_matmul_batched_kernel(
     b_batch: usize,
 ) -> Result<()> {
     // Use GEMV kernel for small M (batched case)
-    if m <= 16 {
+    if m <= 16 && has_gemv_kernel(dtype) {
         unsafe {
             return launch_gemv_kernel(
                 context,

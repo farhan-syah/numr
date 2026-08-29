@@ -16,6 +16,7 @@
 
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
+#include "numr128.cuh"
 
 // ============================================================================
 // Configurable Register-Tiled GEMM Kernel (F32)
@@ -2213,4 +2214,261 @@ extern "C" __global__ void matmul_f32_tiled_64x64x32_8x4(
     unsigned int K
 ) {
     matmul_f32_tiled_impl<64, 64, 32, 8, 4>(A, B, C, M, N, K);
+}
+
+// ============================================================================
+// Configurable Integer GEMM (I32, I64)
+// ============================================================================
+//
+// Integer matmul accumulates in `Numr128`, never in the element type. This is
+// what CPU does (`matmul_scalar_acc::<T, i128>` in
+// `runtime/cpu/kernels/matmul/kernel.rs`), and the two backends must agree on
+// exactly the inputs that stress the accumulator: a partial sum that leaves the
+// output dtype's range and comes back reports the true value, because the
+// accumulator is wide enough never to overflow. Clamping per step would report
+// a different number, so nothing here clamps until the final store.
+//
+// The tiling mirrors `matmul_f64` - single-buffered shared memory, runtime
+// block/thread tile sizes - because the host allocates one shared-memory buffer
+// for every dtype but F32.
+
+// Dynamic shared memory is untyped, so each element type needs its own
+// `extern __shared__` declaration. This accessor keeps one templated kernel body.
+template<typename T> __device__ __forceinline__ T* matmul_int_smem();
+
+template<> __device__ __forceinline__ int* matmul_int_smem<int>() {
+    extern __shared__ int smem_matmul_i32[];
+    return smem_matmul_i32;
+}
+
+template<> __device__ __forceinline__ long long* matmul_int_smem<long long>() {
+    extern __shared__ long long smem_matmul_i64[];
+    return smem_matmul_i64;
+}
+
+// Narrow the accumulator to the output element type, saturating once.
+template<typename T> struct matmul_int_narrow;
+
+template<> struct matmul_int_narrow<int> {
+    static __device__ __forceinline__ int apply(Numr128 v) { return numr128_to_i32_sat(v); }
+};
+
+template<> struct matmul_int_narrow<long long> {
+    static __device__ __forceinline__ long long apply(Numr128 v) { return numr128_to_i64_sat(v); }
+};
+
+template<typename T>
+__device__ void matmul_int_impl(
+    const T* __restrict__ A,
+    const T* __restrict__ B,
+    T* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int block_m,
+    unsigned int block_n,
+    unsigned int block_k,
+    unsigned int thread_m,
+    unsigned int thread_n
+) {
+    T* smem = matmul_int_smem<T>();
+    T* As = smem;
+    T* Bs = smem + block_m * block_k;
+
+    const unsigned int tx = threadIdx.x;
+    const unsigned int ty = threadIdx.y;
+    const unsigned int threads_x = block_n / thread_n;
+
+    const unsigned int block_row = blockIdx.y * block_m;
+    const unsigned int block_col = blockIdx.x * block_n;
+    const unsigned int thread_row = ty * thread_m;
+    const unsigned int thread_col = tx * thread_n;
+
+    Numr128 reg_c[8][8];
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            reg_c[i][j] = numr128_from_i64(0);
+        }
+    }
+
+    T reg_a[8];
+    T reg_b[8];
+
+    const unsigned int num_k_tiles = (K + block_k - 1) / block_k;
+    const unsigned int thread_id = ty * threads_x + tx;
+    const unsigned int num_threads = blockDim.x * blockDim.y;
+
+    for (unsigned int bk = 0; bk < num_k_tiles; bk++) {
+        const unsigned int k_offset = bk * block_k;
+
+        for (unsigned int load_idx = thread_id; load_idx < block_m * block_k; load_idx += num_threads) {
+            const unsigned int load_row = load_idx / block_k;
+            const unsigned int load_col = load_idx % block_k;
+            const unsigned int global_row = block_row + load_row;
+            const unsigned int global_col = k_offset + load_col;
+
+            T val = (T)0;
+            if (global_row < M && global_col < K) {
+                val = A[global_row * K + global_col];
+            }
+            As[load_row * block_k + load_col] = val;
+        }
+
+        for (unsigned int load_idx = thread_id; load_idx < block_k * block_n; load_idx += num_threads) {
+            const unsigned int load_row = load_idx / block_n;
+            const unsigned int load_col = load_idx % block_n;
+            const unsigned int global_row = k_offset + load_row;
+            const unsigned int global_col = block_col + load_col;
+
+            T val = (T)0;
+            if (global_row < K && global_col < N) {
+                val = B[global_row * N + global_col];
+            }
+            Bs[load_row * block_n + load_col] = val;
+        }
+
+        __syncthreads();
+
+        for (unsigned int k = 0; k < block_k; k++) {
+            for (unsigned int i = 0; i < thread_m; i++) {
+                reg_a[i] = As[(thread_row + i) * block_k + k];
+            }
+            for (unsigned int j = 0; j < thread_n; j++) {
+                reg_b[j] = Bs[k * block_n + thread_col + j];
+            }
+            for (unsigned int i = 0; i < thread_m; i++) {
+                for (unsigned int j = 0; j < thread_n; j++) {
+                    // Widen both operands before multiplying: the product of two
+                    // I32 or I64 elements does not fit the element type.
+                    Numr128 prod = numr128_mul_i64((long long)reg_a[i], (long long)reg_b[j]);
+                    reg_c[i][j] = numr128_add(reg_c[i][j], prod);
+                }
+            }
+        }
+
+        __syncthreads();
+    }
+
+    for (unsigned int i = 0; i < thread_m; i++) {
+        const unsigned int global_row = block_row + thread_row + i;
+        if (global_row < M) {
+            for (unsigned int j = 0; j < thread_n; j++) {
+                const unsigned int global_col = block_col + thread_col + j;
+                if (global_col < N) {
+                    C[global_row * N + global_col] = matmul_int_narrow<T>::apply(reg_c[i][j]);
+                }
+            }
+        }
+    }
+}
+
+template<typename T>
+__device__ void matmul_batched_int_impl(
+    const T* __restrict__ A,
+    const T* __restrict__ B,
+    T* __restrict__ C,
+    unsigned int batch,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int block_m,
+    unsigned int block_n,
+    unsigned int block_k,
+    unsigned int thread_m,
+    unsigned int thread_n,
+    unsigned int a_batch_count,
+    unsigned int b_batch_count
+) {
+    const unsigned int b = blockIdx.z;
+    if (b >= batch) return;
+
+    const unsigned int stride_a = M * K;
+    const unsigned int stride_b = K * N;
+    const unsigned int stride_c = M * N;
+
+    matmul_int_impl<T>(
+        A + (b % a_batch_count) * stride_a,
+        B + (b % b_batch_count) * stride_b,
+        C + b * stride_c,
+        M, N, K,
+        block_m, block_n, block_k, thread_m, thread_n
+    );
+}
+
+extern "C" __global__ void matmul_i32(
+    const int* __restrict__ A,
+    const int* __restrict__ B,
+    int* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int block_m,
+    unsigned int block_n,
+    unsigned int block_k,
+    unsigned int thread_m,
+    unsigned int thread_n
+) {
+    matmul_int_impl<int>(A, B, C, M, N, K, block_m, block_n, block_k, thread_m, thread_n);
+}
+
+extern "C" __global__ void matmul_i64(
+    const long long* __restrict__ A,
+    const long long* __restrict__ B,
+    long long* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int block_m,
+    unsigned int block_n,
+    unsigned int block_k,
+    unsigned int thread_m,
+    unsigned int thread_n
+) {
+    matmul_int_impl<long long>(A, B, C, M, N, K, block_m, block_n, block_k, thread_m, thread_n);
+}
+
+extern "C" __global__ void matmul_batched_i32(
+    const int* __restrict__ A,
+    const int* __restrict__ B,
+    int* __restrict__ C,
+    unsigned int batch,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int block_m,
+    unsigned int block_n,
+    unsigned int block_k,
+    unsigned int thread_m,
+    unsigned int thread_n,
+    unsigned int a_batch_count,
+    unsigned int b_batch_count
+) {
+    matmul_batched_int_impl<int>(
+        A, B, C, batch, M, N, K,
+        block_m, block_n, block_k, thread_m, thread_n,
+        a_batch_count, b_batch_count
+    );
+}
+
+extern "C" __global__ void matmul_batched_i64(
+    const long long* __restrict__ A,
+    const long long* __restrict__ B,
+    long long* __restrict__ C,
+    unsigned int batch,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int block_m,
+    unsigned int block_n,
+    unsigned int block_k,
+    unsigned int thread_m,
+    unsigned int thread_n,
+    unsigned int a_batch_count,
+    unsigned int b_batch_count
+) {
+    matmul_batched_int_impl<long long>(
+        A, B, C, batch, M, N, K,
+        block_m, block_n, block_k, thread_m, thread_n,
+        a_batch_count, b_batch_count
+    );
 }

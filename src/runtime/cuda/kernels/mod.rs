@@ -160,8 +160,8 @@ pub use utility::*;
 // Re-export commonly used items from loader for advanced users
 #[allow(unused_imports)]
 pub use loader::{
-    BLOCK_SIZE, LaunchConfig, kernel_names, launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr,
-    launch_matmul_batched_kernel, launch_matmul_bias_batched_kernel, launch_matmul_bias_kernel,
-    launch_matmul_kernel, launch_semiring_matmul_batched_kernel, launch_semiring_matmul_kernel,
-    preload_modules,
+    BLOCK_SIZE, LaunchConfig, has_gemv_kernel, kernel_names, launch_gemv_kernel_bt,
+    launch_gemv_kernel_bt_mr, launch_matmul_batched_kernel, launch_matmul_bias_batched_kernel,
+    launch_matmul_bias_kernel, launch_matmul_kernel, launch_semiring_matmul_batched_kernel,
+    launch_semiring_matmul_kernel, preload_modules,
 };

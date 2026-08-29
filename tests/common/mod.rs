@@ -99,8 +99,12 @@ pub fn backend_supported_dtypes(backend: &str) -> Vec<DType> {
         // kernels, but `compare`, `cast`, and the binary ops do not. U32 is left
         // out because a per-backend list cannot express per-op support, and
         // claiming it produces failures rather than skips.
+        //
+        // I32 and I64 are in because CUDA's arithmetic pipeline (`binary.cu`)
+        // and its integer `matmul` kernels cover exactly those two signed
+        // integers. The other six integer dtypes have no CUDA arithmetic at all.
         #[cfg(feature = "cuda")]
-        "cuda" => build_dtype_list(&[DType::F32, DType::F64, DType::I32]),
+        "cuda" => build_dtype_list(&[DType::F32, DType::F64, DType::I32, DType::I64]),
         #[cfg(feature = "wgpu")]
         "wgpu" => {
             // WebGPU: 32-bit types only (F32, I32, U32)

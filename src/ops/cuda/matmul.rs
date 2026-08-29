@@ -9,7 +9,7 @@ use crate::runtime::cuda::ops::helpers::{
     matmul_batched_native, matmul_bias_batched_native, matmul_bias_native, matmul_native,
 };
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
-use crate::runtime::fallback::{matmul_fallback, validate_binary_dtypes};
+use crate::runtime::fallback::validate_binary_dtypes;
 use crate::tensor::Tensor;
 
 impl MatmulOps<CudaRuntime> for CudaClient {
@@ -53,9 +53,11 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             .product();
         let batch_size = batch_size.max(1);
 
-        // Native tiled CUDA kernel
+        // Native tiled CUDA kernel. I32 and I64 are the only integer dtypes with
+        // a CUDA arithmetic pipeline (see `kernels/binary.cu`), so they are the
+        // only ones with an integer matmul kernel.
         match dtype {
-            DType::F32 | DType::F64 | DType::F16 | DType::BF16 => {
+            DType::F32 | DType::F64 | DType::F16 | DType::BF16 | DType::I32 | DType::I64 => {
                 if batch_size > 1 {
                     matmul_batched_native(self, a, b, dtype, batch_size, m, k, n)
                 } else {
@@ -93,7 +95,10 @@ impl MatmulOps<CudaRuntime> for CudaClient {
                     }
                 }
             }
-            _ => matmul_fallback(a, b, &out_shape, &self.device, "matmul"),
+            _ => Err(Error::UnsupportedDType {
+                dtype,
+                op: "matmul",
+            }),
         }
     }
 
