@@ -198,6 +198,7 @@ fn compile_cuda_kernels() {
                 "-ptx",
                 "-O3",
                 "--use_fast_math",
+                "--ftz=false",
                 &format!("-arch={cuda_arch}"),
                 "-o",
                 ptx_path.to_str().unwrap(),
