@@ -34,12 +34,16 @@ extern "C" {
 
 NUMR_SCALAR_ROW_FLOAT(float, float, f32)
 NUMR_SCALAR_ROW_FLOAT(double, double, f64)
-NUMR_SCALAR_ROW_FLOAT(__half, float, f16)
-NUMR_SCALAR_ROW_FLOAT(__nv_bfloat16, float, bf16)
 
 // ============================================================================
-// FP8 dtypes: computed in F32 against the unrounded scalar
+// Narrow float dtypes: computed in F32 against the unrounded scalar
 // ============================================================================
+// F16, BF16 and both FP8 dtypes are too narrow to hold an arbitrary scalar, so
+// rounding it into the element type first would round the answer twice. See
+// NUMR_SCALAR_ROW_NARROW_FLOAT.
+
+NUMR_SCALAR_ROW_NARROW_FLOAT(__half, f16, __half2float, __float2half)
+NUMR_SCALAR_ROW_NARROW_FLOAT(__nv_bfloat16, bf16, __bfloat162float, __float2bfloat16)
 
 NUMR_SCALAR_ROW_FP8(numr_fp8_e4m3, fp8_e4m3, fp8_e4m3_to_f32, f32_to_fp8_e4m3)
 NUMR_SCALAR_ROW_FP8(numr_fp8_e5m2, fp8_e5m2, fp8_e5m2_to_f32, f32_to_fp8_e5m2)

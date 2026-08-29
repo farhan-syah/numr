@@ -16,9 +16,10 @@
 //  * pow. binop_pow takes both operands in the element type, which would round
 //    an F16 exponent of 0.1 to 0.0999755 before raising. The exponent arrives
 //    in its own wire type here and is used unrounded.
-//  * FP8. Its arithmetic decodes to F32, and the scalar stays an unrounded F32
-//    rather than being encoded to FP8 first, which is what these kernels have
-//    always done. See NUMR_SCALAR_ROW_FP8.
+//  * Every narrow float — F16, BF16 and the two FP8 dtypes. Their arithmetic
+//    decodes to F32, and the scalar stays an unrounded F32 rather than being
+//    rounded into the element type first. See NUMR_SCALAR_ROW_NARROW_FLOAT and
+//    NUMR_SCALAR_ROW_FP8.
 
 #ifndef NUMR_SCALAR_OPS_CUH
 #define NUMR_SCALAR_OPS_CUH
@@ -34,19 +35,15 @@
 // Wire scalar -> element type
 // ============================================================================
 // The scalar reaches the kernel in the type the Rust launcher pushes: the
-// element type itself for the F32/F64 and integer rows, and F32 for the F16 and
-// BF16 rows, which have no host-side counterpart to push.
+// element type itself for the F32/F64 and integer rows, and F32 for the F16,
+// BF16 and FP8 rows, which have no host-side counterpart to push.
+//
+// Only the rows whose element type CAN hold the scalar convert it. A narrow
+// float cannot, so it never reaches this function: those rows compute in F32
+// against the unrounded scalar instead.
 
 template<typename T, typename S>
 __device__ __forceinline__ T numr_scalar_to_elem(S s) { return (T)s; }
-
-template<> __device__ __forceinline__ __half numr_scalar_to_elem<__half, float>(float s) {
-    return __float2half(s);
-}
-template<> __device__ __forceinline__ __nv_bfloat16
-numr_scalar_to_elem<__nv_bfloat16, float>(float s) {
-    return __float2bfloat16(s);
-}
 
 // ============================================================================
 // pow
@@ -127,12 +124,49 @@ NUMR_SCALAR_POW_INT(uint64_t)
         }                                                                       \
     }
 
-// One dtype whose scalar and exponent share the wire type S: F32, F64, F16,
-// BF16.
+// One dtype wide enough to hold its own scalar, with the scalar and the
+// exponent sharing the wire type S: F32 and F64.
 #define NUMR_SCALAR_ROW_FLOAT(T, S, SUF)                                        \
     NUMR_SCALAR_OP(T, S, SUF, add) NUMR_SCALAR_OP(T, S, SUF, sub)               \
     NUMR_SCALAR_OP(T, S, SUF, mul) NUMR_SCALAR_OP(T, S, SUF, div)               \
     NUMR_RSUB_SCALAR_OP(T, S, SUF) NUMR_POW_SCALAR_OP(T, S, SUF)
+
+// One narrow float that CUDA gives an arithmetic type for: F16 and BF16.
+//
+// The row cannot forward to binop_* the way the F32/F64 row does, because that
+// would take the scalar through numr_scalar_to_elem first. F16 cannot hold 0.3;
+// rounding it to 0.30004883 and only then adding rounds the answer TWICE, and
+// the second rounding starts from a value up to half an ulp away from the one
+// the caller asked for, so the result can land an ulp off. Decoding to F32,
+// computing against the UNROUNDED scalar and encoding once is the single
+// narrowing at write-out that src/runtime/cpu/kernels/wide_acc.rs states for
+// every is_narrow_float() dtype, and what the CPU scalar kernels and
+// NUMR_SCALAR_ROW_FP8 already do.
+//
+// pow is already correct: numr_scalar_pow's F16 and BF16 specializations raise
+// in F32 against the unrounded exponent.
+#define NUMR_SCALAR_ROW_NARROW_FLOAT(T, SUF, TO_F32, FROM_F32)                  \
+    __global__ void add_scalar_##SUF(const T* a, float s, T* out, unsigned int n) { \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) out[idx] = FROM_F32(TO_F32(a[idx]) + s);                   \
+    }                                                                           \
+    __global__ void sub_scalar_##SUF(const T* a, float s, T* out, unsigned int n) { \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) out[idx] = FROM_F32(TO_F32(a[idx]) - s);                   \
+    }                                                                           \
+    __global__ void mul_scalar_##SUF(const T* a, float s, T* out, unsigned int n) { \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) out[idx] = FROM_F32(TO_F32(a[idx]) * s);                   \
+    }                                                                           \
+    __global__ void div_scalar_##SUF(const T* a, float s, T* out, unsigned int n) { \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) out[idx] = FROM_F32(TO_F32(a[idx]) / s);                   \
+    }                                                                           \
+    __global__ void rsub_scalar_##SUF(const T* a, float s, T* out, unsigned int n) { \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) out[idx] = FROM_F32(s - TO_F32(a[idx]));                   \
+    }                                                                           \
+    NUMR_POW_SCALAR_OP(T, float, SUF)
 
 // One integer dtype. The five arithmetic kernels take the scalar in the element
 // type, already saturated to that range by the host's `as` cast (which is what
