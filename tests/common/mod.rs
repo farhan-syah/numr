@@ -18,14 +18,15 @@ pub fn create_cpu_client() -> (CpuClient, CpuDevice) {
 
 /// Assert two f64 slices are close within tolerance
 ///
-/// Uses the formula: |a - b| <= atol + rtol * |b|
+/// Uses the formula: |a - b| <= atol + rtol * |b|, with non-finite values
+/// compared by identity (see [`values_close`]).
 pub fn assert_allclose_f64(a: &[f64], b: &[f64], rtol: f64, atol: f64, msg: &str) {
     assert_eq!(a.len(), b.len(), "{}: length mismatch", msg);
     for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
         let diff = (x - y).abs();
         let tol = atol + rtol * y.abs();
         assert!(
-            diff <= tol,
+            values_close(*x, *y, rtol, atol),
             "{}: element {} differs: {} vs {} (diff={}, tol={})",
             msg,
             i,
@@ -66,6 +67,8 @@ pub fn create_wgpu_client() -> Option<(WgpuClient, WgpuDevice)> {
 }
 
 /// Assert two f32 slices are close within tolerance
+///
+/// Non-finite values are compared by identity (see [`values_close`]).
 #[allow(dead_code)]
 pub fn assert_allclose_f32(a: &[f32], b: &[f32], rtol: f32, atol: f32, msg: &str) {
     assert_eq!(a.len(), b.len(), "{}: length mismatch", msg);
@@ -73,7 +76,7 @@ pub fn assert_allclose_f32(a: &[f32], b: &[f32], rtol: f32, atol: f32, msg: &str
         let diff = (x - y).abs();
         let tol = atol + rtol * y.abs();
         assert!(
-            diff <= tol,
+            values_close(*x as f64, *y as f64, rtol as f64, atol as f64),
             "{}: element {} differs: {} vs {} (diff={}, tol={})",
             msg,
             i,
@@ -175,6 +178,23 @@ pub fn tolerance_for_dtype(dtype: DType) -> (f64, f64) {
     }
 }
 
+/// Compare one pair of values with dtype tolerance, treating non-finite values
+/// by identity.
+///
+/// `inf - inf` is NaN and `NaN <= tol` is false, so a plain tolerance check
+/// reports two backends that both produced infinity as differing. Backends
+/// agreeing on infinity, or on NaN, is the correct outcome. An infinity against
+/// a finite value, or a NaN against a number, still fails.
+pub fn values_close(actual: f64, expected: f64, rtol: f64, atol: f64) -> bool {
+    if actual.is_nan() || expected.is_nan() {
+        return actual.is_nan() && expected.is_nan();
+    }
+    if actual.is_infinite() || expected.is_infinite() {
+        return actual == expected;
+    }
+    (actual - expected).abs() <= atol + rtol * expected.abs()
+}
+
 /// Assert two f64 slices are close, with tolerance based on dtype
 ///
 /// This handles different precision levels appropriately:
@@ -196,7 +216,7 @@ pub fn assert_allclose_for_dtype(actual: &[f64], expected: &[f64], dtype: DType,
         let diff = (a - e).abs();
         let tol = atol + rtol * e.abs();
         assert!(
-            diff <= tol,
+            values_close(*a, *e, rtol, atol),
             "{}: dtype={:?}: element {} differs: {} vs {} (diff={:.2e}, tol={:.2e})",
             msg,
             dtype,
@@ -241,7 +261,7 @@ pub fn assert_tensor_allclose<R1: Runtime, R2: Runtime>(
                 let diff = (a_f64 - e_f64).abs();
                 let tol = atol + rtol * e_f64.abs();
                 assert!(
-                    diff <= tol,
+                    values_close(a_f64, e_f64, rtol, atol),
                     "{}: dtype={:?}: element {} differs: {} vs {} (diff={:.2e}, tol={:.2e})",
                     msg,
                     dtype,
