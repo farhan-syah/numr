@@ -68,7 +68,8 @@ pub unsafe fn philox_uniform_kernel<T: Element>(
         for j in 0..4 {
             if i + j < n {
                 let val = u32_to_uniform(random[j]);
-                out_slice[i + j] = T::from_f64(val);
+                out_slice[i + j] =
+                    crate::runtime::cpu::kernels::rng::clamp_uniform_sample(T::from_f64(val));
             }
         }
     }

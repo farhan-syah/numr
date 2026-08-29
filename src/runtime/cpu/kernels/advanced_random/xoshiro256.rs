@@ -70,7 +70,7 @@ pub unsafe fn xoshiro256_uniform_kernel<T: Element>(out: *mut T, n: usize, seed:
     for elem in out_slice.iter_mut() {
         let u = rng.next();
         let val = u64_to_uniform(u);
-        *elem = T::from_f64(val);
+        *elem = crate::runtime::cpu::kernels::rng::clamp_uniform_sample(T::from_f64(val));
     }
 }
 

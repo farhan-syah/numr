@@ -313,18 +313,9 @@ pub unsafe fn rand_uniform_kernel<T: Element>(out: *mut T, len: usize) {
     let mut prng = rng::thread_rng();
     let out_slice = std::slice::from_raw_parts_mut(out, len);
 
-    // Check once if this type can round values near 1.0 up to 1.0
-    let needs_clamp = T::from_f64(0.9999).to_f64() >= 1.0;
-
     for elem in out_slice.iter_mut() {
         let val = rng::sample_uniform(&mut prng);
-        *elem = T::from_f64(val);
-        // For reduced-precision types (BF16, FP8), rounding can push values
-        // near 1.0 up to exactly 1.0. Clamp to the largest representable
-        // value below 1.0 in this type.
-        if needs_clamp && elem.to_f64() >= 1.0 {
-            *elem = T::from_f64(0.0);
-        }
+        *elem = rng::clamp_uniform_sample(T::from_f64(val));
     }
 }
 
@@ -570,5 +561,77 @@ pub unsafe fn one_hot_kernel<T: Element>(
         if idx < num_classes {
             out_slice[i * num_classes + idx] = 1.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod rand_uniform_range_tests {
+    use super::*;
+    #[cfg(any(feature = "f16", feature = "fp8"))]
+    use crate::dtype::DType;
+
+    const SAMPLE_COUNT: usize = 200_000;
+
+    /// Draw `SAMPLE_COUNT` uniform samples of `T` and assert every value stays
+    /// in `[0, 1)`, then check the maximum against `bound`.
+    ///
+    /// `bound` is `None` for F32/F64: their `[0, 1)` contract was already
+    /// correct, so this only checks the range, not a specific ceiling.
+    fn check_range_and_bound<T: Element>(bound: Option<f64>) {
+        let mut out = vec![T::zero(); SAMPLE_COUNT];
+        unsafe {
+            rand_uniform_kernel::<T>(out.as_mut_ptr(), SAMPLE_COUNT);
+        }
+
+        let mut max_seen = f64::MIN;
+        for &v in &out {
+            let f = v.to_f64();
+            assert!(f >= 0.0, "rand produced negative value: {f}");
+            assert!(f < 1.0, "rand produced value out of range [0, 1): {f}");
+            if f > max_seen {
+                max_seen = f;
+            }
+        }
+
+        if let Some(bound) = bound {
+            assert_eq!(
+                max_seen, bound,
+                "expected the largest observed value to reach the dtype's bound below 1.0"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rand_uniform_f32_unchanged() {
+        check_range_and_bound::<f32>(None);
+    }
+
+    #[test]
+    fn test_rand_uniform_f64_unchanged() {
+        check_range_and_bound::<f64>(None);
+    }
+
+    #[cfg(feature = "f16")]
+    #[test]
+    fn test_rand_uniform_f16_stays_below_one() {
+        check_range_and_bound::<half::f16>(DType::F16.largest_value_below_one());
+    }
+
+    #[cfg(feature = "f16")]
+    #[test]
+    fn test_rand_uniform_bf16_stays_below_one() {
+        check_range_and_bound::<half::bf16>(DType::BF16.largest_value_below_one());
+    }
+
+    #[cfg(feature = "fp8")]
+    #[test]
+    fn test_rand_uniform_fp8e4m3_stays_below_one() {
+        check_range_and_bound::<crate::dtype::FP8E4M3>(DType::FP8E4M3.largest_value_below_one());
+    }
+
+    #[cfg(feature = "fp8")]
+    #[test]
+    fn test_rand_uniform_fp8e5m2_stays_below_one() {
+        check_range_and_bound::<crate::dtype::FP8E5M2>(DType::FP8E5M2.largest_value_below_one());
     }
 }

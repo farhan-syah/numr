@@ -222,9 +222,12 @@ __global__ void rand_f16(__half* out, unsigned long long seed, unsigned int n) {
         XorShift128PlusState state;
         xorshift128plus_init(&state, seed, idx);
         __half val = __float2half((float)xorshift128plus_uniform(&state));
-        // Clamp: reduced-precision types can round values near 1.0 up to exactly 1.0
+        // rand must stay in [0, 1). Narrowing to half can round a value near
+        // 1.0 up to exactly 1.0, so clamp to F16's largest value below 1.0:
+        // `largest_value_below_one` in `src/dtype/dtype_enum.rs` is the
+        // authority for this bound (2047/2048, 10 mantissa bits).
         if (__hge(val, __float2half(1.0f))) {
-            val = __float2half(0.0f);
+            val = __float2half(0.99951171875f);
         }
         out[idx] = val;
     }
@@ -256,9 +259,12 @@ __global__ void rand_bf16(__nv_bfloat16* out, unsigned long long seed, unsigned 
         xorshift128plus_init(&state, seed, idx);
         float fval = (float)xorshift128plus_uniform(&state);
         __nv_bfloat16 val = __float2bfloat16(fval);
-        // Clamp: reduced-precision types can round values near 1.0 up to exactly 1.0
+        // rand must stay in [0, 1). Narrowing to bf16 can round a value near
+        // 1.0 up to exactly 1.0, so clamp to BF16's largest value below 1.0:
+        // `largest_value_below_one` in `src/dtype/dtype_enum.rs` is the
+        // authority for this bound (255/256, 7 mantissa bits).
         if (__bfloat162float(val) >= 1.0f) {
-            val = __float2bfloat16(0.0f);
+            val = __float2bfloat16(0.99609375f);
         }
         out[idx] = val;
     }

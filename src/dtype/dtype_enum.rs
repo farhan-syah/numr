@@ -189,6 +189,24 @@ impl DType {
         }
     }
 
+    /// Largest value strictly below 1.0 this dtype can represent exactly.
+    ///
+    /// `rand` samples in `[0, 1)`. Narrowing an f64 sample near 1.0 to a
+    /// dtype with few mantissa bits rounds it up to exactly 1.0, which
+    /// breaks that contract. Every uniform generator clamps its output to
+    /// this bound instead of the raw sample. `None` for F32/F64, wide
+    /// enough that narrowing never reaches 1.0, and for non-float dtypes,
+    /// where the question does not apply.
+    pub fn largest_value_below_one(self) -> Option<f64> {
+        match self {
+            Self::F16 => Some(0.99951171875), // 2047/2048, 10 mantissa bits
+            Self::BF16 => Some(0.99609375),   // 255/256, 7 mantissa bits
+            Self::FP8E4M3 => Some(0.9375),    // 15/16, 3 mantissa bits
+            Self::FP8E5M2 => Some(0.875),     // 7/8, 2 mantissa bits
+            _ => None,
+        }
+    }
+
     /// Minimum value representable by this dtype (as f64)
     ///
     /// For complex types, returns the minimum value of each component

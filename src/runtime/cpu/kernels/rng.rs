@@ -112,6 +112,22 @@ pub(crate) fn sample_uniform(rng: &mut Xoshiro256) -> f64 {
     u64_to_uniform(rng.next())
 }
 
+/// Clamp a narrowed uniform sample to keep `rand`'s `[0, 1)` contract.
+///
+/// Narrowing an f64 sample near 1.0 to `T` can round it up to exactly 1.0
+/// for low-precision floats (FP8, F16, BF16). When that happens, replace it
+/// with `T::DTYPE`'s largest value strictly below 1.0
+/// ([`DType::largest_value_below_one`]). A no-op for F32/F64 and integers.
+#[inline(always)]
+pub(crate) fn clamp_uniform_sample<T: crate::dtype::Element>(val: T) -> T {
+    if val.to_f64() >= 1.0
+        && let Some(bound) = T::DTYPE.largest_value_below_one()
+    {
+        return T::from_f64(bound);
+    }
+    val
+}
+
 /// Sample a standard-normal f64 (mean 0, std 1) via Box-Muller.
 ///
 /// Generates a pair and discards the second value for simplicity.

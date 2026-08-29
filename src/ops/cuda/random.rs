@@ -4,6 +4,8 @@ use crate::error::{Error, Result};
 use crate::ops::RandomOps;
 #[cfg(feature = "fp8")]
 use crate::ops::TypeConversionOps;
+#[cfg(feature = "fp8")]
+use crate::ops::UtilityOps;
 use crate::runtime::cuda::kernels::{
     launch_bernoulli, launch_beta_dist, launch_binomial, launch_chi_squared, launch_exponential,
     launch_f_distribution, launch_gamma_dist, launch_laplace, launch_multinomial_with_replacement,
@@ -17,11 +19,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 impl RandomOps<CudaRuntime> for CudaClient {
     fn rand(&self, shape: &[usize], dtype: DType) -> Result<Tensor<CudaRuntime>> {
-        // FP8: generate F32 rand and cast down
+        // FP8: generate F32 rand, clamp below FP8's 1.0 bound, then cast down
         #[cfg(feature = "fp8")]
         if matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2) {
             let f32_result = self.rand(shape, DType::F32)?;
-            return self.cast(&f32_result, dtype);
+            let clamped = clamp_below_one_for_narrowing(self, &f32_result, dtype)?;
+            return self.cast(&clamped, dtype);
         }
 
         // Supported: F32, F64, F16, BF16
@@ -61,7 +64,8 @@ impl RandomOps<CudaRuntime> for CudaClient {
         #[cfg(feature = "fp8")]
         if matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2) {
             let f32_result = self.rand_seeded(shape, DType::F32, seed)?;
-            return self.cast(&f32_result, dtype);
+            let clamped = clamp_below_one_for_narrowing(self, &f32_result, dtype)?;
+            return self.cast(&clamped, dtype);
         }
 
         if !matches!(dtype, DType::F32 | DType::F64 | DType::F16 | DType::BF16) {
@@ -815,4 +819,21 @@ fn generate_random_seed() -> u64 {
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
     z ^ (z >> 31)
+}
+
+/// Clamp an F32 uniform sample below the target FP8 dtype's largest value
+/// under 1.0, so the F32->FP8 cast that follows can't round it up to 1.0.
+///
+/// The bound is exactly representable in both F32 and the FP8 dtype, so
+/// clamping to it needs no further rounding. `dtype` is always FP8E4M3 or
+/// FP8E5M2 at the call site, both of which have a bound, so `unwrap_or`
+/// never actually falls back; 1.0 is a safe no-op clamp if it ever did.
+#[cfg(feature = "fp8")]
+fn clamp_below_one_for_narrowing(
+    client: &CudaClient,
+    f32_result: &Tensor<CudaRuntime>,
+    dtype: DType,
+) -> Result<Tensor<CudaRuntime>> {
+    let bound = dtype.largest_value_below_one().unwrap_or(1.0);
+    client.clamp(f32_result, f64::MIN, bound)
 }
