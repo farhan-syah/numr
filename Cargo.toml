@@ -77,6 +77,10 @@ name = "matmul"
 harness = false
 
 [[bench]]
+name = "matmul_int"
+harness = false
+
+[[bench]]
 name = "reduce"
 harness = false
 

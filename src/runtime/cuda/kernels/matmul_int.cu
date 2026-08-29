@@ -23,6 +23,17 @@
 // prevent. 64x64x8 is therefore the widest shape that keeps the accumulator in
 // registers. Shared memory is a static 8 KB for I64 (2 x 64 x 8 x 8 bytes) and
 // 4 KB for I32, well inside the 48 KB per-block default.
+//
+// Single-buffered, not double-buffered: a double-buffered variant was
+// implemented and benchmarked on an RTX 3060 and lost - I32 1024x1024 was 26%
+// SLOWER double-buffered (14.81ms vs 11.72ms single), every other case within
+// 3% (noise). `Numr128` accumulation is a software 128-bit multiply-add, so
+// this kernel is compute-bound: there is already enough arithmetic to hide the
+// global loads, so prefetching buys nothing while the doubled shared-memory
+// footprint (16 KB for I64, 8 KB for I32) costs occupancy. This is the
+// opposite of `matmul_f32_tiled_impl` in `matmul.cu`, which double-buffers
+// because F32 matmul is memory-bound. Do not re-add double buffering here
+// without a new measurement that overturns this one.
 
 #include "numr128.cuh"
 
