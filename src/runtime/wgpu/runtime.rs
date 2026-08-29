@@ -115,8 +115,16 @@ impl Runtime for WgpuRuntime {
             crate::error::Error::Backend("Buffer not found for copy_from_device".into())
         })?;
 
+        // `copy_buffer_to_buffer` and `map_async` both reject a size that is
+        // not a multiple of 4. A payload whose length is not a multiple of 4 —
+        // a run of 18-byte GGUF blocks, a TCF payload with an odd super-block
+        // count — is staged and mapped at its rounded-up length. `allocate`
+        // rounded the source buffer up the same way, so the extra bytes are in
+        // bounds, and only the first `dst.len()` bytes reach the caller.
+        let aligned_len = dst.len().div_ceil(4) * 4;
+
         // Create a staging buffer for readback
-        let staging = client.create_staging_buffer("copy_staging", dst.len() as u64);
+        let staging = client.create_staging_buffer("copy_staging", aligned_len as u64);
 
         // Copy from storage to staging
         let mut encoder =
@@ -125,7 +133,7 @@ impl Runtime for WgpuRuntime {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("copy_from_device"),
                 });
-        encoder.copy_buffer_to_buffer(&buffer, 0, &staging, 0, dst.len() as u64);
+        encoder.copy_buffer_to_buffer(&buffer, 0, &staging, 0, aligned_len as u64);
         client.submit_and_wait(encoder);
 
         // Read from staging buffer
@@ -465,4 +473,39 @@ pub fn wgpu_device_id(index: usize) -> WgpuDevice {
 /// Check if WebGPU is available on this system
 pub fn is_wgpu_available() -> bool {
     super::device::query_adapter_info_blocking(0).is_ok()
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A length that is not a multiple of 4 must survive a device round trip.
+    ///
+    /// 18 bytes is one GGUF `Q4_0` block, the realistic case.
+    #[test]
+    fn test_copy_round_trip_unaligned_length() {
+        let device = WgpuRuntime::default_device();
+        if !is_wgpu_available() {
+            println!("No GPU available, skipping test");
+            return;
+        }
+
+        let src: Vec<u8> = (0..18u8)
+            .map(|i| i.wrapping_mul(7).wrapping_add(3))
+            .collect();
+        let ptr = WgpuRuntime::allocate(src.len(), &device).expect("allocation should succeed");
+
+        WgpuRuntime::copy_to_device(&src, ptr, &device).expect("host to device copy");
+
+        let mut dst = vec![0u8; src.len()];
+        WgpuRuntime::copy_from_device(ptr, &mut dst, &device).expect("device to host copy");
+
+        WgpuRuntime::deallocate(ptr, src.len(), &device);
+
+        assert_eq!(dst, src, "unaligned round trip must be byte-exact");
+    }
 }
