@@ -351,14 +351,18 @@ pub(super) struct LogsumexpStridedParams {
 }
 
 // Random operation params
-
+//
+// In both structs below, `seed` and `seed_hi` together carry a full u64 seed
+// (low/high words) since WGSL has no native u64 type. The shader mixes both
+// words before hashing, so seeds that share their low 32 bits still produce
+// distinct streams.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct RandParams {
     pub(super) numel: u32,
     pub(super) seed: u32,
-    pub(super) _pad1: u32,
-    pub(super) _pad2: u32,
+    pub(super) seed_hi: u32,
+    pub(super) _pad: u32,
 }
 
 #[repr(C)]
@@ -366,8 +370,8 @@ pub(super) struct RandParams {
 pub(super) struct RandnParams {
     pub(super) numel: u32,
     pub(super) seed: u32,
-    pub(super) _pad1: u32,
-    pub(super) _pad2: u32,
+    pub(super) seed_hi: u32,
+    pub(super) _pad: u32,
 }
 
 /// Randint params for signed integer types (`I32`)

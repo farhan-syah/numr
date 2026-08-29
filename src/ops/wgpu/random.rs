@@ -45,11 +45,13 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             .unwrap_or(12345u32);
         let seed = time_seed.wrapping_add(counter);
 
+        // seed_hi stays 0: the internally generated seed above is already a
+        // single u32, so there is no high word to carry.
         let params = RandParams {
             numel: numel as u32,
             seed,
-            _pad1: 0,
-            _pad2: 0,
+            seed_hi: 0,
+            _pad: 0,
         };
         let params_buf = create_params_buffer(self, &params);
 
@@ -82,15 +84,16 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
         let out = alloc_output(self, shape, dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
-        // Truncate u64 seed to u32 — WGSL has no native u64 support.
-        // Determinism is still guaranteed: same seed → same u32 → same output.
-        let seed = seed as u32;
+        // WGSL has no native u64. Split the seed into low/high u32 words so
+        // the shader consumes the full 64 bits instead of truncating.
+        let seed_lo = seed as u32;
+        let seed_hi = (seed >> 32) as u32;
 
         let params = RandParams {
             numel: numel as u32,
-            seed,
-            _pad1: 0,
-            _pad2: 0,
+            seed: seed_lo,
+            seed_hi,
+            _pad: 0,
         };
         let params_buf = create_params_buffer(self, &params);
 
@@ -131,15 +134,63 @@ impl RandomOps<WgpuRuntime> for WgpuClient {
             .unwrap_or(12345u32);
         let seed = time_seed.wrapping_add(counter);
 
+        // seed_hi stays 0: the internally generated seed above is already a
+        // single u32, so there is no high word to carry.
         let params = RandnParams {
             numel: numel as u32,
             seed,
-            _pad1: 0,
-            _pad2: 0,
+            seed_hi: 0,
+            _pad: 0,
         };
         let params_buf = create_params_buffer(self, &params);
 
         // Launch kernel
+        shape::launch_randn(
+            self.pipeline_cache(),
+            self.wgpu_queue(),
+            &out_buf,
+            &params_buf,
+            numel,
+            dtype,
+        )?;
+
+        Ok(out)
+    }
+
+    fn randn_seeded(
+        &self,
+        shape: &[usize],
+        dtype: DType,
+        seed: u64,
+    ) -> Result<Tensor<WgpuRuntime>> {
+        if !matches!(dtype, DType::F32) {
+            return Err(Error::UnsupportedDType {
+                dtype,
+                op: "randn_seeded",
+            });
+        }
+
+        let numel: usize = shape.iter().product();
+        if numel == 0 {
+            return Tensor::empty(shape, dtype, self.device());
+        }
+
+        let out = alloc_output(self, shape, dtype)?;
+        let out_buf = get_tensor_buffer(&out)?;
+
+        // WGSL has no native u64. Split the seed into low/high u32 words so
+        // the shader consumes the full 64 bits instead of truncating.
+        let seed_lo = seed as u32;
+        let seed_hi = (seed >> 32) as u32;
+
+        let params = RandnParams {
+            numel: numel as u32,
+            seed: seed_lo,
+            seed_hi,
+            _pad: 0,
+        };
+        let params_buf = create_params_buffer(self, &params);
+
         shape::launch_randn(
             self.pipeline_cache(),
             self.wgpu_queue(),

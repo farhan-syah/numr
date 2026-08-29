@@ -8,9 +8,14 @@ fn pcg_hash(input: u32) -> u32 {
     return (word >> 22u) ^ word;
 }
 
-// Initialize PCG state from seed and index
-fn pcg_init(seed: u32, idx: u32) -> u32 {
-    return pcg_hash(seed ^ pcg_hash(idx));
+// Initialize PCG state from a full 64-bit seed (low/high words) and index.
+// WGSL has no u64, so the seed arrives as two u32 words. Both words are
+// folded into the state before the index is mixed in, so two seeds that
+// share their low word but differ in the high word produce different
+// streams — a plain XOR of the two words would not guarantee that.
+fn pcg_init(seed_lo: u32, seed_hi: u32, idx: u32) -> u32 {
+    let seed_state = pcg_hash(seed_lo ^ pcg_hash(seed_hi));
+    return pcg_hash(seed_state ^ pcg_hash(idx));
 }
 
 // Generate uniform float in [0, 1)
@@ -33,8 +38,8 @@ const WORKGROUP_SIZE: u32 = 256u;
 struct RandParams {
     numel: u32,
     seed: u32,
-    _pad1: u32,
-    _pad2: u32,
+    seed_hi: u32,
+    _pad: u32,
 }
 
 @group(0) @binding(0) var<storage, read_write> rand_out: array<f32>;
@@ -44,7 +49,7 @@ struct RandParams {
 fn rand_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     if (idx < rand_params.numel) {
-        var state = pcg_init(rand_params.seed, idx);
+        var state = pcg_init(rand_params.seed, rand_params.seed_hi, idx);
         let value = pcg_uniform(&state);
         rand_out[idx] = f32(value);
     }
