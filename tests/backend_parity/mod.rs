@@ -57,6 +57,7 @@ pub mod sparse_24;
 pub mod sparse_ops;
 pub mod special;
 pub mod statistics;
+pub mod statistics_var;
 pub mod svd;
 pub mod unary;
 pub mod utility;

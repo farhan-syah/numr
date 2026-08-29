@@ -150,9 +150,7 @@ mod tests {
         // each row is `[0, 3, 0]` (sum 3, count 3), so the mean over all
         // dims is still 1. 100_000 rows * 3 * 4 bytes = 1_200_000 bytes.
         let rows = 100_000;
-        let big_data: Vec<i32> = std::iter::repeat_n([0i32, 3, 0], rows)
-            .flatten()
-            .collect();
+        let big_data: Vec<i32> = std::iter::repeat_n([0i32, 3, 0], rows).flatten().collect();
         let big = Tensor::<CpuRuntime>::from_slice(&big_data, &[rows, 3], &device).unwrap();
         let big_bytes = big.numel() * big.dtype().size_in_bytes();
         assert!(big_bytes > (1 << 20));
