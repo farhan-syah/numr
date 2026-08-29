@@ -1,4 +1,7 @@
-// scatter_reduce_count for mean computation
+// scatter_reduce_count for mean computation.
+//
+// Counts contributions per destination slot. It reads only the index tensor and
+// writes a u32 counter, so one shader serves every value dtype.
 
 const WORKGROUP_SIZE: u32 = 256u;
 
@@ -18,7 +21,7 @@ struct ScatterReduceParams {
 @group(0) @binding(2) var<uniform> scatter_params: ScatterReduceParams;
 
 @compute @workgroup_size(256)
-fn scatter_reduce_count_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn scatter_reduce_count(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     let total = scatter_params.outer_size * scatter_params.src_dim_size * scatter_params.inner_size;
     if (idx >= total) {

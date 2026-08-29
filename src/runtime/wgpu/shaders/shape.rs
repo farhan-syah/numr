@@ -13,7 +13,7 @@
 //! dtype policy (Option C):
 //! - cat, repeat, pad, roll → DATA-MOVEMENT → support F32, I32, U32
 //! - arange, eye → can produce F32 / I32 / U32
-//! - linspace → F32 only (interpolation math)
+//! - linspace → F32, I32, U32 (integer output computed in exact 64-bit math)
 //! - rand, randn → F32 only (math)
 //! - randint → I32 / U32 only
 //! - multinomial → F32 only (math)
@@ -61,14 +61,43 @@ const ROLL_SHADER_U32: &str = include_str!("roll_u32.wgsl");
 // ============================================================================
 
 const ARANGE_SHADER_F32: &str = include_str!("arange_f32.wgsl");
-const ARANGE_SHADER_I32: &str = include_str!("arange_i32.wgsl");
-const ARANGE_SHADER_U32: &str = include_str!("arange_u32.wgsl");
+
+// The integer variants evaluate in f32 and clamp at the store, so they need the
+// shared conversion guards. WGSL has neither an include nor forward
+// declarations, so the order below is load-bearing.
+const ARANGE_SHADER_I32: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_from_float.wgsl"),
+    include_str!("arange_i32.wgsl"),
+);
+const ARANGE_SHADER_U32: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_from_float.wgsl"),
+    include_str!("arange_u32.wgsl"),
+);
 
 // ============================================================================
-// Static shaders — linspace (F32 only)
+// Static shaders — linspace (F32 / I32 / U32)
 // ============================================================================
 
 const LINSPACE_SHADER_F32: &str = include_str!("linspace_f32.wgsl");
+
+// The integer variants need the shared 64-bit helpers, and WGSL has neither an
+// include nor forward declarations, so the order below is load-bearing.
+const LINSPACE_SHADER_I32: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("int_wide_div.wgsl"),
+    include_str!("int_from_float.wgsl"),
+    include_str!("linspace_i32.wgsl"),
+);
+const LINSPACE_SHADER_U32: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("int_wide_div.wgsl"),
+    include_str!("int_from_float.wgsl"),
+    include_str!("linspace_u32.wgsl"),
+);
 
 // ============================================================================
 // Static shaders — eye (F32 / I32 / U32)
@@ -132,6 +161,8 @@ fn shader_info(
         ("arange", DType::U32) => Ok((ARANGE_SHADER_U32, "arange_u32", "arange_u32")),
         // linspace
         ("linspace", DType::F32) => Ok((LINSPACE_SHADER_F32, "linspace_f32", "linspace_f32")),
+        ("linspace", DType::I32) => Ok((LINSPACE_SHADER_I32, "linspace_i32", "linspace_i32")),
+        ("linspace", DType::U32) => Ok((LINSPACE_SHADER_U32, "linspace_u32", "linspace_u32")),
         // eye
         ("eye", DType::F32) => Ok((EYE_SHADER_F32, "eye_f32", "eye_f32")),
         ("eye", DType::I32) => Ok((EYE_SHADER_I32, "eye_i32", "eye_i32")),
@@ -280,7 +311,7 @@ pub fn launch_arange(
 /// * `out` - Output buffer
 /// * `params_buffer` - Uniform buffer containing LinspaceParams
 /// * `steps` - Number of steps to generate
-/// * `dtype` - Data type of output (must be float)
+/// * `dtype` - Data type of output (F32, I32 or U32)
 pub fn launch_linspace(
     cache: &PipelineCache,
     queue: &Queue,

@@ -18,10 +18,12 @@ pub mod index;
 pub mod linalg;
 pub mod logical;
 pub mod quasirandom;
+pub mod scatter_wide;
 pub mod shape;
 pub mod sort;
 pub mod sort_cmp;
 pub(crate) mod sort_global;
+pub mod sort_search;
 pub mod special;
 pub mod statistics;
 
@@ -115,6 +117,10 @@ pub use matrix_funcs_launcher::{
 };
 pub use pipeline::{LayoutKey, PipelineCache, WORKGROUP_SIZE, workgroup_count};
 pub use quasirandom::{launch_halton, launch_latin_hypercube, launch_sobol};
+pub use scatter_wide::{
+    ScatterWideParams, launch_scatter_wide_finalize, launch_scatter_wide_seed,
+    launch_scatter_wide_sum,
+};
 #[cfg(feature = "sparse")]
 pub use sparse_24::{Sparse24Params, launch_sparse_24_decompress, launch_sparse_24_prune};
 #[cfg(feature = "sparse")]

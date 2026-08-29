@@ -31,6 +31,16 @@ pub(crate) fn native_reduce_op(
     // The output shape is the same regardless of which path computes the values.
     let out_shape = reduce_output_shape(shape, &dims, keepdim);
 
+    // Correctness, not a performance choice: an integer sum, prod or mean must
+    // accumulate the whole reduced set in ONE wide accumulator and narrow (for
+    // mean, divide) exactly once. Chaining a reduction per dimension narrows
+    // once per dimension, and the two-pass whole-tensor path stores its partials
+    // in the element type, so both would saturate early and disagree with CPU's
+    // i128 epilogue in runtime/cpu/kernels/reduce/int_acc.rs.
+    if a.dtype().is_int() && matches!(op, "sum" | "prod" | "mean") {
+        return native_int_acc_reduce(client, op, a, &dims, &out_shape);
+    }
+
     // Reducing every dimension has a dedicated two-pass kernel that is cheaper
     // than chaining one reduction per dimension.
     if dims.len() == shape.len() && dims.len() > 1 {
@@ -58,6 +68,53 @@ pub(crate) fn native_reduce_op(
 
     // Single dimension reduction
     native_single_dim_reduce(client, op, a, dims[0], keepdim)
+}
+
+/// Reduce `dims` with a single wide accumulation, for integer sum/prod/mean.
+///
+/// Moves every reduced dimension to the end, materializes that layout, and
+/// folds them into one trailing dimension. The single-dim kernel then sees one
+/// contiguous run per output element, which is what lets it accumulate in the
+/// 64-bit accumulator and narrow once.
+fn native_int_acc_reduce(
+    client: &WgpuClient,
+    op: &'static str,
+    a: &Tensor<WgpuRuntime>,
+    dims: &[usize],
+    out_shape: &[usize],
+) -> Result<Tensor<WgpuRuntime>> {
+    let shape = a.shape();
+
+    // A 0-dim tensor has nothing to reduce: every one of these ops returns the
+    // element itself.
+    if shape.is_empty() || dims.is_empty() {
+        return a.reshape(out_shape);
+    }
+
+    for &d in dims {
+        if d >= shape.len() {
+            return Err(Error::InvalidDimension {
+                dim: d as isize,
+                ndim: shape.len(),
+            });
+        }
+    }
+
+    let mut reduced = dims.to_vec();
+    reduced.sort_unstable();
+    reduced.dedup();
+
+    let mut perm: Vec<usize> = (0..shape.len()).filter(|d| !reduced.contains(d)).collect();
+    let kept: usize = perm.iter().map(|&d| shape[d]).product();
+    perm.extend_from_slice(&reduced);
+    let reduce_total: usize = reduced.iter().map(|&d| shape[d]).product();
+
+    let collapsed = a
+        .permute(&perm)?
+        .contiguous()?
+        .reshape(&[kept, reduce_total])?;
+    let result = native_single_dim_reduce(client, op, &collapsed, 1, false)?;
+    result.reshape(out_shape)
 }
 
 fn native_single_dim_reduce(

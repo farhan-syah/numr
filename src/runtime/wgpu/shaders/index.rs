@@ -64,10 +64,19 @@ const SCATTER_REDUCE_MIN_SHADER_I32: &str = include_str!("scatter_reduce_min_i32
 const SCATTER_REDUCE_MIN_SHADER_U32: &str = include_str!("scatter_reduce_min_u32.wgsl");
 
 const SCATTER_REDUCE_PROD_SHADER_F32: &str = include_str!("scatter_reduce_prod_f32.wgsl");
-const SCATTER_REDUCE_PROD_SHADER_I32: &str = include_str!("scatter_reduce_prod_i32.wgsl");
-const SCATTER_REDUCE_PROD_SHADER_U32: &str = include_str!("scatter_reduce_prod_u32.wgsl");
 
-const SCATTER_REDUCE_COUNT_SHADER_F32: &str = include_str!("scatter_reduce_count_f32.wgsl");
+// The integer product saturates, so it needs the shared saturating helpers.
+// WGSL has no include and no forward declarations, so the order is load-bearing.
+const SCATTER_REDUCE_PROD_SHADER_I32: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("scatter_reduce_prod_i32.wgsl"),
+);
+const SCATTER_REDUCE_PROD_SHADER_U32: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("scatter_reduce_prod_u32.wgsl"),
+);
+
+const SCATTER_REDUCE_COUNT_SHADER: &str = include_str!("scatter_reduce_count.wgsl");
 const SCATTER_REDUCE_MEAN_DIV_SHADER_F32: &str = include_str!("scatter_reduce_mean_div_f32.wgsl");
 
 const SLICE_ASSIGN_SHADER_F32: &str = include_str!("slice_assign_f32.wgsl");
@@ -262,10 +271,11 @@ fn shader_info(
             "scatter_reduce_prod_u32",
             "scatter_reduce_prod_u32",
         ),
-        ("scatter_reduce_count", DType::F32) => (
-            SCATTER_REDUCE_COUNT_SHADER_F32,
-            "scatter_reduce_count_f32",
-            "scatter_reduce_count_f32",
+        // One count kernel for every value dtype: it reads only the index tensor.
+        ("scatter_reduce_count", DType::F32 | DType::I32 | DType::U32) => (
+            SCATTER_REDUCE_COUNT_SHADER,
+            "scatter_reduce_count",
+            "scatter_reduce_count",
         ),
         ("scatter_reduce_mean_div", DType::F32) => (
             SCATTER_REDUCE_MEAN_DIV_SHADER_F32,
@@ -975,7 +985,11 @@ pub fn launch_scatter_reduce(
 
 /// Launch a scatter_reduce_prod operation kernel.
 ///
-/// Scatters values with product reduction using CAS loop.
+/// `items` is the number of threads to dispatch, which differs by dtype: the
+/// float kernel owns one SOURCE element and combines with an atomic, while the
+/// integer kernels own one DESTINATION element and scan their own lane (see
+/// scatter_reduce_prod_i32.wgsl). Callers pass the source element count for
+/// F32 and the destination element count for I32 and U32.
 pub fn launch_scatter_reduce_prod(
     cache: &PipelineCache,
     queue: &Queue,
@@ -983,7 +997,7 @@ pub fn launch_scatter_reduce_prod(
     indices: &Buffer,
     dst: &Buffer,
     params_buffer: &Buffer,
-    total_src: usize,
+    items: usize,
     dtype: DType,
 ) -> Result<()> {
     let (shader, module_key, entry_point) = shader_info("scatter_reduce_prod", dtype)?;
@@ -1011,7 +1025,7 @@ pub fn launch_scatter_reduce_prod(
         });
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(workgroup_count(total_src), 1, 1);
+        pass.dispatch_workgroups(workgroup_count(items), 1, 1);
     }
 
     queue.submit(std::iter::once(encoder.finish()));

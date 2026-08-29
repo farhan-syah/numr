@@ -25,6 +25,9 @@ fn scatter_reduce_mean_div_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (c > 0u) {
         mean_output[idx] = mean_sum[idx] / f32(c);
     } else {
-        mean_output[idx] = f32(0);
+        // Nobody scattered here, so the slot keeps its seed rather than becoming
+        // zero: with include_self that seed is the destination's own value, and
+        // CPU's scatter_reduce returns it untouched.
+        mean_output[idx] = mean_sum[idx];
     }
 }

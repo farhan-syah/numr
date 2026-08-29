@@ -14,7 +14,7 @@ use crate::runtime::wgpu::ops::helpers::{
 use crate::runtime::wgpu::ops::native::{
     native_argreduce_op, native_embedding_lookup, native_gather, native_index_put,
     native_index_select, native_masked_fill, native_masked_select, native_scatter,
-    native_slice_assign,
+    native_scatter_reduce_int_wide, native_slice_assign,
 };
 use crate::runtime::wgpu::shaders::{
     launch_bincount, launch_gather_2d, launch_gather_nd, launch_scatter_reduce,
@@ -115,20 +115,12 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
     ) -> Result<Tensor<WgpuRuntime>> {
         let dtype = dst.dtype();
 
-        // Only float types supported for scatter_reduce on WebGPU
-        // (atomics use CAS loops with bitcast for floats)
+        // WebGPU covers the three dtypes WGSL has; f32 reaches its atomics
+        // through CAS loops with a bitcast.
         if !matches!(dtype, DType::F32 | DType::I32 | DType::U32) {
             return Err(Error::UnsupportedDType {
                 dtype,
                 op: "scatter_reduce",
-            });
-        }
-
-        // Mean only supports F32 on WebGPU
-        if matches!(op, ScatterReduceOp::Mean) && dtype != DType::F32 {
-            return Err(Error::UnsupportedDType {
-                dtype,
-                op: "scatter_reduce_mean",
             });
         }
 
@@ -204,8 +196,33 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
         let index_buf = get_tensor_buffer(&index)?;
         let output_buf = get_tensor_buffer(&output)?;
 
+        // Integer sum and mean accumulate, so they run in a 64-bit accumulator
+        // and narrow once. See native/scatter_wide.rs.
+        if dtype.is_int() && matches!(op, ScatterReduceOp::Sum | ScatterReduceOp::Mean) {
+            return native_scatter_reduce_int_wide(
+                self,
+                &output,
+                &src,
+                &index,
+                &params_buf,
+                total_src,
+                matches!(op, ScatterReduceOp::Mean),
+                include_self,
+            );
+        }
+
         match op {
             ScatterReduceOp::Prod => {
+                // The integer product also accumulates, but its running state
+                // is a magnitude and a sign rather than a wide sum, so it needs
+                // no second buffer: one thread owns each DESTINATION element
+                // and scans its own lane. The float kernel still owns one
+                // SOURCE element, hence the different dispatch size.
+                let items = if dtype.is_int() {
+                    output.numel()
+                } else {
+                    total_src
+                };
                 launch_scatter_reduce_prod(
                     self.pipeline_cache(),
                     self.wgpu_queue(),
@@ -213,7 +230,7 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
                     &index_buf,
                     &output_buf,
                     &params_buf,
-                    total_src,
+                    items,
                     dtype,
                 )?;
                 Ok(output)

@@ -1,4 +1,4 @@
-// Sort operations for u32.
+// Sort operations for u32. Ordering helpers are prepended from sort_cmp.rs.
 
 const WORKGROUP_SIZE: u32 = 256u;
 const MAX_SORT_SIZE: u32 = 512u;
@@ -17,20 +17,6 @@ struct SortParams {
 @group(0) @binding(1) var<storage, read_write> sort_output: array<u32>;
 @group(0) @binding(2) var<storage, read_write> sort_indices: array<i32>;
 @group(0) @binding(3) var<uniform> sort_params: SortParams;
-
-// Rank order: the requested output order with ties broken by original index, so
-// the network sorts by a single total order and is stable in both directions.
-fn sort_rank_less_u32(a: u32, idx_a: i32, b: u32, idx_b: i32, descending: bool) -> bool {
-    if (a != b) {
-        return select(a < b, (a > b), descending);
-    }
-    return idx_a < idx_b;
-}
-
-// Rank order without indices, for the values-only kernel.
-fn sort_value_rank_less_u32(a: u32, b: u32, descending: bool) -> bool {
-    return select(a < b, (a > b), descending);
-}
 
 // Bitonic compare and swap for sort with indices (stable)
 fn bitonic_cas_u32(i: u32, j: u32, ascending_local: bool, descending: bool) {
@@ -103,7 +89,7 @@ fn sort_u32(
             shared_idxs[i] = i32(i);
         } else {
             // Pad with max/min based on sort direction
-            shared_vals[i] = select(4294967295u, 0u, descending);
+            shared_vals[i] = sort_pad_u32(descending);
             shared_idxs[i] = i32(i);
         }
     }
@@ -169,7 +155,7 @@ fn sort_values_only_u32(
             let idx = base_offset + i * inner_size;
             shared_vals[i] = sort_input[idx];
         } else {
-            shared_vals[i] = select(4294967295u, 0u, descending);
+            shared_vals[i] = sort_pad_u32(descending);
         }
     }
     workgroupBarrier();
@@ -233,7 +219,7 @@ fn argsort_u32(
             shared_vals[i] = sort_input[idx];
             shared_idxs[i] = i32(i);
         } else {
-            shared_vals[i] = select(4294967295u, 0u, descending);
+            shared_vals[i] = sort_pad_u32(descending);
             shared_idxs[i] = i32(i);
         }
     }

@@ -7,7 +7,7 @@ use crate::runtime::wgpu::shaders::fused_elementwise;
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
 use crate::tensor::Tensor;
 
-/// Native fused_mul_add: out = a * b + c. F32 only.
+/// Native fused_mul_add: out = a * b + c. F32, I32, U32.
 pub(crate) fn native_fused_mul_add(
     client: &WgpuClient,
     a: &Tensor<WgpuRuntime>,
@@ -61,7 +61,7 @@ pub(crate) fn native_fused_mul_add(
     Ok(out)
 }
 
-/// Native fused_add_mul: out = (a + b) * c. F32 only.
+/// Native fused_add_mul: out = (a + b) * c. F32, I32, U32.
 pub(crate) fn native_fused_add_mul(
     client: &WgpuClient,
     a: &Tensor<WgpuRuntime>,
@@ -115,7 +115,7 @@ pub(crate) fn native_fused_add_mul(
     Ok(out)
 }
 
-/// Native fused_mul_add_scalar: out = a * scale + bias. F32 only.
+/// Native fused_mul_add_scalar: out = a * scale + bias. F32, I32, U32.
 pub(crate) fn native_fused_mul_add_scalar(
     client: &WgpuClient,
     a: &Tensor<WgpuRuntime>,
@@ -137,8 +137,8 @@ pub(crate) fn native_fused_mul_add_scalar(
         &out_buf,
         numel,
         dtype,
-        scale as f32,
-        bias as f32,
+        scale,
+        bias,
     )?;
 
     Ok(out)

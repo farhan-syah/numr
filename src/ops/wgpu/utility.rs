@@ -6,7 +6,8 @@ use crate::ops::{ScalarOps, UtilityOps};
 use crate::runtime::wgpu::WgpuClient;
 use crate::runtime::wgpu::WgpuRuntime;
 use crate::runtime::wgpu::ops::helpers::{
-    ArangeParams, EyeParams, LinspaceParams, alloc_output, create_params_buffer, get_tensor_buffer,
+    ArangeParams, EyeParams, LinspaceIntParams, LinspaceParams, alloc_output, create_params_buffer,
+    get_tensor_buffer,
 };
 use crate::runtime::wgpu::ops::native::native_clamp;
 use crate::runtime::wgpu::shaders::shape;
@@ -84,14 +85,11 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
         steps: usize,
         dtype: DType,
     ) -> Result<Tensor<WgpuRuntime>> {
-        // WebGPU linspace only supports F32 because:
-        // 1. WGSL has no F64 support, so computation must be in F32
-        // 2. Integer linspace with F32 intermediate would lose precision
-        // Use CPU backend for integer linspace if needed.
-        if !matches!(dtype, DType::F32) {
+        // WGSL has no F64, so WebGPU covers the three dtypes it does have.
+        if !matches!(dtype, DType::F32 | DType::I32 | DType::U32) {
             return Err(Error::UnsupportedDType {
                 dtype,
-                op: "linspace (WebGPU only supports F32; use CPU for integer linspace)",
+                op: "linspace",
             });
         }
 
@@ -99,21 +97,29 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
             return Tensor::empty(&[0], dtype, self.device());
         }
 
+        // A single step is the start value converted to the output dtype, which
+        // is exactly what `fill` does - and it gets the integer conversion right
+        // where a hardcoded `start as f32` would not.
         if steps == 1 {
-            return Ok(Tensor::from_slice(&[start as f32], &[1], &self.device_id)?);
+            return self.fill(&[1], start, dtype);
         }
 
         // Allocate output
         let out = alloc_output(self, &[steps], dtype)?;
         let out_buf = get_tensor_buffer(&out)?;
 
-        // Create params
-        let params = LinspaceParams {
-            steps: steps as u32,
-            start: start as f32,
-            stop: stop as f32,
+        // The integer shaders read a wider params struct than the F32 one, so
+        // the buffer is built per dtype.
+        let params_buf = if dtype == DType::F32 {
+            let params = LinspaceParams {
+                steps: steps as u32,
+                start: start as f32,
+                stop: stop as f32,
+            };
+            create_params_buffer(self, &params)
+        } else {
+            create_params_buffer(self, &LinspaceIntParams::new(steps, start, stop))
         };
-        let params_buf = create_params_buffer(self, &params);
 
         // Launch kernel
         shape::launch_linspace(

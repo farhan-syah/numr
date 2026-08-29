@@ -1,4 +1,6 @@
-//! Matrix multiplication WGSL kernel launchers. F32 only.
+//! Matrix multiplication WGSL kernel launchers. F32, I32, U32.
+//!
+//! `matvec` stays F32-only: nothing dispatches it for an integer dtype.
 
 use wgpu::{Buffer, Queue};
 
@@ -8,23 +10,117 @@ use crate::error::{Error, Result};
 
 const MATMUL_SHADER: &str = include_str!("matmul.wgsl");
 const MATMUL_BIAS_SHADER: &str = include_str!("matmul_bias_f32.wgsl");
+// The integer shaders share one wide accumulator, prepended to each module that
+// uses it. WGSL has no include, so this is where the single copy in the
+// repository reaches them. `int_saturate.wgsl` must come first: it defines the
+// `NumrI64` and range constants `int_matmul_acc.wgsl` builds on, and WGSL has no
+// forward declarations.
+const MATMUL_I32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("matmul_i32.wgsl")
+);
+const MATMUL_U32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("matmul_u32.wgsl")
+);
+const MATMUL_BIAS_I32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("matmul_bias_i32.wgsl")
+);
+const MATMUL_BIAS_U32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("matmul_bias_u32.wgsl")
+);
 
 /// Tile size for tiled matrix multiplication (must match shader constant)
 const TILE_SIZE: u32 = 16;
 
 // ============================================================================
-// Helper Macros
+// DType Dispatch
 // ============================================================================
 
-macro_rules! check_dtype_f32 {
-    ($dtype:expr, $op:expr) => {
-        if $dtype != DType::F32 {
-            return Err(Error::UnsupportedDType {
-                dtype: $dtype,
-                op: $op,
-            });
-        }
-    };
+/// The shader module and entry points serving one matmul dtype.
+struct MatmulShader {
+    module_key: &'static str,
+    source: &'static str,
+    tiled: &'static str,
+    batched: &'static str,
+    simple: &'static str,
+}
+
+/// The shader module and entry points serving one fused matmul+bias dtype.
+struct MatmulBiasShader {
+    module_key: &'static str,
+    source: &'static str,
+    tiled: &'static str,
+    batched: &'static str,
+}
+
+static MATMUL_F32: MatmulShader = MatmulShader {
+    module_key: "matmul",
+    source: MATMUL_SHADER,
+    tiled: "matmul_f32",
+    batched: "batched_matmul_f32",
+    simple: "matmul_simple_f32",
+};
+
+static MATMUL_I32: MatmulShader = MatmulShader {
+    module_key: "matmul_i32",
+    source: MATMUL_I32_SHADER,
+    tiled: "matmul_i32",
+    batched: "batched_matmul_i32",
+    simple: "matmul_simple_i32",
+};
+
+static MATMUL_U32: MatmulShader = MatmulShader {
+    module_key: "matmul_u32",
+    source: MATMUL_U32_SHADER,
+    tiled: "matmul_u32",
+    batched: "batched_matmul_u32",
+    simple: "matmul_simple_u32",
+};
+
+static MATMUL_BIAS_F32: MatmulBiasShader = MatmulBiasShader {
+    module_key: "matmul_bias_f32",
+    source: MATMUL_BIAS_SHADER,
+    tiled: "matmul_bias_f32",
+    batched: "batched_matmul_bias_f32",
+};
+
+static MATMUL_BIAS_I32: MatmulBiasShader = MatmulBiasShader {
+    module_key: "matmul_bias_i32",
+    source: MATMUL_BIAS_I32_SHADER,
+    tiled: "matmul_bias_i32",
+    batched: "batched_matmul_bias_i32",
+};
+
+static MATMUL_BIAS_U32: MatmulBiasShader = MatmulBiasShader {
+    module_key: "matmul_bias_u32",
+    source: MATMUL_BIAS_U32_SHADER,
+    tiled: "matmul_bias_u32",
+    batched: "batched_matmul_bias_u32",
+};
+
+fn matmul_shader(dtype: DType, op: &'static str) -> Result<&'static MatmulShader> {
+    match dtype {
+        DType::F32 => Ok(&MATMUL_F32),
+        DType::I32 => Ok(&MATMUL_I32),
+        DType::U32 => Ok(&MATMUL_U32),
+        _ => Err(Error::UnsupportedDType { dtype, op }),
+    }
+}
+
+fn matmul_bias_shader(dtype: DType, op: &'static str) -> Result<&'static MatmulBiasShader> {
+    match dtype {
+        DType::F32 => Ok(&MATMUL_BIAS_F32),
+        DType::I32 => Ok(&MATMUL_BIAS_I32),
+        DType::U32 => Ok(&MATMUL_BIAS_U32),
+        _ => Err(Error::UnsupportedDType { dtype, op }),
+    }
 }
 
 // ============================================================================
@@ -45,15 +141,15 @@ pub fn launch_matmul(
     n: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_dtype_f32!(dtype, "matmul");
+    let shader = matmul_shader(dtype, "matmul")?;
 
-    let module = cache.get_or_create_module("matmul", MATMUL_SHADER);
+    let module = cache.get_or_create_module(shader.module_key, shader.source);
     let layout = cache.get_or_create_layout(LayoutKey {
         num_storage_buffers: 3,
         num_uniform_buffers: 1,
         num_readonly_storage: 0,
     });
-    let pipeline = cache.get_or_create_pipeline("matmul", "matmul_f32", &module, &layout);
+    let pipeline = cache.get_or_create_pipeline(shader.module_key, shader.tiled, &module, &layout);
 
     let bind_group = cache.create_bind_group(&layout, &[a, b, c, params_buffer]);
 
@@ -93,15 +189,15 @@ pub fn launch_matmul_simple(
     n: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_dtype_f32!(dtype, "matmul_simple");
+    let shader = matmul_shader(dtype, "matmul_simple")?;
 
-    let module = cache.get_or_create_module("matmul", MATMUL_SHADER);
+    let module = cache.get_or_create_module(shader.module_key, shader.source);
     let layout = cache.get_or_create_layout(LayoutKey {
         num_storage_buffers: 3,
         num_uniform_buffers: 1,
         num_readonly_storage: 0,
     });
-    let pipeline = cache.get_or_create_pipeline("matmul", "matmul_simple_f32", &module, &layout);
+    let pipeline = cache.get_or_create_pipeline(shader.module_key, shader.simple, &module, &layout);
 
     let bind_group = cache.create_bind_group(&layout, &[a, b, c, params_buffer]);
 
@@ -146,15 +242,16 @@ pub fn launch_batched_matmul(
     batch_size: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_dtype_f32!(dtype, "batched_matmul");
+    let shader = matmul_shader(dtype, "batched_matmul")?;
 
-    let module = cache.get_or_create_module("matmul", MATMUL_SHADER);
+    let module = cache.get_or_create_module(shader.module_key, shader.source);
     let layout = cache.get_or_create_layout(LayoutKey {
         num_storage_buffers: 3,
         num_uniform_buffers: 1,
         num_readonly_storage: 0,
     });
-    let pipeline = cache.get_or_create_pipeline("matmul", "batched_matmul_f32", &module, &layout);
+    let pipeline =
+        cache.get_or_create_pipeline(shader.module_key, shader.batched, &module, &layout);
 
     let bind_group = cache.create_bind_group(&layout, &[a, b, c, params_buffer]);
 
@@ -197,7 +294,12 @@ pub fn launch_matvec(
     m: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_dtype_f32!(dtype, "matvec");
+    if dtype != DType::F32 {
+        return Err(Error::UnsupportedDType {
+            dtype,
+            op: "matvec",
+        });
+    }
 
     let module = cache.get_or_create_module("matmul", MATMUL_SHADER);
     let layout = cache.get_or_create_layout(LayoutKey {
@@ -248,16 +350,15 @@ pub fn launch_matmul_bias(
     n: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_dtype_f32!(dtype, "matmul_bias");
+    let shader = matmul_bias_shader(dtype, "matmul_bias")?;
 
-    let module = cache.get_or_create_module("matmul_bias_f32", MATMUL_BIAS_SHADER);
+    let module = cache.get_or_create_module(shader.module_key, shader.source);
     let layout = cache.get_or_create_layout(LayoutKey {
         num_storage_buffers: 4, // a, b, bias, c
         num_uniform_buffers: 1,
         num_readonly_storage: 0,
     });
-    let pipeline =
-        cache.get_or_create_pipeline("matmul_bias_f32", "matmul_bias_f32", &module, &layout);
+    let pipeline = cache.get_or_create_pipeline(shader.module_key, shader.tiled, &module, &layout);
 
     let bind_group = cache.create_bind_group(&layout, &[a, b, bias, c, params_buffer]);
 
@@ -299,20 +400,16 @@ pub fn launch_batched_matmul_bias(
     batch_size: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_dtype_f32!(dtype, "batched_matmul_bias");
+    let shader = matmul_bias_shader(dtype, "batched_matmul_bias")?;
 
-    let module = cache.get_or_create_module("matmul_bias_f32", MATMUL_BIAS_SHADER);
+    let module = cache.get_or_create_module(shader.module_key, shader.source);
     let layout = cache.get_or_create_layout(LayoutKey {
         num_storage_buffers: 4, // a, b, bias, c
         num_uniform_buffers: 1,
         num_readonly_storage: 0,
     });
-    let pipeline = cache.get_or_create_pipeline(
-        "matmul_bias_f32",
-        "batched_matmul_bias_f32",
-        &module,
-        &layout,
-    );
+    let pipeline =
+        cache.get_or_create_pipeline(shader.module_key, shader.batched, &module, &layout);
 
     let bind_group = cache.create_bind_group(&layout, &[a, b, bias, c, params_buffer]);
 

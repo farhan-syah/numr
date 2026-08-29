@@ -22,6 +22,9 @@ pub mod fused_elementwise;
 pub mod gemm_epilogue;
 pub mod indexing;
 pub mod indexing_advanced;
+pub mod int_accumulate_wgpu;
+pub mod int_generators_wgpu;
+pub mod int_ops_wgpu;
 #[cfg(feature = "sparse")]
 pub mod iterative_eigen;
 #[cfg(feature = "sparse")]

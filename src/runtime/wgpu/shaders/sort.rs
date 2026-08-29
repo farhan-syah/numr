@@ -2,14 +2,15 @@
 //!
 //! dtype policy:
 //! - sort, sort_values_only, argsort: F32 / I32 / U32
-//! - topk, searchsorted: F32 only
 //! - unique, unique_with_counts: F32 / I32 / U32
 //! - nonzero, flat_to_multi_index: F32 / I32 / U32
 
 use wgpu::{Buffer, Queue};
 
 use super::pipeline::{LayoutKey, PipelineCache, workgroup_count};
-use super::sort_cmp::{sort_cmp_f32_wgsl, sort_rank_f32_wgsl};
+use super::sort_cmp::{
+    sort_cmp_f32_wgsl, sort_rank_f32_wgsl, sort_rank_i32_wgsl, sort_rank_u32_wgsl,
+};
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
@@ -24,19 +25,10 @@ const SORT_SHADER_F32: &str = concat!(
     sort_rank_f32_wgsl!(),
     include_str!("sort_f32.wgsl")
 );
-const SORT_SHADER_I32: &str = include_str!("sort_i32.wgsl");
-const SORT_SHADER_U32: &str = include_str!("sort_u32.wgsl");
-// ============================================================================
-// Static shaders — topk/searchsorted (F32 only)
-// ============================================================================
-
-const TOPK_SHADER_F32: &str = concat!(
-    sort_cmp_f32_wgsl!(),
-    sort_rank_f32_wgsl!(),
-    include_str!("topk_f32.wgsl")
-);
-const SEARCHSORTED_SHADER_F32: &str =
-    concat!(sort_cmp_f32_wgsl!(), include_str!("searchsorted_f32.wgsl"));
+// The integer shaders share one ordering with their sort counterparts, prepended
+// from sort_cmp.rs for the same reason.
+const SORT_SHADER_I32: &str = concat!(sort_rank_i32_wgsl!(), include_str!("sort_i32.wgsl"));
+const SORT_SHADER_U32: &str = concat!(sort_rank_u32_wgsl!(), include_str!("sort_u32.wgsl"));
 
 // ============================================================================
 // Static shaders — data-movement ops (F32 / I32 / U32)
@@ -69,7 +61,7 @@ const EXTRACT_UNIQUE_SHADER_U32: &str = include_str!("extract_unique_u32.wgsl");
 // ============================================================================
 
 /// Returns (shader, module_key, entry_point) for sort ops.
-/// Supports F32/I32/U32 for sort/sort_values_only/argsort, F32 only for topk/searchsorted.
+/// Supports F32/I32/U32.
 fn sort_math_info(
     op: &'static str,
     dtype: DType,
@@ -95,22 +87,6 @@ fn sort_math_info(
                 _ => unreachable!(),
             };
             Ok((shader, module_key, entry_point))
-        }
-        "topk" => {
-            if dtype != DType::F32 {
-                return Err(Error::UnsupportedDType { dtype, op });
-            }
-            Ok((TOPK_SHADER_F32, "topk_f32", "topk_f32"))
-        }
-        "searchsorted" => {
-            if dtype != DType::F32 {
-                return Err(Error::UnsupportedDType { dtype, op });
-            }
-            Ok((
-                SEARCHSORTED_SHADER_F32,
-                "searchsorted_f32",
-                "searchsorted_f32",
-            ))
         }
         _ => Err(Error::UnsupportedDType { dtype, op }),
     }
@@ -343,118 +319,6 @@ pub fn launch_argsort(
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, Some(&bind_group), &[]);
         pass.dispatch_workgroups(outer_size as u32, inner_size as u32, 1);
-    }
-
-    queue.submit(std::iter::once(encoder.finish()));
-    Ok(())
-}
-
-// ============================================================================
-// Topk Operations
-// ============================================================================
-
-/// Launch topk kernel
-pub fn launch_topk(
-    cache: &PipelineCache,
-    queue: &Queue,
-    input: &Buffer,
-    values_output: &Buffer,
-    indices_output: &Buffer,
-    params_buffer: &Buffer,
-    outer_size: usize,
-    inner_size: usize,
-    dtype: DType,
-) -> Result<()> {
-    if dtype != DType::F32 {
-        return Err(Error::UnsupportedDType {
-            dtype,
-            op: "topk (WebGPU)",
-        });
-    }
-
-    let (shader, module_key, entry_point) = sort_math_info("topk", dtype)?;
-
-    let module = cache.get_or_create_module(module_key, shader);
-    let layout = cache.get_or_create_layout(LayoutKey {
-        num_storage_buffers: 3,
-        num_uniform_buffers: 1,
-        num_readonly_storage: 0,
-    });
-    let pipeline = cache.get_or_create_pipeline(module_key, entry_point, &module, &layout);
-
-    let bind_group = cache.create_bind_group(
-        &layout,
-        &[input, values_output, indices_output, params_buffer],
-    );
-
-    let mut encoder = cache
-        .device()
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("topk"),
-        });
-
-    {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("topk"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(outer_size as u32, inner_size as u32, 1);
-    }
-
-    queue.submit(std::iter::once(encoder.finish()));
-    Ok(())
-}
-
-// ============================================================================
-// Searchsorted Operations
-// ============================================================================
-
-/// Launch searchsorted kernel
-pub fn launch_searchsorted(
-    cache: &PipelineCache,
-    queue: &Queue,
-    sorted_seq: &Buffer,
-    values: &Buffer,
-    output: &Buffer,
-    params_buffer: &Buffer,
-    num_values: usize,
-    dtype: DType,
-) -> Result<()> {
-    if dtype != DType::F32 {
-        return Err(Error::UnsupportedDType {
-            dtype,
-            op: "searchsorted (WebGPU)",
-        });
-    }
-
-    let (shader, module_key, entry_point) = sort_math_info("searchsorted", dtype)?;
-
-    let module = cache.get_or_create_module(module_key, shader);
-    let layout = cache.get_or_create_layout(LayoutKey {
-        num_storage_buffers: 3,
-        num_uniform_buffers: 1,
-        num_readonly_storage: 0,
-    });
-    let pipeline = cache.get_or_create_pipeline(module_key, entry_point, &module, &layout);
-
-    let bind_group = cache.create_bind_group(&layout, &[sorted_seq, values, output, params_buffer]);
-
-    let mut encoder = cache
-        .device()
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("searchsorted"),
-        });
-
-    {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("searchsorted"),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, Some(&bind_group), &[]);
-        pass.dispatch_workgroups(workgroup_count(num_values), 1, 1);
     }
 
     queue.submit(std::iter::once(encoder.finish()));

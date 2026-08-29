@@ -108,14 +108,40 @@ impl ScalarParams {
 
 /// Parameters for clamp operation.
 /// Padding ensures 16-byte alignment for WebGPU uniform buffers.
+///
+/// `min_bits` and `max_bits` are the bounds re-encoded per dtype, not plain
+/// `f32`s. clamp_f32/clamp_i32/clamp_u32 all read these same two 4-byte fields
+/// but declare them as their own type, so the bit pattern written here must
+/// already match the tensor's dtype - the same rule [`ScalarParams`] follows.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct ClampParams {
     pub(super) numel: u32,
-    pub(super) min_val: f32,
-    pub(super) max_val: f32,
+    pub(super) min_bits: u32,
+    pub(super) max_bits: u32,
     /// Padding for 16-byte alignment (WebGPU uniform buffer requirement)
     pub(super) _pad0: u32,
+}
+
+impl ClampParams {
+    /// Build params for `numel` elements of `dtype`, encoding each bound the
+    /// way the CPU backend converts it: an `as` cast to the element type, which
+    /// truncates toward zero and saturates for integers.
+    pub(super) fn new(numel: u32, min_val: f64, max_val: f64, dtype: DType) -> Self {
+        let encode = |v: f64| -> u32 {
+            match dtype {
+                DType::I32 => u32::from_ne_bytes((v as i32).to_ne_bytes()),
+                DType::U32 => v as u32,
+                _ => u32::from_ne_bytes((v as f32).to_ne_bytes()),
+            }
+        };
+        Self {
+            numel,
+            min_bits: encode(min_val),
+            max_bits: encode(max_val),
+            _pad0: 0,
+        }
+    }
 }
 
 #[repr(C)]
@@ -293,6 +319,72 @@ pub(super) struct LinspaceParams {
     pub(super) steps: u32,
     pub(super) start: f32,
     pub(super) stop: f32,
+}
+
+/// Parameters for an integer `linspace`.
+///
+/// `exact` selects the 64-bit integer evaluation, which needs `base`
+/// (`start * divisor`) and `delta` as signed 64-bit values split into u32
+/// halves - WGSL has no 64-bit integer type. `start_f32`/`stop_f32` carry the
+/// fallback for fractional bounds. See linspace_i32.wgsl for why both paths
+/// exist.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(super) struct LinspaceIntParams {
+    pub(super) steps: u32,
+    pub(super) exact: u32,
+    pub(super) divisor: u32,
+    pub(super) _pad0: u32,
+    pub(super) base_lo: u32,
+    pub(super) base_hi: u32,
+    pub(super) delta_lo: u32,
+    pub(super) delta_hi: u32,
+    pub(super) start_f32: f32,
+    pub(super) stop_f32: f32,
+    pub(super) _pad1: u32,
+    pub(super) _pad2: u32,
+}
+
+impl LinspaceIntParams {
+    /// Build params for `steps` integer samples between `start` and `stop`.
+    ///
+    /// The exact path is taken only when both bounds are whole numbers and every
+    /// 64-bit intermediate is provably in range; anything else keeps the f32
+    /// evaluation, whose truncation is then far from a boundary anyway.
+    pub(super) fn new(steps: usize, start: f64, stop: f64) -> Self {
+        let divisor = (steps - 1) as u64;
+        let delta = stop - start;
+
+        // `i64::MAX / 4` leaves room for `base`, `delta * idx`, and their sum
+        // without any of the three overflowing.
+        let bound = (i64::MAX / 4) as f64;
+        let exact = start.fract() == 0.0
+            && stop.fract() == 0.0
+            && start.abs() < bound
+            && delta.abs() * (divisor as f64) < bound
+            && start.abs() * (divisor as f64) < bound;
+
+        let (base, delta_i) = if exact {
+            ((start as i64) * divisor as i64, delta as i64)
+        } else {
+            (0, 0)
+        };
+
+        Self {
+            steps: steps as u32,
+            exact: u32::from(exact),
+            divisor: divisor as u32,
+            _pad0: 0,
+            base_lo: base as u32,
+            base_hi: (base >> 32) as u32,
+            delta_lo: delta_i as u32,
+            delta_hi: (delta_i >> 32) as u32,
+            start_f32: start as f32,
+            stop_f32: stop as f32,
+            _pad1: 0,
+            _pad2: 0,
+        }
+    }
 }
 
 #[repr(C)]

@@ -68,4 +68,73 @@ fn sort_pad_f32(descending: bool) -> f32 {
     };
 }
 
+/// Bitonic-network ordering helpers for `I32`: `sort_rank_less_i32`,
+/// `sort_value_rank_less_i32` and `sort_pad_i32`.
+///
+/// Integers have one total order and no NaN, so unlike the f32 family there is
+/// no separate comparison helper - `<` and `>` are the order. Shared by the
+/// sort and topk shaders so a change to the ordering cannot miss one of them.
+macro_rules! sort_rank_i32_wgsl {
+    () => {
+        r#"
+// Rank order: the requested output order with ties broken by original index, so
+// the network sorts by a single total order and is stable in both directions.
+fn sort_rank_less_i32(a: i32, idx_a: i32, b: i32, idx_b: i32, descending: bool) -> bool {
+    if (a != b) {
+        return select(a < b, (a > b), descending);
+    }
+    return idx_a < idx_b;
+}
+
+// Rank order without indices, for the values-only kernel.
+fn sort_value_rank_less_i32(a: i32, b: i32, descending: bool) -> bool {
+    return select(a < b, (a > b), descending);
+}
+
+// Padding value of maximum rank, so pad entries sort into the discarded tail:
+// the type's maximum ascending, its minimum descending. Pad indices are all at
+// or above the real element count, so a real value that ties with the pad still
+// wins on the index tiebreak.
+fn sort_pad_i32(descending: bool) -> i32 {
+    return select(2147483647i, (-2147483647i - 1i), descending);
+}
+"#
+    };
+}
+
+/// Bitonic-network ordering helpers for `U32`: `sort_rank_less_u32`,
+/// `sort_value_rank_less_u32` and `sort_pad_u32`.
+///
+/// Integers have one total order and no NaN, so unlike the f32 family there is
+/// no separate comparison helper - `<` and `>` are the order. Shared by the
+/// sort and topk shaders so a change to the ordering cannot miss one of them.
+macro_rules! sort_rank_u32_wgsl {
+    () => {
+        r#"
+// Rank order: the requested output order with ties broken by original index, so
+// the network sorts by a single total order and is stable in both directions.
+fn sort_rank_less_u32(a: u32, idx_a: i32, b: u32, idx_b: i32, descending: bool) -> bool {
+    if (a != b) {
+        return select(a < b, (a > b), descending);
+    }
+    return idx_a < idx_b;
+}
+
+// Rank order without indices, for the values-only kernel.
+fn sort_value_rank_less_u32(a: u32, b: u32, descending: bool) -> bool {
+    return select(a < b, (a > b), descending);
+}
+
+// Padding value of maximum rank, so pad entries sort into the discarded tail:
+// the type's maximum ascending, its minimum descending. Pad indices are all at
+// or above the real element count, so a real value that ties with the pad still
+// wins on the index tiebreak.
+fn sort_pad_u32(descending: bool) -> u32 {
+    return select(4294967295u, 0u, descending);
+}
+"#
+    };
+}
+
 pub(crate) use {sort_cmp_f32_wgsl, sort_rank_f32_wgsl};
+pub(crate) use {sort_rank_i32_wgsl, sort_rank_u32_wgsl};

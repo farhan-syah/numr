@@ -1,5 +1,6 @@
-// Saturating integer arithmetic shared by the I32/U32 `pow` and `cumsum`
-// shaders.
+// Saturating integer arithmetic shared by the I32/U32 `pow`, `cumsum`, `matmul`
+// and `semiring_matmul` shaders. The matmul accumulator itself lives one file
+// over, in `int_matmul_acc.wgsl`, which builds on the types below.
 //
 // Integer division is banned here. The NVIDIA shader compiler fails with
 // "NVVM compilation failed" on a u32 divide inside a loop, and division is

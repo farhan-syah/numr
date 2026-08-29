@@ -2,6 +2,7 @@
 
 use super::helpers::*;
 use super::matmul_broadcast::flatten_batched_operands;
+use crate::dtype::DType;
 use crate::error::Error;
 use crate::error::Result;
 use crate::ops::{matmul_bias_output_shape, matmul_output_shape, validate_matmul_bias_dtypes};
@@ -60,8 +61,10 @@ pub(crate) fn native_matmul(
         let k = a_shape[1];
         let n = b_shape[1];
 
-        // GEMV-BT fast path: transposed B with small M
-        if m <= 16 && is_simple_transpose_2d(b) {
+        // GEMV-BT fast path: transposed B with small M. F32-only, because the
+        // GEMV-BT shader is; an integer operand falls through to the tiled and
+        // simple kernels below, which materialize the transpose first.
+        if dtype == DType::F32 && m <= 16 && is_simple_transpose_2d(b) {
             let a_contig = ensure_contiguous(a)?;
             let out = alloc_output(client, &out_shape, dtype)?;
 
@@ -154,8 +157,9 @@ pub(crate) fn native_matmul(
             });
         }
 
-        // GEMV-BT fast path: transposed B with small M
-        if m <= 16 && is_batched_transpose_last2(b) {
+        // GEMV-BT fast path: transposed B with small M. F32-only for the same
+        // reason as the 2D path above.
+        if dtype == DType::F32 && m <= 16 && is_batched_transpose_last2(b) {
             let a_contig = ensure_contiguous(a)?;
             let out = alloc_output(client, &out_shape, dtype)?;
 

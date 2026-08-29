@@ -7,8 +7,29 @@ use crate::dtype::DType;
 use crate::error::{Error, Result};
 
 const REDUCE_F32_SHADER: &str = include_str!("reduce.wgsl");
-const REDUCE_I32_SHADER: &str = include_str!("reduce_i32.wgsl");
-const REDUCE_U32_SHADER: &str = include_str!("reduce_u32.wgsl");
+
+// The integer modules are assembled from the shared saturating-integer helpers
+// plus one file per reduction family. Order is load-bearing: WGSL has no
+// forward declarations, so every helper must precede its first use, and
+// `reduce_int_acc_*` uses the bindings that `reduce_*` declares.
+const REDUCE_I32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("int_wide_div.wgsl"),
+    include_str!("reduce_i32.wgsl"),
+    include_str!("reduce_int_acc_i32.wgsl"),
+    include_str!("reduce_full_i32.wgsl"),
+    include_str!("reduce_arg_i32.wgsl"),
+);
+const REDUCE_U32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("int_matmul_acc.wgsl"),
+    include_str!("int_wide_div.wgsl"),
+    include_str!("reduce_u32.wgsl"),
+    include_str!("reduce_int_acc_u32.wgsl"),
+    include_str!("reduce_full_u32.wgsl"),
+    include_str!("reduce_arg_u32.wgsl"),
+);
 
 // ============================================================================
 // Single-Dimension Reduction
@@ -16,7 +37,7 @@ const REDUCE_U32_SHADER: &str = include_str!("reduce_u32.wgsl");
 
 /// Launch a reduction operation along a single dimension. F32, I32, U32.
 ///
-/// Supported ops: "sum", "mean" (F32 only), "max", "min", "prod", "any", "all"
+/// Supported ops: "sum", "mean", "max", "min", "prod", "any", "all"
 pub fn launch_reduce_op(
     cache: &PipelineCache,
     queue: &Queue,
@@ -27,11 +48,6 @@ pub fn launch_reduce_op(
     numel_out: usize,
     dtype: DType,
 ) -> Result<()> {
-    // mean is F32-only
-    if op == "mean" && dtype != DType::F32 {
-        return Err(Error::UnsupportedDType { dtype, op });
-    }
-
     let (module_key, shader, suffix) = match dtype {
         DType::F32 => ("reduce_f32", REDUCE_F32_SHADER, "f32"),
         DType::I32 => ("reduce_i32", REDUCE_I32_SHADER, "i32"),
@@ -77,7 +93,13 @@ pub fn launch_reduce_op(
 
 /// Launch a full reduction kernel (reduce all elements). F32, I32, U32.
 ///
-/// Supported ops: "sum", "max", "min", "prod"
+/// Supported ops: "max", "min" for every dtype, plus "sum" and "prod" for F32.
+///
+/// Integer `sum` and `prod` are refused here on purpose. They accumulate, so
+/// they must run in one wide accumulator and narrow once, and a two-pass
+/// whole-tensor reduction would have to store its partials in the element type
+/// and saturate each one. `native_reduce_op` collapses the reduced dims and
+/// calls `launch_reduce_op` instead, which does accumulate wide.
 pub fn launch_full_reduce_op(
     cache: &PipelineCache,
     queue: &Queue,
@@ -94,6 +116,10 @@ pub fn launch_full_reduce_op(
         DType::U32 => ("reduce_u32", REDUCE_U32_SHADER, "u32"),
         _ => return Err(Error::UnsupportedDType { dtype, op }),
     };
+
+    if dtype != DType::F32 && matches!(op, "sum" | "prod") {
+        return Err(Error::UnsupportedDType { dtype, op });
+    }
 
     let entry_point: String = match op {
         "sum" | "max" | "min" | "prod" => format!("full_reduce_{}_{}", op, suffix),

@@ -13,8 +13,14 @@ struct ScatterReduceParams {
     _pad2: u32,
 }
 
-@group(0) @binding(0) var<storage, read> scatter_src: array<i32>;
-@group(0) @binding(1) var<storage, read> scatter_indices: array<i32>;
+// Every storage binding is declared read_write, including the two this kernel
+// only reads. The pipeline cache builds this layout with
+// `num_readonly_storage: 0`, and wgpu requires a shader variable's access mode
+// to match its layout entry exactly - a `read` variable against a
+// `Storage { read_only: false }` entry fails pipeline creation with a bare
+// validation error, which then invalidates the device for every later test.
+@group(0) @binding(0) var<storage, read_write> scatter_src: array<i32>;
+@group(0) @binding(1) var<storage, read_write> scatter_indices: array<i32>;
 @group(0) @binding(2) var<storage, read_write> scatter_dst: array<atomic<i32>>;
 @group(0) @binding(3) var<uniform> scatter_params: ScatterReduceParams;
 

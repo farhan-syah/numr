@@ -6,8 +6,14 @@
 // `integer_gemv_cuda` covers the small-M GEMV kernels those shapes route to.
 // `integer_dtypes_cuda` holds the unsigned widths, where the widening into the
 // 128-bit accumulator must zero-extend rather than sign-extend.
+//
+// `integer_wgpu` pins the WebGPU I32/U32 kernels at the accumulator boundary:
+// their operands stay 32-bit, but WGSL has no 64-bit integer, so the accumulator
+// they build out of 32-bit limbs needs coverage the small operands in `float`
+// cannot give.
 
 pub mod float;
 pub mod integer_cuda;
 pub mod integer_dtypes_cuda;
 pub mod integer_gemv_cuda;
+pub mod integer_wgpu;

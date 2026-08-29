@@ -23,12 +23,7 @@ pub(crate) fn native_clamp(
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
-    let params = ClampParams {
-        numel: numel as u32,
-        min_val: min_val as f32,
-        max_val: max_val as f32,
-        _pad0: 0,
-    };
+    let params = ClampParams::new(numel as u32, min_val, max_val, dtype);
     let params_buf = create_params_buffer(client, &params);
 
     activation_launcher::launch_clamp_op(

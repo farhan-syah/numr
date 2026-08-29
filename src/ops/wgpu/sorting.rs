@@ -12,7 +12,7 @@ use crate::runtime::wgpu::ops::helpers::{
     CountParams, FlatToMultiParams, SearchsortedParams, SortParams, TopkParams, UniqueCountsParams,
     alloc_output, create_params_buffer, get_tensor_buffer, pack_u32_array,
 };
-use crate::runtime::wgpu::shaders::{sort, sort_global};
+use crate::runtime::wgpu::shaders::{sort, sort_global, sort_search};
 use crate::runtime::{RuntimeClient, ensure_contiguous, normalize_dim};
 use crate::tensor::Tensor;
 use wgpu::{Buffer, BufferDescriptor, BufferUsages, MapMode, PollType};
@@ -333,7 +333,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         };
         let params_buf = create_params_buffer(self, &params);
 
-        sort::launch_topk(
+        sort_search::launch_topk(
             self.pipeline_cache(),
             self.wgpu_queue(),
             &a_buf,
@@ -697,7 +697,7 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         };
         let params_buf = create_params_buffer(self, &params);
 
-        sort::launch_searchsorted(
+        sort_search::launch_searchsorted(
             self.pipeline_cache(),
             self.wgpu_queue(),
             &seq_buf,

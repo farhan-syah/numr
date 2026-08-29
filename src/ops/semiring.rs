@@ -40,7 +40,8 @@ impl SemiringOp {
     /// - sum (+) → 0
     /// - OR → 0 (false)
     // KEEP IN SYNC: runtime/cuda/kernels/semiring_matmul.cu identity init
-    // KEEP IN SYNC: runtime/wgpu/shaders/generator/semiring_matmul.rs semiring_wgsl_ops()
+    // KEEP IN SYNC: runtime/wgpu/shaders/semiring_matmul_*_f32.wgsl and
+    // semiring_matmul_*_i32.wgsl, whose `acc` initializers hold these identities
     pub fn reduce_identity_f64(self) -> f64 {
         match self {
             SemiringOp::MinPlus | SemiringOp::MinMax => f64::INFINITY,
