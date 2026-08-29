@@ -303,6 +303,10 @@ pub mod kernel_names {
     pub const MATMUL_WMMA_MODULE: &str = "matmul_wmma";
     /// GEMV operations (matrix-vector multiply for small M)
     pub const GEMV_MODULE: &str = "gemv";
+    /// Integer GEMV operations (I32, I64), which accumulate in `Numr128`
+    pub const GEMV_INT_MODULE: &str = "gemv_int";
+    /// Compile-time-tiled integer GEMM (I32, I64)
+    pub const MATMUL_INT_MODULE: &str = "matmul_int";
     /// Cumulative operations (cumsum, cumprod, logsumexp)
     pub const CUMULATIVE_MODULE: &str = "cumulative";
     /// Distribution sampling operations (bernoulli, beta, gamma, etc.)
@@ -364,16 +368,18 @@ pub fn kernel_name(base: &str, dtype: DType) -> String {
     format!("{}_{}", base, dtype_suffix(dtype))
 }
 
-/// Whether `gemv.cu` carries a kernel for this dtype.
+/// The PTX module holding this dtype's GEMV kernels.
 ///
-/// `gemv.cu` instantiates F32, F64, F16 and BF16 only. Integer matmul therefore
-/// takes the tiled path at every M, including the small-M shapes the GEMV fast
-/// path exists for. Correctness does not depend on the shortcut - the tiled
-/// kernel computes the same product - so an integer GEMV kernel is a possible
-/// future optimisation, not a gap.
+/// Integer GEMV lives in its own translation unit: it accumulates in `Numr128`
+/// instead of a float register, and `gemv.cu` is already at its size limit.
+/// Every dtype that reaches a GEMV launcher has kernels in one module or the
+/// other, so there is no dtype gate on the small-M fast path.
 #[inline]
-pub fn has_gemv_kernel(dtype: DType) -> bool {
-    matches!(dtype, DType::F32 | DType::F64 | DType::F16 | DType::BF16)
+fn gemv_module(dtype: DType) -> &'static str {
+    match dtype {
+        DType::I32 | DType::I64 => kernel_names::GEMV_INT_MODULE,
+        _ => kernel_names::GEMV_MODULE,
+    }
 }
 
 // ============================================================================
@@ -561,11 +567,8 @@ pub fn matmul_batched_launch_config(
 #[inline]
 pub fn default_tile_config(dtype: DType) -> TileConfig {
     match dtype {
-        // F64 and the integer dtypes use smaller tiles. F64 and I64 for the
-        // larger element size; I32 because its accumulator is a 128-bit
-        // `Numr128`, so a 4x4 thread tile already costs 16 accumulators per
-        // thread and a wider tile spills further into local memory.
-        DType::F64 | DType::I64 | DType::I32 => TileConfig {
+        // F64 uses smaller tiles due to larger element size
+        DType::F64 => TileConfig {
             block_m: 64,
             block_n: 64,
             block_k: 8,
@@ -644,7 +647,7 @@ pub unsafe fn launch_matmul_kernel(
 ) -> Result<()> {
     // Use GEMV kernel for small M (single-token decode in LLM inference)
     // The tiled GEMM wastes 99%+ compute when M < block_m (typically 128)
-    if m <= 16 && has_gemv_kernel(dtype) {
+    if m <= 16 {
         unsafe {
             return launch_gemv_kernel(
                 context,
@@ -677,6 +680,27 @@ pub unsafe fn launch_matmul_kernel(
                 m,
                 n,
                 k,
+            );
+        }
+    }
+    // Integers: same reason as F32 below. Their accumulator is a 16-byte
+    // `Numr128`, so a runtime-sized `reg_c` spills four registers per slot.
+    if matches!(dtype, DType::I32 | DType::I64) {
+        unsafe {
+            return launch_matmul_int_tiled(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                c_ptr,
+                1,
+                m,
+                n,
+                k,
+                1,
+                1,
             );
         }
     }
@@ -739,7 +763,7 @@ pub unsafe fn launch_gemv_kernel(
     a_batch: usize,
     b_batch: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::GEMV_MODULE)?;
+    let module = get_or_load_module(context, device_index, gemv_module(dtype))?;
     let func_name = kernel_name("gemv", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -803,7 +827,7 @@ pub unsafe fn launch_gemv_kernel_bt(
     a_batch: usize,
     b_batch: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::GEMV_MODULE)?;
+    let module = get_or_load_module(context, device_index, gemv_module(dtype))?;
     let func_name = kernel_name("gemv_bt", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -867,7 +891,7 @@ pub unsafe fn launch_gemv_kernel_bt_mr(
     a_batch: usize,
     b_batch: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::GEMV_MODULE)?;
+    let module = get_or_load_module(context, device_index, gemv_module(dtype))?;
     let func_name = kernel_name("gemv_bt_mr", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -1105,6 +1129,115 @@ unsafe fn launch_matmul_f32_tiled(
     }
 }
 
+/// Block and thread tile the compile-time-tiled integer kernels are built at.
+///
+/// `matmul_int.cu` instantiates exactly this shape and encodes it in the kernel
+/// names, so the two must stay in step. A `Numr128` accumulator is 16 bytes, so
+/// every `reg_c` slot costs four registers: a 4x4 thread tile spends 64, while
+/// an 8x8 tile would need 256 and blow past the 255-register per-thread limit.
+const INT_TILE: TileConfig = TileConfig {
+    block_m: 64,
+    block_n: 64,
+    block_k: 8,
+    thread_m: 4,
+    thread_n: 4,
+};
+
+/// Launch the compile-time-tiled integer GEMM, batched or not.
+///
+/// The tile dimensions are template parameters in `matmul_int.cu` rather than
+/// kernel arguments, so `reg_c` is sized exactly and stays in registers. That
+/// fixes the shape of the launch here: one kernel name per dtype, and a grid
+/// derived from `INT_TILE`.
+///
+/// Shared memory in those kernels is static, so the dynamic shared-memory
+/// request must be zero - adding the tile formula on top would push the block
+/// past the 48 KB limit and fail the launch silently.
+///
+/// # Safety
+///
+/// All pointers must be valid device memory with correct sizes.
+unsafe fn launch_matmul_int_tiled(
+    context: &Arc<CudaContext>,
+    stream: &CudaStream,
+    device_index: usize,
+    dtype: DType,
+    a_ptr: u64,
+    b_ptr: u64,
+    c_ptr: u64,
+    batch: usize,
+    m: usize,
+    n: usize,
+    k: usize,
+    a_batch: usize,
+    b_batch: usize,
+) -> Result<()> {
+    // A single batch with no broadcasting takes the 2-D entry point, which skips
+    // the per-block batch offset arithmetic.
+    let plain = batch == 1 && a_batch == 1 && b_batch == 1;
+    let kernel_fn_name = match (dtype, plain) {
+        (DType::I32, true) => "matmul_i32_tiled_64x64x8_4x4",
+        (DType::I64, true) => "matmul_i64_tiled_64x64x8_4x4",
+        (DType::I32, false) => "matmul_batched_i32_tiled_64x64x8_4x4",
+        (DType::I64, false) => "matmul_batched_i64_tiled_64x64x8_4x4",
+        _ => {
+            return Err(Error::UnsupportedDType {
+                dtype,
+                op: "matmul_int_tiled",
+            });
+        }
+    };
+
+    let module = get_or_load_module(context, device_index, kernel_names::MATMUL_INT_MODULE)?;
+    let func = get_kernel_function(&module, kernel_fn_name)?;
+
+    let bm = INT_TILE.block_m as u32;
+    let bn = INT_TILE.block_n as u32;
+    let tm = INT_TILE.thread_m as u32;
+    let tn = INT_TILE.thread_n as u32;
+    let cfg = LaunchConfig {
+        grid_dim: (
+            ((n as u32) + bn - 1) / bn,
+            ((m as u32) + bm - 1) / bm,
+            batch as u32,
+        ),
+        block_dim: (bn / tn, bm / tm, 1),
+        shared_mem_bytes: 0,
+    };
+
+    let batch_u32 = batch as u32;
+    let m_u32 = m as u32;
+    let n_u32 = n as u32;
+    let k_u32 = k as u32;
+    let a_batch_u32 = a_batch as u32;
+    let b_batch_u32 = b_batch as u32;
+
+    unsafe {
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&a_ptr);
+        builder.arg(&b_ptr);
+        builder.arg(&c_ptr);
+        if !plain {
+            builder.arg(&batch_u32);
+        }
+        builder.arg(&m_u32);
+        builder.arg(&n_u32);
+        builder.arg(&k_u32);
+        if !plain {
+            builder.arg(&a_batch_u32);
+            builder.arg(&b_batch_u32);
+        }
+        builder.launch(cfg).map_err(|e| {
+            Error::Internal(format!(
+                "CUDA integer matmul kernel '{}' launch failed: {:?}",
+                kernel_fn_name, e
+            ))
+        })?;
+    }
+
+    Ok(())
+}
+
 /// Launch native batched tiled matmul kernel: C[batch,M,N] = A[batch,M,K] @ B[batch,K,N]
 ///
 /// # Safety
@@ -1129,7 +1262,7 @@ pub unsafe fn launch_matmul_batched_kernel(
     b_batch: usize,
 ) -> Result<()> {
     // Use GEMV kernel for small M (batched case)
-    if m <= 16 && has_gemv_kernel(dtype) {
+    if m <= 16 {
         unsafe {
             return launch_gemv_kernel(
                 context,
@@ -1152,6 +1285,26 @@ pub unsafe fn launch_matmul_batched_kernel(
     if use_wmma(dtype, m, n, k) {
         unsafe {
             return launch_matmul_wmma_batched_kernel(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                c_ptr,
+                batch,
+                m,
+                n,
+                k,
+                a_batch,
+                b_batch,
+            );
+        }
+    }
+    // Integers use the compile-time-tiled kernels at every batch size.
+    if matches!(dtype, DType::I32 | DType::I64) {
+        unsafe {
+            return launch_matmul_int_tiled(
                 context,
                 stream,
                 device_index,

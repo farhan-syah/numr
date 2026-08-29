@@ -129,4 +129,27 @@ __device__ __forceinline__ int numr128_to_i32_sat(Numr128 v) {
     return (int)w;
 }
 
+// Type-directed narrow-back, so a kernel templated over its element type picks
+// the matching saturation rule. This selects between the two rules above; it
+// does not add a third.
+template<typename T> struct Numr128Narrow;
+
+template<> struct Numr128Narrow<int> {
+    static __device__ __forceinline__ int apply(Numr128 v) { return numr128_to_i32_sat(v); }
+};
+
+template<> struct Numr128Narrow<long long> {
+    static __device__ __forceinline__ long long apply(Numr128 v) { return numr128_to_i64_sat(v); }
+};
+
+// Move a whole accumulator down the warp. The two halves shuffle independently
+// because they are plain 64-bit values; the receiving lane reassembles the
+// sender's exact accumulator, so a warp reduction built on this stays exact.
+__device__ __forceinline__ Numr128 numr128_shfl_down(unsigned int mask, Numr128 v, int offset) {
+    Numr128 r;
+    r.lo = __shfl_down_sync(mask, v.lo, offset);
+    r.hi = __shfl_down_sync(mask, v.hi, offset);
+    return r;
+}
+
 #endif // NUMR_NUMR128_CUH
