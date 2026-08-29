@@ -13,6 +13,7 @@ pub mod conditional;
 pub mod conv;
 pub mod cumulative;
 pub mod distance;
+pub mod distance_narrow_float;
 pub mod eigen;
 pub mod einsum;
 pub mod fft;
