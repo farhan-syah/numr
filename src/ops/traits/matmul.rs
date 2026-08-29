@@ -46,6 +46,11 @@ pub trait MatmulOps<R: Runtime> {
     ///
     /// Output tensor of shape `` `[..., M, N]` `` where `` `C[..., i, j] = sum_k(A[..., i, k] * B[..., k, j]) + bias[j]` ``
     ///
+    /// The output dtype is the operand dtype for every width except I8, which
+    /// widens to I32 (quantized accumulation, the same rule `matmul` follows).
+    /// An I8 operand therefore takes an I32 bias: the bias seeds the I32
+    /// accumulator instead of being added to a narrowed result.
+    ///
     /// # Errors
     ///
     /// Returns `Error::ShapeMismatch` if:
@@ -53,7 +58,9 @@ pub trait MatmulOps<R: Runtime> {
     /// - Bias shape doesn't match output columns (bias.len() != N)
     /// - Bias is not 1D
     ///
-    /// Returns `Error::DTypeMismatch` if A, B, and bias don't have the same dtype.
+    /// Returns `Error::DTypeMismatch` if A and B differ, or if the bias differs
+    /// from the output dtype at a width that does not widen. An I8 operand with
+    /// a non-I32 bias returns `Error::InvalidArgument` naming the expected dtype.
     ///
     /// # Examples
     ///
@@ -93,11 +100,9 @@ pub trait MatmulOps<R: Runtime> {
     /// | Backend | Supported DTypes | Tensor Dims | Notes |
     /// |---------|------------------|-------------|-------|
     /// | CPU     | All dtypes       | 2D, 3D+     | Full support via generic kernels |
-    /// | CUDA    | F32, F64, F16, BF16 | 2D, 3D+ | Returns `UnsupportedDType` for integers |
+    /// | CUDA    | All dtypes       | 2D, 3D+     | Integers fuse the bias into the wide accumulator |
     /// | WebGPU  | F32, I32, U32, F16 | 2D, 3D only | Returns error for >3D tensors |
     ///
-    /// Integer dtypes (I32, I64, U32, U64) are only supported on CPU.
-    /// CUDA returns `Error::UnsupportedDType` for integer matmul_bias operations.
     /// WebGPU is limited to 3D workgroup dispatches and returns an error for >3D tensors.
     fn matmul_bias(&self, a: &Tensor<R>, b: &Tensor<R>, bias: &Tensor<R>) -> Result<Tensor<R>>;
 }

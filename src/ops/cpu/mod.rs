@@ -20,6 +20,7 @@ pub mod indexing;
 pub mod linalg;
 pub mod logical;
 pub mod matmul;
+pub mod matmul_i8;
 pub mod multivariate;
 pub mod normalization;
 pub mod quasirandom;

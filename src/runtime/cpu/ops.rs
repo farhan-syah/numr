@@ -24,6 +24,11 @@ mod normalization;
 #[path = "../../ops/cpu/matmul.rs"]
 mod matmul;
 
+// I8 matmul widens to I32, so it cannot share `matmul`'s same-dtype
+// generic path and lives in its own module.
+#[path = "../../ops/cpu/matmul_i8.rs"]
+pub mod matmul_i8;
+
 // Column-split parallelism for the tiled matmul paths. Rayon-only: without it
 // there is no pool to split across and `matmul` takes its serial branch.
 #[cfg(feature = "rayon")]

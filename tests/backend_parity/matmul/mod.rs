@@ -7,9 +7,9 @@
 // `integer_dtypes_cuda` holds the unsigned widths, where the widening into the
 // 128-bit accumulator must zero-extend rather than sign-extend.
 //
-// `i8_cuda` stands apart from both: I8 is the one width whose plain `matmul`
-// widens its output to I32 while its fused-bias form stays I8, so its parity
-// tests assert the output dtype as well as the values.
+// `i8_cuda` stands apart from both: I8 is the one width whose `matmul` widens
+// its output to I32 - in the fused-bias form too, where the bias is I32 as
+// well - so its parity tests assert the output dtype as well as the values.
 //
 // `integer_wgpu` pins the WebGPU I32/U32 kernels at the accumulator boundary:
 // their operands stay 32-bit, but WGSL has no 64-bit integer, so the accumulator

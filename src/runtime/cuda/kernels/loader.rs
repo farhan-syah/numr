@@ -410,22 +410,15 @@ pub fn int_matmul_has_kernel(dtype: DType) -> bool {
     dtype.is_int()
 }
 
-/// The dtype a plain integer `matmul` writes for this element type.
+/// The dtype an integer `matmul` writes for this element type.
 ///
-/// I8 is the one width that widens: CPU `matmul` on I8 allocates an I32 output
-/// and runs `matmul_i8_to_i32_kernel` (quantized accumulation, see the I8 branch
-/// in `ops/cpu/matmul.rs`), so CUDA writes I32 too. Every other integer width
-/// writes its own dtype.
-///
-/// This covers the plain form only. CPU `matmul_bias` has no I8 branch, so a
-/// fused-bias I8 matmul takes an I8 bias and returns I8.
+/// Both forms widen at I8 and neither widens anywhere else, so this is the
+/// backend-agnostic rule in [`crate::ops::matmul_output_dtype`] under the name
+/// the CUDA launchers use. It is re-exported rather than restated so CUDA and
+/// CPU cannot disagree about which widths widen.
 #[inline]
 pub fn int_matmul_output_dtype(dtype: DType) -> DType {
-    if dtype == DType::I8 {
-        DType::I32
-    } else {
-        dtype
-    }
+    crate::ops::matmul_output_dtype(dtype)
 }
 
 /// The PTX module holding this dtype's cumulative kernels.
@@ -748,7 +741,7 @@ pub unsafe fn launch_matmul_kernel(
     // Use GEMV kernel for small M (single-token decode in LLM inference)
     // The tiled GEMM wastes 99%+ compute when M < block_m (typically 128)
     //
-    // I8 is excluded: its plain matmul writes I32, and `gemv_int.cu` has no
+    // I8 is excluded: its matmul writes I32, and `gemv_int.cu` has no
     // kernel that widens. CPU excludes I8 from its own GEMV-BT fast path for the
     // same reason, so both backends reach the tiled kernel at every M.
     if m <= 16 && dtype != DType::I8 {
@@ -1299,10 +1292,9 @@ unsafe fn launch_matmul_int_tiled(
         (true, true) => "matmul_bias",
         (true, false) => "matmul_bias_batched",
     };
-    // The plain I8 kernels write I32, so they carry an `i8_i32` suffix instead
-    // of the bare element suffix. The fused-bias I8 kernels write I8 like every
-    // other width and keep the plain suffix.
-    let suffix = if dtype == DType::I8 && bias_ptr.is_none() {
+    // The I8 kernels write I32 in both forms, so they carry an `i8_i32` suffix
+    // instead of the bare element suffix.
+    let suffix = if dtype == DType::I8 {
         "i8_i32"
     } else {
         dtype_suffix(dtype)

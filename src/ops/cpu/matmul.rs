@@ -264,80 +264,21 @@ impl MatmulOps<CpuRuntime> for CpuClient {
         let ldb = n;
         let ldc = n;
 
-        // Special case: i8 × i8 → i32 matmul (quantized accumulation)
+        // I8 widens to I32 (quantized accumulation). Both matmul forms share
+        // that path, so it lives in `matmul_i8.rs`.
         if dtype == DType::I8 {
-            use crate::runtime::cpu::kernels::matmul_i8_to_i32_kernel;
-
-            let out = Tensor::<CpuRuntime>::empty(&out_shape, DType::I32, &self.device)?;
-            let out_ptr = out.ptr();
-
-            #[cfg(feature = "rayon")]
-            {
-                use rayon::prelude::*;
-
-                if batch_size > 1 {
-                    let min_len = self.rayon_min_len();
-                    self.install_parallelism(|| {
-                        (0..batch_size)
-                            .into_par_iter()
-                            .with_min_len(min_len)
-                            .for_each(|batch| unsafe {
-                                let a_offset = a_batch_idx[batch] * m * k;
-                                let b_offset = b_batch_idx[batch] * k * n;
-                                let out_offset = batch * m * n;
-
-                                matmul_i8_to_i32_kernel(
-                                    (a_ptr as *const i8).add(a_offset),
-                                    (b_ptr as *const i8).add(b_offset),
-                                    (out_ptr as *mut i32).add(out_offset),
-                                    m,
-                                    n,
-                                    k,
-                                    lda,
-                                    ldb,
-                                    ldc,
-                                );
-                            });
-                    });
-                } else {
-                    unsafe {
-                        matmul_i8_to_i32_kernel(
-                            a_ptr as *const i8,
-                            b_ptr as *const i8,
-                            out_ptr as *mut i32,
-                            m,
-                            n,
-                            k,
-                            lda,
-                            ldb,
-                            ldc,
-                        );
-                    }
-                }
-            }
-
-            #[cfg(not(feature = "rayon"))]
-            unsafe {
-                for batch in 0..batch_size {
-                    let a_offset = a_batch_idx[batch] * m * k;
-                    let b_offset = b_batch_idx[batch] * k * n;
-                    let out_offset = batch * m * n;
-
-                    matmul_i8_to_i32_kernel(
-                        (a_ptr as *const i8).add(a_offset),
-                        (b_ptr as *const i8).add(b_offset),
-                        (out_ptr as *mut i32).add(out_offset),
-                        m,
-                        n,
-                        k,
-                        lda,
-                        ldb,
-                        ldc,
-                    );
-                }
-            }
-
-            return Ok(out);
+            return super::matmul_i8::matmul_i8_i32(
+                self,
+                &a_contig,
+                &b_contig,
+                None,
+                &out_shape,
+                &a_batch_idx,
+                &b_batch_idx,
+                m,
+                n,
+                k,
+            );
         }
 
         // Create output tensor
@@ -484,6 +425,23 @@ impl MatmulOps<CpuRuntime> for CpuClient {
         // source index per operand rather than a single batch count.
         let (a_batch_idx, b_batch_idx) =
             crate::ops::matmul::matmul_batch_indices(a_shape, b_shape, &out_shape);
+
+        // I8 widens to I32 exactly as the plain form does, and the validator
+        // above has already required the I32 bias that seeds the accumulator.
+        if dtype == DType::I8 {
+            return super::matmul_i8::matmul_i8_i32(
+                self,
+                &a_contig,
+                &b_contig,
+                Some(&bias_contig),
+                &out_shape,
+                &a_batch_idx,
+                &b_batch_idx,
+                m,
+                n,
+                k,
+            );
+        }
 
         // Create output tensor
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;

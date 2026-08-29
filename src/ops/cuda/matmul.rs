@@ -228,9 +228,9 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             // fused is the only correct form: the bias seeds the 128-bit
             // accumulator, so composing a matmul with an elementwise add would
             // saturate the product and then wrap the bias into the element type.
-            // I8 keeps its element type here — CPU `matmul_bias` has no I8
-            // branch, so the bias is I8 and so is the result. Only the plain
-            // form widens.
+            // I8 widens here as well: the bias is I32 and so is the result,
+            // because the bias seeds the accumulator the widened output exists
+            // to carry (see `ops/matmul_dtype.rs`).
             d if int_matmul_has_kernel(d) => {
                 if batch_size > 1 {
                     matmul_bias_batched_native(self, a, b, bias, dtype, batch_size, m, k, n)

@@ -45,8 +45,8 @@ fn is_simple_transpose_2d(tensor: &Tensor<CudaRuntime>) -> bool {
 /// Whether this dtype may take the small-M GEMV fast path in a plain matmul.
 ///
 /// FP8 has no GEMV kernel at all. I8 has none either, and could not use one: its
-/// plain matmul widens to I32 (see `int_matmul_output_dtype`) while every GEMV
-/// kernel writes the element type. CPU excludes I8 from its own GEMV-BT path for
+/// matmul widens to I32 (see `int_matmul_output_dtype`) while every GEMV kernel
+/// writes the element type. CPU excludes I8 from its own GEMV-BT path for
 /// the same reason, so both backends run the tiled kernel at every M.
 #[inline]
 fn has_gemv_kernel(dtype: DType) -> bool {
@@ -243,7 +243,10 @@ pub(crate) fn matmul_bias_native(
         },
     )?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+    // I8 widens to I32 in the fused form exactly as in the plain one, and the
+    // validator has already required an I32 bias to seed that accumulator.
+    let out =
+        Tensor::<CudaRuntime>::empty(&out_shape, int_matmul_output_dtype(dtype), &client.device)?;
 
     unsafe {
         launch_matmul_bias_kernel(
@@ -292,7 +295,9 @@ pub(crate) fn matmul_bias_batched_native(
     let (a_contig, b_contig) = operands.contiguous()?;
     let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+    // Widens at I8 like every other matmul entry point here.
+    let out =
+        Tensor::<CudaRuntime>::empty(&out_shape, int_matmul_output_dtype(dtype), &client.device)?;
 
     unsafe {
         launch_matmul_bias_batched_kernel(

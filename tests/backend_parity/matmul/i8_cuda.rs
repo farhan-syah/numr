@@ -1,17 +1,16 @@
 // Backend parity tests for I8 `matmul` and `matmul_bias` on CUDA vs CPU.
 //
-// I8 is the one element type whose two matmul forms disagree about the output
-// dtype, which is why it gets a file rather than a row in
-// `integer_dtypes_cuda.rs`:
+// I8 is the one element type whose matmul does not write its own dtype, which
+// is why it gets a file rather than a row in `integer_dtypes_cuda.rs`:
 //
 // - `matmul` on I8 returns an I32 tensor. CPU allocates the output as I32 and
 //   runs `matmul_i8_to_i32_kernel` (quantized accumulation, see the I8 branch in
 //   `ops/cpu/matmul.rs`), which sums in i64 and clamps once at the store
 //   (`i8xi8_dot_scalar` / `saturate_i64_to_i32`). CUDA's
 //   `matmul_i8_i32_tiled_64x64x8_4x4` does the same.
-// - `matmul_bias` on I8 returns an I8 tensor. CPU `matmul_bias` has no I8
-//   branch, so the bias is I8, the accumulator is the shared i128 one, and the
-//   store saturates into I8.
+// - `matmul_bias` on I8 returns an I32 tensor as well, and takes an I32 bias.
+//   The bias seeds the accumulator rather than being added to a narrowed
+//   product, so a sum that leaves I8's range is reported, not clamped.
 //
 // The tests below assert the dtype as well as the values, because a kernel that
 // returned the element type would still match on values for small operands.
@@ -95,8 +94,8 @@ fn assert_i8_matmul_parity(
     });
 }
 
-/// The same check for the fused `matmul_bias` entry point, where I8 in means
-/// I8 bias and I8 out.
+/// The same check for the fused `matmul_bias` entry point, where I8 operands
+/// mean an I32 bias and an I32 result.
 #[cfg(feature = "cuda")]
 fn assert_i8_bias_parity(
     label: &str,
@@ -104,8 +103,8 @@ fn assert_i8_bias_parity(
     a_shape: &[usize],
     b: &[i8],
     b_shape: &[usize],
-    bias: &[i8],
-    expected: Option<&[i8]>,
+    bias: &[i32],
+    expected: Option<&[i32]>,
 ) {
     let bias_shape = [bias.len()];
     let (cpu_client, cpu_device) = create_cpu_client();
@@ -118,10 +117,10 @@ fn assert_i8_bias_parity(
         .expect("CPU I8 matmul_bias failed");
     assert_eq!(
         cpu_result.dtype(),
-        DType::I8,
-        "{label}: CPU I8 matmul_bias keeps the element type"
+        DType::I32,
+        "{label}: CPU I8 matmul_bias must widen to I32"
     );
-    let cpu_vec = cpu_result.to_vec::<i8>();
+    let cpu_vec = cpu_result.to_vec::<i32>();
 
     if let Some(want) = expected {
         assert_eq!(
@@ -140,8 +139,8 @@ fn assert_i8_bias_parity(
             .expect("CUDA I8 matmul_bias must be native, not unsupported");
         assert_eq!(
             result.dtype(),
-            DType::I8,
-            "{label}: CUDA I8 matmul_bias must keep the element type like CPU"
+            DType::I32,
+            "{label}: CUDA I8 matmul_bias must widen to I32 like CPU"
         );
         assert_eq!(
             result.shape(),
@@ -149,7 +148,7 @@ fn assert_i8_bias_parity(
             "{label}: output shape differs from CPU"
         );
         assert_eq!(
-            result.to_vec::<i8>(),
+            result.to_vec::<i32>(),
             cpu_vec,
             "{label}: CUDA must match CPU element for element"
         );
@@ -281,11 +280,12 @@ fn test_matmul_i8_batched_past_i8_range_cuda_matches_cpu() {
 }
 
 // ============================================================================
-// Fused bias: I8 x I8 + I8 -> I8
+// Fused bias: I8 x I8 + I32 -> I32
 // ============================================================================
 
 /// The 2x2 product above plus a bias of [1, -2] on every row:
 ///   [[19,22],[43,50]] + [1,-2] = [[20,20],[44,48]]
+/// B is read column-wise: column 0 is [5,7], column 1 is [6,8].
 #[cfg(feature = "cuda")]
 #[test]
 fn test_matmul_bias_i8_cuda_matches_cpu() {
@@ -295,25 +295,44 @@ fn test_matmul_bias_i8_cuda_matches_cpu() {
         &[2, 2],
         &[5i8, 6, 7, 8],
         &[2, 2],
-        &[1i8, -2],
-        Some(&[20i8, 20, 44, 48]),
+        &[1i32, -2],
+        Some(&[20i32, 20, 44, 48]),
     );
 }
 
-/// 12 * 11 = 132, past `i8::MAX`. The bias form narrows to the element type, so
-/// the store clamps to 127 - the plain form on the same operands would report
-/// 132 in I32. One value, so the two contracts cannot be confused.
+/// 12 * 11 = 132, past `i8::MAX`. The bias form widens exactly as the plain one
+/// does, so the store reports 132 rather than clamping to 127. One value, so
+/// the contract cannot be confused with a narrowing one.
 #[cfg(feature = "cuda")]
 #[test]
-fn test_matmul_bias_i8_saturates_at_the_store_cuda_matches_cpu() {
+fn test_matmul_bias_i8_past_i8_range_at_the_store_cuda_matches_cpu() {
     assert_i8_bias_parity(
-        "i8 1x1 @ 1x1 + zero bias saturates",
+        "i8 1x1 @ 1x1 + zero bias past i8 range",
         &[12i8],
         &[1, 1],
         &[11i8],
         &[1, 1],
-        &[0i8],
-        Some(&[127i8]),
+        &[0i32],
+        Some(&[132i32]),
+    );
+}
+
+/// The widening reaches the bias, not only the product:
+///   A = [[127, 127, 127, 127]], every row of B = [127], K = 4
+///   product = 4 * 127 * 127 = 64_516, bias = 1_000, sum = 65_516
+/// Both the product and the sum leave I8's range and fit I32, so a bias added
+/// after a narrowing store could not report this.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_matmul_bias_i8_bias_past_i8_range_cuda_matches_cpu() {
+    assert_i8_bias_parity(
+        "i8 1x4 @ 4x1 + bias past i8 range",
+        &[127i8; 4],
+        &[1, 4],
+        &[127i8; 4],
+        &[4, 1],
+        &[1_000i32],
+        Some(&[65_516i32]),
     );
 }
 
@@ -330,9 +349,64 @@ fn test_matmul_bias_i8_batched_cuda_matches_cpu() {
         &[2, 2, 2],
         &[1i8, 0, 0, 1, 2, 0, 0, 2],
         &[2, 2, 2],
-        &[1i8, -2],
-        Some(&[2i8, 0, 4, 2, 11, 10, 15, 14]),
+        &[1i32, -2],
+        Some(&[2i32, 0, 4, 2, 11, 10, 15, 14]),
     );
+}
+
+/// Batched, at magnitudes that leave I8's range on both the product and the
+/// bias, so the batched entry point is pinned to the same widening:
+///   every slice = [[127, 127, 127, 127]] @ [[127] x4] + 1_000 = 65_516
+#[cfg(feature = "cuda")]
+#[test]
+fn test_matmul_bias_i8_batched_past_i8_range_cuda_matches_cpu() {
+    assert_i8_bias_parity(
+        "i8 batched 2x[1x4] @ 2x[4x1] + bias past i8 range",
+        &[127i8; 8],
+        &[2, 1, 4],
+        &[127i8; 8],
+        &[2, 4, 1],
+        &[1_000i32],
+        Some(&[65_516i32, 65_516]),
+    );
+}
+
+/// The bias dtype is part of the contract: an I8 bias is refused on both
+/// backends, and the I32 one every test above uses is accepted.
+#[cfg(feature = "cuda")]
+#[test]
+fn test_matmul_bias_i8_rejects_i8_bias_cuda_matches_cpu() {
+    let a: [i8; 4] = [1, 2, 3, 4];
+    let b: [i8; 4] = [5, 6, 7, 8];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_cpu = Tensor::<CpuRuntime>::from_slice(&a, &[2, 2], &cpu_device).expect("CPU A");
+    let b_cpu = Tensor::<CpuRuntime>::from_slice(&b, &[2, 2], &cpu_device).expect("CPU B");
+    let bias_i8 =
+        Tensor::<CpuRuntime>::from_slice(&[1i8, -2], &[2], &cpu_device).expect("CPU i8 bias");
+    assert!(
+        cpu_client.matmul_bias(&a_cpu, &b_cpu, &bias_i8).is_err(),
+        "CPU must refuse an I8 bias for I8 operands"
+    );
+
+    with_cuda_backend(|client, device| {
+        let a_gpu = Tensor::<CudaRuntime>::from_slice(&a, &[2, 2], &device).expect("CUDA A");
+        let b_gpu = Tensor::<CudaRuntime>::from_slice(&b, &[2, 2], &device).expect("CUDA B");
+        let bias_i8 =
+            Tensor::<CudaRuntime>::from_slice(&[1i8, -2], &[2], &device).expect("CUDA i8 bias");
+        assert!(
+            client.matmul_bias(&a_gpu, &b_gpu, &bias_i8).is_err(),
+            "CUDA must refuse an I8 bias for I8 operands"
+        );
+
+        let bias_i32 =
+            Tensor::<CudaRuntime>::from_slice(&[1i32, -2], &[2], &device).expect("CUDA i32 bias");
+        let out = client
+            .matmul_bias(&a_gpu, &b_gpu, &bias_i32)
+            .expect("CUDA must accept an I32 bias for I8 operands");
+        assert_eq!(out.dtype(), DType::I32);
+        assert_eq!(out.to_vec::<i32>(), vec![20i32, 20, 44, 48]);
+    });
 }
 
 // ============================================================================

@@ -31,13 +31,14 @@
 // elementwise add would narrow and saturate the product first and then wrap the
 // bias into the element type, reporting a different number at the boundary.
 
-// I8 is the one element type whose plain matmul does not write its own dtype:
-// CPU `matmul` on I8 returns an I32 tensor (quantized accumulation, see the I8
-// branch in `ops/cpu/matmul.rs`). That contract belongs to the plain form only.
-// CPU `matmul_bias` has no I8 branch, so a fused-bias I8 matmul takes an I8
-// bias and returns I8 like every other width. The two forms therefore differ in
-// output type, not in algorithm, which is why the accumulator below is a policy
-// parameter rather than a second copy of the kernel.
+// I8 is the one element type whose matmul does not write its own dtype: CPU
+// `matmul` and `matmul_bias` on I8 both return an I32 tensor (quantized
+// accumulation, see `ops/matmul_dtype.rs` and the I8 branches in
+// `ops/cpu/matmul.rs`). The bias is I32 too, because it seeds that I32
+// accumulator - an I8 bias would cap at 127 the one value the widened output
+// exists to carry. The widening is therefore a property of the element type,
+// not of the form, which is why the accumulator below is a policy parameter
+// rather than a second copy of the kernel.
 //
 // Single-buffered, not double-buffered: a double-buffered variant was
 // implemented and benchmarked on an RTX 3060 and lost - I32 1024x1024 was 26%
@@ -66,6 +67,8 @@ struct Numr128Acc {
     typedef T Out;
     static __device__ __forceinline__ Sum zero() { return numr128_from_i64(0); }
     static __device__ __forceinline__ Sum widen(T v) { return Numr128From<T>::apply(v); }
+    // The bias arrives in the output type, which is the element type here.
+    static __device__ __forceinline__ Sum widen_bias(Out v) { return Numr128From<T>::apply(v); }
     static __device__ __forceinline__ Sum mul_add(Sum acc, T a, T b) {
         return Numr128MulAdd<T>::apply(acc, a, b);
     }
@@ -86,6 +89,9 @@ struct I8ToI32Acc {
     typedef int Out;
     static __device__ __forceinline__ Sum zero() { return 0LL; }
     static __device__ __forceinline__ Sum widen(signed char v) { return (long long)v; }
+    // The bias is I32, not I8: it seeds this i64 sum, so it carries the range
+    // the widened output has rather than the operands' range.
+    static __device__ __forceinline__ Sum widen_bias(int v) { return (long long)v; }
     static __device__ __forceinline__ Sum mul_add(Sum acc, signed char a, signed char b) {
         return acc + (long long)a * (long long)b;
     }
@@ -100,7 +106,7 @@ template<typename T, typename ACC, int BM, int BN, int BK, int TM, int TN>
 __device__ __forceinline__ void matmul_int_tiled_impl(
     const T* __restrict__ A,
     const T* __restrict__ B,
-    const T* __restrict__ bias,
+    const typename ACC::Out* __restrict__ bias,
     typename ACC::Out* __restrict__ C,
     unsigned int M,
     unsigned int N,
@@ -129,7 +135,7 @@ __device__ __forceinline__ void matmul_int_tiled_impl(
         for (int j = 0; j < TN; j++) {
             const unsigned int bias_col = block_col + thread_col + j;
             reg_c[i][j] = (bias != nullptr && bias_col < N)
-                ? ACC::widen(bias[bias_col])
+                ? ACC::widen_bias(bias[bias_col])
                 : ACC::zero();
         }
     }
@@ -221,7 +227,7 @@ template<typename T, typename ACC, int BM, int BN, int BK, int TM, int TN>
 __device__ __forceinline__ void matmul_batched_int_tiled_impl(
     const T* __restrict__ A,
     const T* __restrict__ B,
-    const T* __restrict__ bias,
+    const typename ACC::Out* __restrict__ bias,
     typename ACC::Out* __restrict__ C,
     unsigned int batch,
     unsigned int M,
@@ -250,10 +256,10 @@ __device__ __forceinline__ void matmul_batched_int_tiled_impl(
 // Shared memory is static, so these launch with zero dynamic shared memory.
 // ---------------------------------------------------------------------------
 
-// Two macros per dtype, split by output contract rather than by convenience:
-// the plain entry points write the element type for every width except I8, and
-// the fused-bias ones write it for all of them. Splitting them is what lets I8
-// take the widening plain kernels below while sharing the bias kernels here.
+// Two macros per dtype rather than one, because I8 needs neither: it writes I32
+// in both forms, so its four entry points are spelled out below with the
+// `i8_i32` suffix. Every other width takes both macros through
+// `NUMR_MATMUL_INT_ENTRIES`.
 #define NUMR_MATMUL_INT_PLAIN_ENTRIES(SUFFIX, TYPE) \
 extern "C" __global__ void matmul_##SUFFIX##_tiled_64x64x8_4x4( \
     const TYPE* __restrict__ A, \
@@ -322,15 +328,12 @@ NUMR_MATMUL_INT_ENTRIES(u16, unsigned short)
 NUMR_MATMUL_INT_ENTRIES(u32, unsigned int)
 NUMR_MATMUL_INT_ENTRIES(u64, unsigned long long)
 
-// I8 takes the shared bias entry points - CPU `matmul_bias` has no I8 branch,
-// so an I8 bias and an I8 result are what the reference produces.
-NUMR_MATMUL_INT_BIAS_ENTRIES(i8, signed char)
-
-// I8's plain entry points carry the `i8_i32` suffix because they are the only
-// ones whose output type is not the element type. The name is what stops a
-// caller from reaching them through the generic `matmul_<dtype>` lookup and
-// writing I32 into an I8 buffer. Only one instantiation exists, so these are
-// written out rather than macro-generated.
+// I8's entry points all carry the `i8_i32` suffix because they are the only
+// ones whose output type is not the element type - the bias ones included,
+// since their bias and result are I32 as well. The name is what stops a caller
+// from reaching them through the generic `matmul_<dtype>` lookup and writing
+// I32 into an I8 buffer. Only one instantiation exists, so these are written
+// out rather than macro-generated.
 extern "C" __global__ void matmul_i8_i32_tiled_64x64x8_4x4(
     const signed char* __restrict__ A,
     const signed char* __restrict__ B,
@@ -355,6 +358,35 @@ extern "C" __global__ void matmul_batched_i8_i32_tiled_64x64x8_4x4(
 ) {
     matmul_batched_int_tiled_impl<signed char, I8ToI32Acc, 64, 64, 8, 4, 4>(
         A, B, nullptr, C, batch, M, N, K, a_batch_count, b_batch_count
+    );
+}
+
+extern "C" __global__ void matmul_bias_i8_i32_tiled_64x64x8_4x4(
+    const signed char* __restrict__ A,
+    const signed char* __restrict__ B,
+    const int* __restrict__ bias,
+    int* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K
+) {
+    matmul_int_tiled_impl<signed char, I8ToI32Acc, 64, 64, 8, 4, 4>(A, B, bias, C, M, N, K);
+}
+
+extern "C" __global__ void matmul_bias_batched_i8_i32_tiled_64x64x8_4x4(
+    const signed char* __restrict__ A,
+    const signed char* __restrict__ B,
+    const int* __restrict__ bias,
+    int* __restrict__ C,
+    unsigned int batch,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int a_batch_count,
+    unsigned int b_batch_count
+) {
+    matmul_batched_int_tiled_impl<signed char, I8ToI32Acc, 64, 64, 8, 4, 4>(
+        A, B, bias, C, batch, M, N, K, a_batch_count, b_batch_count
     );
 }
 

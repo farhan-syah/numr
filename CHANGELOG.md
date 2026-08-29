@@ -39,6 +39,9 @@ These change results that earlier code could observe. Read them before upgrading
 - Integer accumulators saturate at the dtype's bound. This covers `sum`, `prod`, `mean`, `cumsum`, `cumprod`, `matmul`, and `scatter_reduce`. They wrapped before.
 - Integer element-wise ops wrap. `add`, `sub`, `mul`, and the fused forms panicked on overflow in debug builds.
 - Integer division by zero returns 0, and `INT_MIN / -1` returns `INT_MIN`. Both panicked before.
+- `matmul_bias` on I8 takes an I32 bias and returns I32, matching `matmul` on I8. It took an I8 bias and saturated the result into I8 before.
+- The GEMM epilogue ops (`matmul_bias_activation`, `matmul_bias_residual`, and the backward form) reject I8. They shared `matmul_bias`'s validator, so an I8 call would have read a wider bias buffer as I8.
+- `matmul_output_dtype` is public. A caller needs it to size a bias, because I8 widens.
 
 ### Fixed
 

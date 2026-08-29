@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 #[cfg(feature = "fp8")]
 use crate::ops::TypeConversionOps;
 use crate::ops::{
-    GemmActivation, GemmEpilogueOps, matmul_bias_output_shape, validate_matmul_bias_dtypes,
+    GemmActivation, GemmEpilogueOps, matmul_bias_output_shape, validate_gemm_epilogue_dtypes,
 };
 use crate::runtime::cuda::kernels::{
     launch_gemm_bias_act_batched_kernel, launch_gemm_bias_act_bwd_batched_kernel,
@@ -25,7 +25,12 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         bias: &Tensor<CudaRuntime>,
         activation: GemmActivation,
     ) -> Result<Tensor<CudaRuntime>> {
-        let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+        let dtype = validate_gemm_epilogue_dtypes(
+            a.dtype(),
+            b.dtype(),
+            bias.dtype(),
+            "matmul_bias_activation",
+        )?;
 
         // FP8: compute in F32 (tiled GEMM with shared memory needs native arithmetic)
         #[cfg(feature = "fp8")]
@@ -118,7 +123,12 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         bias: &Tensor<CudaRuntime>,
         residual: &Tensor<CudaRuntime>,
     ) -> Result<Tensor<CudaRuntime>> {
-        let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+        let dtype = validate_gemm_epilogue_dtypes(
+            a.dtype(),
+            b.dtype(),
+            bias.dtype(),
+            "matmul_bias_residual",
+        )?;
 
         // FP8: compute in F32
         #[cfg(feature = "fp8")]
@@ -226,7 +236,12 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         Tensor<CudaRuntime>,
         Tensor<CudaRuntime>,
     )> {
-        let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+        let dtype = validate_gemm_epilogue_dtypes(
+            a.dtype(),
+            b.dtype(),
+            bias.dtype(),
+            "matmul_bias_activation_bwd",
+        )?;
         if grad.dtype() != dtype {
             return Err(Error::DTypeMismatch {
                 lhs: dtype,

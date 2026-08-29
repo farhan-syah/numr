@@ -79,6 +79,7 @@ mod dispatch;
 pub(crate) mod distance_common;
 pub(crate) mod impl_generic;
 pub(crate) mod matmul;
+pub(crate) mod matmul_dtype;
 pub(crate) mod reduce;
 pub(crate) mod semiring;
 mod special;
@@ -94,9 +95,13 @@ pub use special::SpecialFunctions;
 
 // Internal re-exports (accessible within the crate only)
 pub(crate) use arithmetic::broadcast_shape;
-pub(crate) use matmul::{
-    matmul_bias_output_shape, matmul_output_shape, validate_matmul_bias_dtypes,
-};
+pub(crate) use matmul::{matmul_bias_output_shape, matmul_output_shape};
+pub(crate) use matmul_dtype::{validate_gemm_epilogue_dtypes, validate_matmul_bias_dtypes};
+
+/// `matmul` on I8 widens to I32, so a caller must know the output dtype before
+/// it can allocate a correctly typed bias. That makes this part of the public
+/// contract, not an internal detail.
+pub use matmul_dtype::matmul_output_dtype;
 pub(crate) use reduce::{
     AccumulationPrecision, compute_reduce_strides, reduce_dim_output_shape, reduce_output_shape,
 };

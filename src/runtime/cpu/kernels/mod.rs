@@ -92,7 +92,7 @@ pub use matmul::{
     gemv_bt_kernel, matmul_bias_kernel, matmul_bt_kernel, matmul_bt_matches_contiguous,
     matmul_kernel,
 };
-pub use matmul_i8::matmul_i8_to_i32_kernel;
+pub use matmul_i8::{matmul_i8_to_i32_bias_kernel, matmul_i8_to_i32_kernel};
 pub use memory::{
     arange_kernel, cast_kernel, copy_kernel, eye_kernel, fill_kernel, linspace_kernel,
     multinomial_kernel_with_replacement, multinomial_kernel_without_replacement, one_hot_kernel,

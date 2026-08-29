@@ -3,7 +3,7 @@
 use crate::dtype::Element;
 use crate::error::{Error, Result};
 use crate::ops::{GemmActivation, GemmEpilogueOps};
-use crate::ops::{matmul_bias_output_shape, validate_matmul_bias_dtypes};
+use crate::ops::{matmul_bias_output_shape, validate_gemm_epilogue_dtypes};
 use crate::runtime::cpu::helpers::{dispatch_dtype, ensure_contiguous};
 use crate::runtime::cpu::kernels::{
     matmul_bias_activation_bwd_kernel, matmul_bias_activation_kernel, matmul_bias_residual_kernel,
@@ -19,7 +19,12 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
         bias: &Tensor<CpuRuntime>,
         activation: GemmActivation,
     ) -> Result<Tensor<CpuRuntime>> {
-        let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+        let dtype = validate_gemm_epilogue_dtypes(
+            a.dtype(),
+            b.dtype(),
+            bias.dtype(),
+            "matmul_bias_activation",
+        )?;
 
         let out_shape = matmul_bias_output_shape(a.shape(), b.shape(), bias.shape()).ok_or(
             Error::ShapeMismatch {
@@ -120,7 +125,12 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
         bias: &Tensor<CpuRuntime>,
         residual: &Tensor<CpuRuntime>,
     ) -> Result<Tensor<CpuRuntime>> {
-        let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+        let dtype = validate_gemm_epilogue_dtypes(
+            a.dtype(),
+            b.dtype(),
+            bias.dtype(),
+            "matmul_bias_residual",
+        )?;
         if residual.dtype() != dtype {
             return Err(Error::DTypeMismatch {
                 lhs: dtype,
@@ -238,7 +248,12 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
         bias: &Tensor<CpuRuntime>,
         activation: GemmActivation,
     ) -> Result<(Tensor<CpuRuntime>, Tensor<CpuRuntime>, Tensor<CpuRuntime>)> {
-        let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+        let dtype = validate_gemm_epilogue_dtypes(
+            a.dtype(),
+            b.dtype(),
+            bias.dtype(),
+            "matmul_bias_activation_bwd",
+        )?;
         if grad.dtype() != dtype {
             return Err(Error::DTypeMismatch {
                 lhs: dtype,

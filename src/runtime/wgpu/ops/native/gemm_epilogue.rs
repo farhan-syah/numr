@@ -2,7 +2,7 @@
 
 use super::helpers::*;
 use crate::error::{Error, Result};
-use crate::ops::{GemmActivation, matmul_bias_output_shape, validate_matmul_bias_dtypes};
+use crate::ops::{GemmActivation, matmul_bias_output_shape, validate_gemm_epilogue_dtypes};
 use crate::runtime::ensure_contiguous;
 use crate::runtime::traits::client::RuntimeClient;
 use crate::runtime::wgpu::shaders::gemm_epilogue;
@@ -19,7 +19,12 @@ pub(crate) fn native_gemm_bias_activation(
     bias: &Tensor<WgpuRuntime>,
     activation: GemmActivation,
 ) -> Result<Tensor<WgpuRuntime>> {
-    let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+    let dtype = validate_gemm_epilogue_dtypes(
+        a.dtype(),
+        b.dtype(),
+        bias.dtype(),
+        "matmul_bias_activation",
+    )?;
     let out_shape = matmul_bias_output_shape(a.shape(), b.shape(), bias.shape())
         .ok_or_else(|| Error::shape_mismatch(a.shape(), b.shape()))?;
 
@@ -133,7 +138,8 @@ pub(crate) fn native_gemm_bias_residual(
     bias: &Tensor<WgpuRuntime>,
     residual: &Tensor<WgpuRuntime>,
 ) -> Result<Tensor<WgpuRuntime>> {
-    let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+    let dtype =
+        validate_gemm_epilogue_dtypes(a.dtype(), b.dtype(), bias.dtype(), "matmul_bias_residual")?;
     if residual.dtype() != dtype {
         return Err(Error::DTypeMismatch {
             lhs: dtype,
@@ -270,7 +276,12 @@ pub(crate) fn native_gemm_bias_activation_bwd(
     Tensor<WgpuRuntime>,
     Tensor<WgpuRuntime>,
 )> {
-    let dtype = validate_matmul_bias_dtypes(a.dtype(), b.dtype(), bias.dtype())?;
+    let dtype = validate_gemm_epilogue_dtypes(
+        a.dtype(),
+        b.dtype(),
+        bias.dtype(),
+        "matmul_bias_activation_bwd",
+    )?;
     if grad.dtype() != dtype {
         return Err(Error::DTypeMismatch {
             lhs: dtype,

@@ -16,6 +16,7 @@ use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
     DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
+use numr::ops::matmul_output_dtype;
 
 /// Test matmul_bias with 2D matrices across all supported dtypes and backends
 #[test]
@@ -28,7 +29,8 @@ fn test_matmul_bias_2d_parity() {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();
-        let bias_t = tensor_from_f64(&bias, &[2], dtype, &cpu_device, &cpu_client).unwrap();
+        let bias_dtype = matmul_output_dtype(dtype);
+        let bias_t = tensor_from_f64(&bias, &[2], bias_dtype, &cpu_device, &cpu_client).unwrap();
         let cpu_result = cpu_client.matmul_bias(&a_t, &b_t, &bias_t).unwrap();
 
         #[cfg(feature = "cuda")]
@@ -37,7 +39,7 @@ fn test_matmul_bias_2d_parity() {
                 let a_t = tensor_from_f64(&a, &[2, 2], dtype, &cuda_device, &cuda_client).unwrap();
                 let b_t = tensor_from_f64(&b, &[2, 2], dtype, &cuda_device, &cuda_client).unwrap();
                 let bias_t =
-                    tensor_from_f64(&bias, &[2], dtype, &cuda_device, &cuda_client).unwrap();
+                    tensor_from_f64(&bias, &[2], bias_dtype, &cuda_device, &cuda_client).unwrap();
                 let result = cuda_client.matmul_bias(&a_t, &b_t, &bias_t).unwrap();
                 assert_tensor_allclose(
                     &result,
@@ -54,7 +56,7 @@ fn test_matmul_bias_2d_parity() {
                 let a_t = tensor_from_f64(&a, &[2, 2], dtype, &wgpu_device, &wgpu_client).unwrap();
                 let b_t = tensor_from_f64(&b, &[2, 2], dtype, &wgpu_device, &wgpu_client).unwrap();
                 let bias_t =
-                    tensor_from_f64(&bias, &[2], dtype, &wgpu_device, &wgpu_client).unwrap();
+                    tensor_from_f64(&bias, &[2], bias_dtype, &wgpu_device, &wgpu_client).unwrap();
                 let result = wgpu_client.matmul_bias(&a_t, &b_t, &bias_t).unwrap();
                 assert_tensor_allclose(
                     &result,
@@ -78,7 +80,8 @@ fn test_matmul_bias_batched_parity() {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 2, 2], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[2, 2, 2], dtype, &cpu_device, &cpu_client).unwrap();
-        let bias_t = tensor_from_f64(&bias, &[2], dtype, &cpu_device, &cpu_client).unwrap();
+        let bias_dtype = matmul_output_dtype(dtype);
+        let bias_t = tensor_from_f64(&bias, &[2], bias_dtype, &cpu_device, &cpu_client).unwrap();
         let cpu_result = cpu_client.matmul_bias(&a_t, &b_t, &bias_t).unwrap();
 
         #[cfg(feature = "cuda")]
@@ -89,7 +92,7 @@ fn test_matmul_bias_batched_parity() {
                 let b_t =
                     tensor_from_f64(&b, &[2, 2, 2], dtype, &cuda_device, &cuda_client).unwrap();
                 let bias_t =
-                    tensor_from_f64(&bias, &[2], dtype, &cuda_device, &cuda_client).unwrap();
+                    tensor_from_f64(&bias, &[2], bias_dtype, &cuda_device, &cuda_client).unwrap();
                 let result = cuda_client.matmul_bias(&a_t, &b_t, &bias_t).unwrap();
                 assert_tensor_allclose(
                     &result,
@@ -108,7 +111,7 @@ fn test_matmul_bias_batched_parity() {
                 let b_t =
                     tensor_from_f64(&b, &[2, 2, 2], dtype, &wgpu_device, &wgpu_client).unwrap();
                 let bias_t =
-                    tensor_from_f64(&bias, &[2], dtype, &wgpu_device, &wgpu_client).unwrap();
+                    tensor_from_f64(&bias, &[2], bias_dtype, &wgpu_device, &wgpu_client).unwrap();
                 let result = wgpu_client.matmul_bias(&a_t, &b_t, &bias_t).unwrap();
                 assert_tensor_allclose(
                     &result,
