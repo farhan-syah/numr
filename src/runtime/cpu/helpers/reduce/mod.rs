@@ -70,6 +70,23 @@ pub fn reduce_impl(
         // Empty dims = reduce over ALL dimensions → scalar
         let all_dims: Vec<usize> = (0..ndim).collect();
         return reduce_impl(client, op, a, &all_dims, keepdim, op_name);
+    } else if dtype.is_int() && dims.len() > 1 && matches!(op, ReduceOp::Mean) {
+        // Correctness, not a performance choice: an integer mean over more than
+        // one dim must sum the whole reduced set in one wide accumulator and
+        // divide exactly once. Chaining single-dim `Mean` below divides once
+        // per dim and truncates toward zero at each step, so the answer would
+        // depend on `should_fuse_multi_dim_reduction`'s size/contiguity
+        // heuristic instead of only on the input values.
+        let a_contig = ensure_contiguous(a)?;
+        reduce_multi_dim_fused(
+            client,
+            op,
+            &a_contig,
+            dims,
+            keepdim,
+            AccumulationPrecision::Native,
+            op_name,
+        )
     } else if should_fuse_multi_dim_reduction(a, dims) {
         reduce_multi_dim_fused(
             client,
@@ -102,6 +119,46 @@ mod tests {
     use crate::runtime::Runtime;
     use crate::runtime::cpu::{CpuDevice, CpuRuntime};
     use crate::tensor::Tensor;
+
+    /// An integer mean over more than one dim must give the same answer
+    /// whether the tensor takes the fused (small, contiguous) path or the
+    /// chained single-dim path (non-contiguous, or above the 1 MiB fused
+    /// threshold). Before this fix, chaining divided once per dim and
+    /// truncated toward zero at each step: `mean([[0,3],[0,3],[0,0]])` came
+    /// back `0` chained against `1` fused. The correct answer is `1`
+    /// (sum `6`, count `6`).
+    #[test]
+    fn test_int_multi_dim_mean_matches_regardless_of_fusion() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+        let data: Vec<i32> = vec![0, 3, 0, 3, 0, 0];
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[3, 2], &device).unwrap();
+
+        let fused: Vec<i32> = client.mean(&a, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(fused, vec![1]);
+
+        // Same logical values, but non-contiguous: transpose a [2, 3] tensor
+        // whose rows are the columns of the tensor above.
+        let data_t: Vec<i32> = vec![0, 0, 0, 3, 3, 0];
+        let a_t = Tensor::<CpuRuntime>::from_slice(&data_t, &[2, 3], &device).unwrap();
+        let a_t = a_t.transpose(0, 1).unwrap();
+        assert!(!a_t.is_contiguous());
+        let non_contig: Vec<i32> = client.mean(&a_t, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(non_contig, vec![1]);
+
+        // Same logical values, tiled past the 1 MiB fused-path threshold:
+        // each row is `[0, 3, 0]` (sum 3, count 3), so the mean over all
+        // dims is still 1. 100_000 rows * 3 * 4 bytes = 1_200_000 bytes.
+        let rows = 100_000;
+        let big_data: Vec<i32> = std::iter::repeat_n([0i32, 3, 0], rows)
+            .flatten()
+            .collect();
+        let big = Tensor::<CpuRuntime>::from_slice(&big_data, &[rows, 3], &device).unwrap();
+        let big_bytes = big.numel() * big.dtype().size_in_bytes();
+        assert!(big_bytes > (1 << 20));
+        let big_mean: Vec<i32> = client.mean(&big, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(big_mean, vec![1]);
+    }
 
     #[test]
     fn test_fused_multi_dim_sum_matches_expected() {

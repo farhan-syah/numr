@@ -75,6 +75,7 @@ fn compile_cuda_kernels() {
         "semiring_matmul.cu",
         "quasirandom.cu",
         "reduce.cu",
+        "reduce_int.cu",
         "scalar.cu",
         "shape.cu",
         "sort.cu",

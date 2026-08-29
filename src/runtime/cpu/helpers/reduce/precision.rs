@@ -65,6 +65,15 @@ pub fn reduce_impl_with_precision(
         Ok(out)
     } else if dims.is_empty() {
         Ok(a.clone())
+    } else if dtype.is_int() && dims.len() > 1 && matches!(op, ReduceOp::Mean) {
+        // Same correctness requirement as the native-precision path in
+        // `super::reduce_impl`: an integer mean over more than one dim must
+        // divide once in a wide accumulator, not once per chained dim. The
+        // requested `precision` is irrelevant here — the fused int-mean path
+        // always accumulates in i128 — so route through it unconditionally
+        // rather than through the size/contiguity heuristic below.
+        let a_contig = ensure_contiguous(a)?;
+        reduce_multi_dim_fused(client, op, &a_contig, dims, keepdim, precision, op_name)
     } else if should_fuse_multi_dim_reduction(a, dims) {
         reduce_multi_dim_fused(client, op, a, dims, keepdim, precision, op_name)
     } else {

@@ -241,6 +241,8 @@ pub mod kernel_names {
     pub const SCALAR_MODULE: &str = "scalar";
     /// Reduction operations (sum, max, min)
     pub const REDUCE_MODULE: &str = "reduce";
+    /// Integer reduction operations, which accumulate in `Numr128`
+    pub const REDUCE_INT_MODULE: &str = "reduce_int";
     /// Comparison operations (eq, ne, lt, le, gt, ge)
     pub const COMPARE_MODULE: &str = "compare";
     /// Element-wise activation functions (relu, sigmoid, silu, gelu, leaky_relu, elu)
@@ -381,6 +383,22 @@ fn gemv_module(dtype: DType) -> &'static str {
     match dtype {
         DType::I32 | DType::I64 => kernel_names::GEMV_INT_MODULE,
         _ => kernel_names::GEMV_MODULE,
+    }
+}
+
+/// The PTX module holding this dtype's reduction kernels.
+///
+/// Integer reductions live in their own translation unit: they accumulate in
+/// `Numr128` instead of a float register, and `reduce.cu` is already at its size
+/// limit. `reduce_int.cu` instantiates every integer dtype and every reduction
+/// name that `reduce.cu` does, so this is a straight swap of module, never of
+/// kernel name.
+#[inline]
+pub(crate) fn reduce_module(dtype: DType) -> &'static str {
+    if dtype.is_int() {
+        kernel_names::REDUCE_INT_MODULE
+    } else {
+        kernel_names::REDUCE_MODULE
     }
 }
 

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use super::loader::{
     dtype_suffix, get_kernel_function, get_or_load_module, kernel_name, kernel_names,
-    launch_config, reduce_dim_launch_config, reduce_launch_config,
+    launch_config, reduce_dim_launch_config, reduce_launch_config, reduce_module,
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -113,7 +113,7 @@ pub unsafe fn launch_reduce_op(
     numel: usize,
 ) -> Result<u32> {
     unsafe {
-        let module = get_or_load_module(context, device_index, kernel_names::REDUCE_MODULE)?;
+        let module = get_or_load_module(context, device_index, reduce_module(dtype))?;
         let func_name = kernel_name(&kernel_names::reduce_kernel(op), dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
@@ -184,7 +184,7 @@ pub unsafe fn launch_reduce_dim_op(
     acc_precision: AccumulationPrecision,
 ) -> Result<()> {
     unsafe {
-        let module = get_or_load_module(context, device_index, kernel_names::REDUCE_MODULE)?;
+        let module = get_or_load_module(context, device_index, reduce_module(dtype))?;
         let base_op = kernel_names::reduce_dim_kernel(op);
         let func_name = reduce_kernel_name(&base_op, dtype, acc_precision);
         let func = get_kernel_function(&module, &func_name)?;
@@ -248,7 +248,7 @@ pub unsafe fn launch_argmax_dim(
     inner_size: usize,
 ) -> Result<()> {
     unsafe {
-        let module = get_or_load_module(context, device_index, kernel_names::REDUCE_MODULE)?;
+        let module = get_or_load_module(context, device_index, reduce_module(dtype))?;
         let func_name = kernel_name("argmax_dim", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
@@ -308,7 +308,7 @@ pub unsafe fn launch_argmin_dim(
     inner_size: usize,
 ) -> Result<()> {
     unsafe {
-        let module = get_or_load_module(context, device_index, kernel_names::REDUCE_MODULE)?;
+        let module = get_or_load_module(context, device_index, reduce_module(dtype))?;
         let func_name = kernel_name("argmin_dim", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
