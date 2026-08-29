@@ -205,12 +205,47 @@ pub unsafe fn cumprod_kernel<T: Element>(
     scan_size: usize,
     outer_size: usize,
 ) {
+    // An integer running product leaves the element type's range far faster
+    // than a running sum does: it wraps in release and panics in debug. It
+    // accumulates in i128 and clamps once per element written, the same
+    // convention `cumsum_kernel` follows.
+    if T::DTYPE.is_int() {
+        cumprod_kernel_acc::<T, i128>(a, out, scan_size, outer_size);
+        return;
+    }
+
     for o in 0..outer_size {
         let base = o * scan_size;
         let mut acc = T::one();
         for i in 0..scan_size {
             acc = acc * *a.add(base + i);
             *out.add(base + i) = acc;
+        }
+    }
+}
+
+/// Cumulative product over a contiguous dimension with a wide accumulator.
+///
+/// The accumulator saturates, so the output is the true product clamped to the
+/// element type's range. i128 is exact for any product that stays inside it,
+/// and once it saturates a later factor still moves the sign correctly:
+/// `i128::MAX * -1` saturates to `i128::MIN`, which narrows to `T::MIN`.
+///
+/// # Safety
+/// Same as [`cumprod_kernel`].
+#[inline]
+unsafe fn cumprod_kernel_acc<T: Element, A: WideAcc>(
+    a: *const T,
+    out: *mut T,
+    scan_size: usize,
+    outer_size: usize,
+) {
+    for o in 0..outer_size {
+        let base = o * scan_size;
+        let mut acc = A::ONE;
+        for i in 0..scan_size {
+            acc = acc.wide_mul(A::from_elem(*a.add(base + i)));
+            *out.add(base + i) = acc.to_elem::<T>();
         }
     }
 }
@@ -287,7 +322,13 @@ pub unsafe fn cumprod_strided_kernel<T: Element>(
         }
     }
 
-    // Scalar fallback
+    // Scalar fallback. Integers never reach the SIMD block above, so they need
+    // the wide accumulator here for the same reason `cumprod_kernel` does.
+    if T::DTYPE.is_int() {
+        cumprod_strided_kernel_acc::<T, i128>(a, out, scan_size, outer_size, inner_size);
+        return;
+    }
+
     for o in 0..outer_size {
         for i in 0..inner_size {
             let mut acc = T::one();
@@ -295,6 +336,30 @@ pub unsafe fn cumprod_strided_kernel<T: Element>(
                 let idx = o * scan_size * inner_size + s * inner_size + i;
                 acc = acc * *a.add(idx);
                 *out.add(idx) = acc;
+            }
+        }
+    }
+}
+
+/// Cumulative product over a strided dimension with a wide accumulator.
+///
+/// # Safety
+/// Same as [`cumprod_strided_kernel`].
+#[inline]
+unsafe fn cumprod_strided_kernel_acc<T: Element, A: WideAcc>(
+    a: *const T,
+    out: *mut T,
+    scan_size: usize,
+    outer_size: usize,
+    inner_size: usize,
+) {
+    for o in 0..outer_size {
+        for i in 0..inner_size {
+            let mut acc = A::ONE;
+            for s in 0..scan_size {
+                let idx = o * scan_size * inner_size + s * inner_size + i;
+                acc = acc.wide_mul(A::from_elem(*a.add(idx)));
+                *out.add(idx) = acc.to_elem::<T>();
             }
         }
     }
@@ -651,5 +716,119 @@ mod tests {
         // Last scan step of each column is 32; an FP8 accumulator reads 16.
         assert_eq!(out[62].to_f32(), 32.0);
         assert_eq!(out[63].to_f32(), 32.0);
+    }
+
+    /// The reference case a per-step saturating multiply gets wrong.
+    ///
+    /// True products are 100_000, 10^10, -10^10, so the clamped answers are
+    /// `i32::MAX` then `i32::MIN`. A saturating multiply in i32 clamps to
+    /// `i32::MAX` first and then reports `-i32::MAX`, one off and for the wrong
+    /// reason.
+    #[test]
+    fn test_cumprod_i32_saturates_to_the_true_product_sign() {
+        let a = [100_000i32, 100_000, -1];
+        let mut out = [0i32; 3];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 3, 1);
+        }
+
+        assert_eq!(out, [100_000, i32::MAX, i32::MIN]);
+    }
+
+    /// A zero factor after saturation still gives 0, because the true product
+    /// is 0 from that element on.
+    #[test]
+    fn test_cumprod_i32_zero_after_saturation_is_zero() {
+        let a = [100_000i32, 100_000, 0, 7];
+        let mut out = [0i32; 4];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 4, 1);
+        }
+
+        assert_eq!(out, [100_000, i32::MAX, 0, 0]);
+    }
+
+    /// Each further negative factor flips the sign of a saturated product.
+    #[test]
+    fn test_cumprod_i32_sign_flips_across_a_saturated_run() {
+        let a = [-100_000i32, 100_000, -1, -1];
+        let mut out = [0i32; 4];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 4, 1);
+        }
+
+        assert_eq!(out, [-100_000, i32::MIN, i32::MAX, i32::MIN]);
+    }
+
+    /// U32 has no sign to track, so overflow pins at `u32::MAX` and stays.
+    #[test]
+    fn test_cumprod_u32_saturates_to_max() {
+        let a = [100_000u32, 100_000, 2];
+        let mut out = [0u32; 3];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 3, 1);
+        }
+
+        assert_eq!(out, [100_000, u32::MAX, u32::MAX]);
+    }
+
+    /// A product that never leaves i32 is untouched by the wide accumulator.
+    #[test]
+    fn test_cumprod_i32_without_overflow_is_exact() {
+        let a = [2i32, 3, -4, 5];
+        let mut out = [0i32; 4];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 4, 1);
+        }
+
+        assert_eq!(out, [2, 6, -24, -120]);
+    }
+
+    /// I64 saturates on the same rule; i128 holds every product of two i64s.
+    #[test]
+    fn test_cumprod_i64_saturates_to_the_true_product_sign() {
+        let a = [4_000_000_000i64, 4_000_000_000, -1];
+        let mut out = [0i64; 3];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 3, 1);
+        }
+
+        assert_eq!(out, [4_000_000_000, i64::MAX, i64::MIN]);
+    }
+
+    /// The strided path has no SIMD dispatch for integers, so it needs the same
+    /// accumulator.
+    ///
+    /// Layout is `[scan][inner]` with `inner_size = 2`: column 0 overflows i32
+    /// and then flips sign, column 1 stays small.
+    #[test]
+    fn test_cumprod_strided_i32_saturates_to_the_true_product_sign() {
+        let a = [100_000i32, 2, 100_000, 3, -1, 4];
+        let mut out = [0i32; 6];
+
+        unsafe {
+            cumprod_strided_kernel(a.as_ptr(), out.as_mut_ptr(), 3, 1, 2);
+        }
+
+        assert_eq!(out, [100_000, 2, i32::MAX, 6, i32::MIN, 24]);
+    }
+
+    /// Strided U32 overflow, which shares no code with the contiguous path.
+    #[test]
+    fn test_cumprod_strided_u32_saturates_to_max() {
+        let a = [100_000u32, 2, 100_000, 3, 2, 4];
+        let mut out = [0u32; 6];
+
+        unsafe {
+            cumprod_strided_kernel(a.as_ptr(), out.as_mut_ptr(), 3, 1, 2);
+        }
+
+        assert_eq!(out, [100_000, 2, u32::MAX, 6, u32::MAX, 24]);
     }
 }

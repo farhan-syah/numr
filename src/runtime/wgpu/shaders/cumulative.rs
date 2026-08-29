@@ -35,12 +35,26 @@ const CUMSUM_STRIDED_U32_SHADER: &str = concat!(
 );
 
 const CUMPROD_F32_SHADER: &str = include_str!("cumprod_f32.wgsl");
-const CUMPROD_I32_SHADER: &str = include_str!("cumprod_i32.wgsl");
-const CUMPROD_U32_SHADER: &str = include_str!("cumprod_u32.wgsl");
+// The integer kernels track an exact magnitude plus a sign, using the overflow
+// check and the two store helpers in int_saturate.wgsl, prepended here.
+const CUMPROD_I32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumprod_i32.wgsl")
+);
+const CUMPROD_U32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumprod_u32.wgsl")
+);
 
 const CUMPROD_STRIDED_F32_SHADER: &str = include_str!("cumprod_strided_f32.wgsl");
-const CUMPROD_STRIDED_I32_SHADER: &str = include_str!("cumprod_strided_i32.wgsl");
-const CUMPROD_STRIDED_U32_SHADER: &str = include_str!("cumprod_strided_u32.wgsl");
+const CUMPROD_STRIDED_I32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumprod_strided_i32.wgsl")
+);
+const CUMPROD_STRIDED_U32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumprod_strided_u32.wgsl")
+);
 
 const LOGSUMEXP_SHADER: &str = include_str!("logsumexp_f32.wgsl");
 const LOGSUMEXP_STRIDED_SHADER: &str = include_str!("logsumexp_strided_f32.wgsl");

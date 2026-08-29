@@ -327,6 +327,140 @@ __device__ void cumprod_strided_impl(
     }
 }
 
+// ----------------------------------------------------------------------------
+// Integer cumprod: exact magnitude plus sign, saturating on store
+//
+// The output must be the true mathematical product clamped to the element
+// type's range, matching the CPU kernel's i128 accumulator (`WideAcc` in
+// `runtime/cpu/kernels/wide_acc.rs`). WebGPU's cumprod shaders
+// (`runtime/wgpu/shaders/int_saturate.wgsl`) track the same magnitude-plus-sign
+// state division-free, since WGSL cannot divide inside the loop. A per-step
+// saturating multiply does not give that: once it clamps to the maximum, a
+// later negative factor reports `-MAX` where the true product's clamp is
+// `MIN`.
+//
+// No wide accumulator is needed, because integer products only ever grow.
+// Multiplying by 0 pins the true product at 0 forever after, and multiplying
+// by any factor of magnitude >= 1 never shrinks the magnitude. So once the
+// true magnitude leaves the range it can never come back, and from there the
+// clamped answer depends only on the sign. Three pieces of O(1) state carry
+// that: `zero_seen`, `saturated`, and the sign parity of the negative factors.
+// `__int128` is banned here and is not needed either.
+// ----------------------------------------------------------------------------
+
+__device__ __forceinline__ bool numr_is_negative(int v) { return v < 0; }
+__device__ __forceinline__ bool numr_is_negative(long long v) { return v < 0; }
+__device__ __forceinline__ bool numr_is_negative(unsigned int) { return false; }
+__device__ __forceinline__ bool numr_is_negative(unsigned long long) { return false; }
+
+// Magnitude as an unsigned value. The unsigned negation is what makes the most
+// negative input (whose magnitude has no signed representation) come out right.
+__device__ __forceinline__ unsigned int numr_magnitude(int v) {
+    unsigned int b = (unsigned int)v;
+    return (v < 0) ? (0u - b) : b;
+}
+__device__ __forceinline__ unsigned long long numr_magnitude(long long v) {
+    unsigned long long b = (unsigned long long)v;
+    return (v < 0) ? (0ULL - b) : b;
+}
+__device__ __forceinline__ unsigned int numr_magnitude(unsigned int v) { return v; }
+__device__ __forceinline__ unsigned long long numr_magnitude(unsigned long long v) { return v; }
+
+// One scan of `scan_size` elements starting at `base`, stepping by `stride`.
+// `limit` is the largest magnitude the element type can represent under either
+// sign: `hi` for an unsigned type, `hi + 1` for a signed one.
+template<typename T, typename U>
+__device__ void cumprod_int_scan(
+    const T* __restrict__ input,
+    T* __restrict__ output,
+    unsigned int base,
+    unsigned int stride,
+    unsigned int scan_size,
+    T lo,
+    T hi,
+    U limit
+) {
+    U mag = (U)1;
+    bool negative = false;
+    bool zero_seen = false;
+    bool saturated = false;
+
+    for (unsigned int i = 0; i < scan_size; i++) {
+        unsigned int offset = base + i * stride;
+        T v = input[offset];
+
+        if (!zero_seen) {
+            if (v == (T)0) {
+                zero_seen = true;
+            } else {
+                if (numr_is_negative(v)) {
+                    negative = !negative;
+                }
+                if (!saturated) {
+                    U m = numr_magnitude(v);
+                    // Division is the overflow check here; CUDA has no cheap
+                    // wide multiply for every width and division is allowed.
+                    if (mag > limit / m) {
+                        saturated = true;
+                    } else {
+                        mag = mag * m;
+                    }
+                }
+            }
+        }
+
+        T result;
+        if (zero_seen) {
+            result = (T)0;
+        } else if (saturated || mag > (U)hi) {
+            // `mag == hi + 1` is representable only as `lo`, so it lands in
+            // this branch and comes out right for both signs.
+            result = negative ? lo : hi;
+        } else {
+            result = negative ? (T)((T)0 - (T)mag) : (T)mag;
+        }
+        output[offset] = result;
+    }
+}
+
+template<typename T, typename U>
+__device__ void cumprod_simple_int_impl(
+    const T* __restrict__ input,
+    T* __restrict__ output,
+    unsigned int scan_size,
+    unsigned int outer_size,
+    T lo,
+    T hi,
+    U limit
+) {
+    unsigned int outer_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (outer_idx >= outer_size) return;
+
+    cumprod_int_scan<T, U>(input, output, outer_idx * scan_size, 1u, scan_size, lo, hi, limit);
+}
+
+template<typename T, typename U>
+__device__ void cumprod_strided_int_impl(
+    const T* __restrict__ input,
+    T* __restrict__ output,
+    unsigned int scan_size,
+    unsigned int outer_size,
+    unsigned int inner_size,
+    T lo,
+    T hi,
+    U limit
+) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int total_inner = outer_size * inner_size;
+    if (idx >= total_inner) return;
+
+    unsigned int outer_idx = idx / inner_size;
+    unsigned int inner_idx = idx % inner_size;
+    unsigned int base = outer_idx * scan_size * inner_size + inner_idx;
+
+    cumprod_int_scan<T, U>(input, output, base, inner_size, scan_size, lo, hi, limit);
+}
+
 // ============================================================================
 // Log-Sum-Exp (Numerically Stable Reduction) - Device Functions
 // ============================================================================
@@ -916,19 +1050,19 @@ __global__ void cumprod_f64(const double* in, double* out, unsigned int scan_siz
 }
 
 __global__ void cumprod_i32(const int* in, int* out, unsigned int scan_size, unsigned int outer_size) {
-    cumprod_simple_impl(in, out, scan_size, outer_size);
+    cumprod_simple_int_impl<int, unsigned int>(in, out, scan_size, outer_size, INT_MIN, INT_MAX, (unsigned int)INT_MAX + 1u);
 }
 
 __global__ void cumprod_i64(const long long* in, long long* out, unsigned int scan_size, unsigned int outer_size) {
-    cumprod_simple_impl(in, out, scan_size, outer_size);
+    cumprod_simple_int_impl<long long, unsigned long long>(in, out, scan_size, outer_size, LLONG_MIN, LLONG_MAX, (unsigned long long)LLONG_MAX + 1ULL);
 }
 
 __global__ void cumprod_u32(const unsigned int* in, unsigned int* out, unsigned int scan_size, unsigned int outer_size) {
-    cumprod_simple_impl(in, out, scan_size, outer_size);
+    cumprod_simple_int_impl<unsigned int, unsigned int>(in, out, scan_size, outer_size, 0u, UINT_MAX, UINT_MAX);
 }
 
 __global__ void cumprod_u64(const unsigned long long* in, unsigned long long* out, unsigned int scan_size, unsigned int outer_size) {
-    cumprod_simple_impl(in, out, scan_size, outer_size);
+    cumprod_simple_int_impl<unsigned long long, unsigned long long>(in, out, scan_size, outer_size, 0ULL, ULLONG_MAX, ULLONG_MAX);
 }
 
 __global__ void cumprod_f16(const __half* in, __half* out, unsigned int scan_size, unsigned int outer_size) {
@@ -957,19 +1091,19 @@ __global__ void cumprod_strided_f64(const double* in, double* out, unsigned int 
 }
 
 __global__ void cumprod_strided_i32(const int* in, int* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {
-    cumprod_strided_impl(in, out, scan_size, outer_size, inner_size);
+    cumprod_strided_int_impl<int, unsigned int>(in, out, scan_size, outer_size, inner_size, INT_MIN, INT_MAX, (unsigned int)INT_MAX + 1u);
 }
 
 __global__ void cumprod_strided_i64(const long long* in, long long* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {
-    cumprod_strided_impl(in, out, scan_size, outer_size, inner_size);
+    cumprod_strided_int_impl<long long, unsigned long long>(in, out, scan_size, outer_size, inner_size, LLONG_MIN, LLONG_MAX, (unsigned long long)LLONG_MAX + 1ULL);
 }
 
 __global__ void cumprod_strided_u32(const unsigned int* in, unsigned int* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {
-    cumprod_strided_impl(in, out, scan_size, outer_size, inner_size);
+    cumprod_strided_int_impl<unsigned int, unsigned int>(in, out, scan_size, outer_size, inner_size, 0u, UINT_MAX, UINT_MAX);
 }
 
 __global__ void cumprod_strided_u64(const unsigned long long* in, unsigned long long* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {
-    cumprod_strided_impl(in, out, scan_size, outer_size, inner_size);
+    cumprod_strided_int_impl<unsigned long long, unsigned long long>(in, out, scan_size, outer_size, inner_size, 0ULL, ULLONG_MAX, ULLONG_MAX);
 }
 
 __global__ void cumprod_strided_f16(const __half* in, __half* out, unsigned int scan_size, unsigned int outer_size, unsigned int inner_size) {

@@ -43,6 +43,18 @@
 //! `i64` and `u64` have no wider integer dtype in numr, so their *output* still
 //! cannot represent a total that overflows them; saturation is what they get,
 //! and the i128 accumulator at least keeps intermediate partial sums exact.
+//!
+//! # Which side of the line a kernel is on
+//!
+//! - ACCUMULATORS saturate: `cumsum`, `cumprod`, `matmul`, `mean`, and the
+//!   integer reductions. They build a running total wider than one element, so
+//!   clamping the total is the only answer that keeps the sign right.
+//! - ELEMENTWISE ops wrap: `add`, `sub`, and `mul` on two tensors. Each output
+//!   is one machine operation on two elements, and wrapping is what every
+//!   array library and every GPU ISA gives there.
+//!
+//! A new kernel picks the accumulator side only when it carries state across
+//! elements.
 
 use crate::dtype::Element;
 
@@ -52,6 +64,9 @@ use crate::dtype::Element;
 pub trait WideAcc: Copy {
     /// Additive identity.
     const ZERO: Self;
+
+    /// Multiplicative identity, the seed for a running product.
+    const ONE: Self;
 
     /// Widen one element into the accumulator.
     fn from_elem<T: Element>(v: T) -> Self;
@@ -68,6 +83,7 @@ pub trait WideAcc: Copy {
 
 impl WideAcc for f32 {
     const ZERO: Self = 0.0;
+    const ONE: Self = 1.0;
 
     #[inline]
     fn from_elem<T: Element>(v: T) -> Self {
@@ -92,6 +108,7 @@ impl WideAcc for f32 {
 
 impl WideAcc for i128 {
     const ZERO: Self = 0;
+    const ONE: Self = 1;
 
     #[inline]
     fn from_elem<T: Element>(v: T) -> Self {

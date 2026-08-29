@@ -6,7 +6,8 @@
 // `supported_dtypes("cpu")` below never yields I32/U32/I64/U64, so the
 // macro-driven tests in this file never exercise integer cumsum/cumprod.
 // `wgpu` holds the hand-built WebGPU-vs-CPU I32/U32 coverage, and `cuda`
-// holds the hand-built CUDA-vs-CPU I64/U64 coverage, that fill that hole.
+// holds the hand-built CUDA-vs-CPU I32/U32/I64/U64 coverage, that fill that
+// hole.
 
 pub mod cuda;
 pub mod wgpu;

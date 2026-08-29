@@ -109,3 +109,68 @@ fn numr_i64_to_i32_sat(v: NumrI64) -> i32 {
     }
     return NUMR_I32_MIN;
 }
+
+// ---------------------------------------------------------------------------
+// Integer cumprod: exact magnitude plus sign, saturating on store
+//
+// `cumprod` must report the true mathematical product clamped to the element
+// type's range, matching CPU's i128 accumulator (`WideAcc` in
+// `runtime/cpu/kernels/wide_acc.rs`). CUDA's `cumprod_int_scan`
+// (`runtime/cuda/kernels/cumulative.cu`) tracks the same magnitude-plus-sign
+// state, but may use division since it has no WGSL driver-crash constraint.
+// A per-step saturating multiply does not give that: once it clamps to the
+// maximum, a later negative factor reports `-MAX` where the true product's
+// clamp is `MIN`.
+//
+// No wide accumulator is needed. Multiplying by 0 pins the true product at 0
+// forever after, and multiplying by any factor of magnitude >= 1 never shrinks
+// the magnitude - so once the true magnitude leaves the range it can never
+// come back, and from there the clamped answer depends only on the sign. The
+// shaders carry three pieces of state (`zero_seen`, `saturated`, sign parity)
+// and call the two helpers below, which stay division-free.
+// ---------------------------------------------------------------------------
+
+// The largest magnitude an i32 can represent under either sign, which is
+// |i32::MIN|. A magnitude past this is unrepresentable whatever the sign.
+const NUMR_I32_MAG_LIMIT: u32 = 2147483648u;
+
+// Magnitude of an i32 as a u32. The unsigned negation is what makes i32::MIN,
+// whose magnitude has no signed representation, come out right.
+fn numr_i32_magnitude(v: i32) -> u32 {
+    let b = bitcast<u32>(v);
+    if (v < 0) {
+        return 0u - b;
+    }
+    return b;
+}
+
+// Store one i32 cumprod element from the running state.
+fn numr_i32_product(zero_seen: bool, saturated: bool, negative: bool, mag: u32) -> i32 {
+    if (zero_seen) {
+        return 0;
+    }
+    // `mag == NUMR_I32_MAG_LIMIT` is representable only as i32::MIN, so it
+    // lands here and comes out right for both signs.
+    if (saturated || mag > 2147483647u) {
+        if (negative) {
+            return NUMR_I32_MIN;
+        }
+        return NUMR_I32_MAX;
+    }
+    if (negative) {
+        return -bitcast<i32>(mag);
+    }
+    return bitcast<i32>(mag);
+}
+
+// Store one u32 cumprod element from the running state. There is no sign to
+// track, so an overflowed product stays pinned at u32::MAX.
+fn numr_u32_product(zero_seen: bool, saturated: bool, mag: u32) -> u32 {
+    if (zero_seen) {
+        return 0u;
+    }
+    if (saturated) {
+        return NUMR_U32_MAX;
+    }
+    return mag;
+}

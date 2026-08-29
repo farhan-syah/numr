@@ -154,12 +154,10 @@ fn test_cumsum_u32_strided_saturates_wgpu_matches_cpu() {
 }
 
 // ============================================================================
-// cumprod I32 / U32 - non-overflowing values only
+// cumprod I32 / U32 - non-overflowing baseline
 //
-// cumprod overflow semantics are out of scope: CPU and CUDA both wrap (no
-// `WideAcc` for cumprod), so WebGPU's existing wrap already matches. These
-// cases stay well inside range and exist only to confirm WebGPU cumprod
-// still agrees with CPU after the cumsum shader changes above.
+// A product that never leaves the dtype must be untouched by the saturating
+// state the shaders now carry. The overflow cases follow further down.
 // ============================================================================
 
 #[cfg(feature = "wgpu")]
@@ -216,6 +214,198 @@ fn test_cumprod_u32_wgpu_matches_cpu() {
             result.to_vec::<u32>(),
             cpu_result.to_vec::<u32>(),
             "WebGPU U32 cumprod must match CPU element for element"
+        );
+    });
+}
+
+// ============================================================================
+// cumprod I32 / U32 - saturating to the true product
+//
+// `cumprod` must report the true mathematical product clamped to the dtype's
+// range, the rule `cumsum` follows. WebGPU tracks an exact magnitude plus a
+// sign parity (see cumprod_i32.wgsl and int_saturate.wgsl); CPU accumulates in
+// i128. Both must land on the same answer.
+// ============================================================================
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_cumprod_i32_sign_after_saturation_wgpu_matches_cpu() {
+    with_wgpu_backend_or_skip(|client, device| {
+        let (cpu_client, cpu_device) = create_cpu_client();
+
+        // True products are 100_000, 10^10, -10^10. A per-step saturating
+        // multiply clamps to i32::MAX first and then reports -i32::MAX.
+        let data = [100_000i32, 100_000, -1];
+        let expected = [100_000i32, i32::MAX, i32::MIN];
+
+        let a_cpu =
+            Tensor::<CpuRuntime>::from_slice(&data, &[3], &cpu_device).expect("CPU I32 data");
+        let cpu_result = cpu_client
+            .cumprod(&a_cpu, 0)
+            .expect("CPU cumprod_i32 failed");
+        assert_eq!(cpu_result.to_vec::<i32>(), expected);
+
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &[3], &device).expect("WGPU I32 data");
+        let result = client
+            .cumprod(&a, 0)
+            .expect("cumprod_i32 shader should exist and succeed on WebGPU");
+        assert_eq!(result.dtype(), DType::I32);
+        assert_eq!(
+            result.to_vec::<i32>(),
+            cpu_result.to_vec::<i32>(),
+            "WebGPU I32 cumprod must match CPU element for element"
+        );
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_cumprod_i32_zero_after_saturation_wgpu_matches_cpu() {
+    with_wgpu_backend_or_skip(|client, device| {
+        let (cpu_client, cpu_device) = create_cpu_client();
+
+        // The zero makes the true product 0 for every later element, even
+        // though the running magnitude had already left i32.
+        let data = [100_000i32, 100_000, 0, 7];
+        let expected = [100_000i32, i32::MAX, 0, 0];
+
+        let a_cpu =
+            Tensor::<CpuRuntime>::from_slice(&data, &[4], &cpu_device).expect("CPU I32 data");
+        let cpu_result = cpu_client
+            .cumprod(&a_cpu, 0)
+            .expect("CPU cumprod_i32 failed");
+        assert_eq!(cpu_result.to_vec::<i32>(), expected);
+
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &[4], &device).expect("WGPU I32 data");
+        let result = client
+            .cumprod(&a, 0)
+            .expect("cumprod_i32 shader should exist and succeed on WebGPU");
+        assert_eq!(
+            result.to_vec::<i32>(),
+            cpu_result.to_vec::<i32>(),
+            "WebGPU I32 cumprod must match CPU across a zero factor"
+        );
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_cumprod_i32_sign_flips_across_a_saturated_run_wgpu_matches_cpu() {
+    with_wgpu_backend_or_skip(|client, device| {
+        let (cpu_client, cpu_device) = create_cpu_client();
+
+        // Each further negative factor flips the clamp between MIN and MAX.
+        let data = [-100_000i32, 100_000, -1, -1];
+        let expected = [-100_000i32, i32::MIN, i32::MAX, i32::MIN];
+
+        let a_cpu =
+            Tensor::<CpuRuntime>::from_slice(&data, &[4], &cpu_device).expect("CPU I32 data");
+        let cpu_result = cpu_client
+            .cumprod(&a_cpu, 0)
+            .expect("CPU cumprod_i32 failed");
+        assert_eq!(cpu_result.to_vec::<i32>(), expected);
+
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &[4], &device).expect("WGPU I32 data");
+        let result = client
+            .cumprod(&a, 0)
+            .expect("cumprod_i32 shader should exist and succeed on WebGPU");
+        assert_eq!(
+            result.to_vec::<i32>(),
+            cpu_result.to_vec::<i32>(),
+            "WebGPU I32 cumprod must track the sign across a saturated run"
+        );
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_cumprod_u32_saturates_wgpu_matches_cpu() {
+    with_wgpu_backend_or_skip(|client, device| {
+        let (cpu_client, cpu_device) = create_cpu_client();
+
+        // U32 has no sign to track, so the product pins at u32::MAX.
+        let data = [100_000u32, 100_000, 2];
+        let expected = [100_000u32, u32::MAX, u32::MAX];
+
+        let a_cpu =
+            Tensor::<CpuRuntime>::from_slice(&data, &[3], &cpu_device).expect("CPU U32 data");
+        let cpu_result = cpu_client
+            .cumprod(&a_cpu, 0)
+            .expect("CPU cumprod_u32 failed");
+        assert_eq!(cpu_result.to_vec::<u32>(), expected);
+
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &[3], &device).expect("WGPU U32 data");
+        let result = client
+            .cumprod(&a, 0)
+            .expect("cumprod_u32 shader should exist and succeed on WebGPU");
+        assert_eq!(result.dtype(), DType::U32);
+        assert_eq!(
+            result.to_vec::<u32>(),
+            cpu_result.to_vec::<u32>(),
+            "WebGPU U32 cumprod must match CPU element for element"
+        );
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_cumprod_i32_strided_saturates_wgpu_matches_cpu() {
+    with_wgpu_backend_or_skip(|client, device| {
+        let (cpu_client, cpu_device) = create_cpu_client();
+
+        // Shape [3, 2], scan along dim 0 (not the last dim), so the kernel
+        // takes the strided path. Column 0 saturates and then flips sign;
+        // column 1 stays small as a control.
+        let data = [100_000i32, 2, 100_000, 3, -1, 4];
+        let shape = [3usize, 2usize];
+        let expected = [100_000i32, 2, i32::MAX, 6, i32::MIN, 24];
+
+        let a_cpu =
+            Tensor::<CpuRuntime>::from_slice(&data, &shape, &cpu_device).expect("CPU I32 data");
+        let cpu_result = cpu_client
+            .cumprod(&a_cpu, 0)
+            .expect("CPU cumprod_i32 failed");
+        assert_eq!(cpu_result.to_vec::<i32>(), expected);
+
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &shape, &device).expect("WGPU I32 data");
+        let result = client
+            .cumprod(&a, 0)
+            .expect("cumprod_strided_i32 shader should exist and succeed on WebGPU");
+        assert_eq!(
+            result.to_vec::<i32>(),
+            cpu_result.to_vec::<i32>(),
+            "WebGPU I32 strided cumprod must match CPU element for element"
+        );
+    });
+}
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_cumprod_u32_strided_saturates_wgpu_matches_cpu() {
+    with_wgpu_backend_or_skip(|client, device| {
+        let (cpu_client, cpu_device) = create_cpu_client();
+
+        // Shape [3, 2], scan along dim 0. Column 0 saturates, column 1 stays
+        // small as a control.
+        let data = [100_000u32, 2, 100_000, 3, 2, 4];
+        let shape = [3usize, 2usize];
+        let expected = [100_000u32, 2, u32::MAX, 6, u32::MAX, 24];
+
+        let a_cpu =
+            Tensor::<CpuRuntime>::from_slice(&data, &shape, &cpu_device).expect("CPU U32 data");
+        let cpu_result = cpu_client
+            .cumprod(&a_cpu, 0)
+            .expect("CPU cumprod_u32 failed");
+        assert_eq!(cpu_result.to_vec::<u32>(), expected);
+
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &shape, &device).expect("WGPU U32 data");
+        let result = client
+            .cumprod(&a, 0)
+            .expect("cumprod_strided_u32 shader should exist and succeed on WebGPU");
+        assert_eq!(
+            result.to_vec::<u32>(),
+            cpu_result.to_vec::<u32>(),
+            "WebGPU U32 strided cumprod must match CPU element for element"
         );
     });
 }
