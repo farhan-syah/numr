@@ -55,9 +55,17 @@ impl MatmulOps<CudaRuntime> for CudaClient {
 
         // Native tiled CUDA kernel. I32 and I64 are the only integer dtypes with
         // a CUDA arithmetic pipeline (see `kernels/binary.cu`), so they are the
-        // only ones with an integer matmul kernel.
+        // only ones with an integer matmul kernel. FP8 has its own kernels in
+        // `kernels/matmul_fp8.cu` and accumulates in F32, matching CPU.
         match dtype {
-            DType::F32 | DType::F64 | DType::F16 | DType::BF16 | DType::I32 | DType::I64 => {
+            DType::F32
+            | DType::F64
+            | DType::F16
+            | DType::BF16
+            | DType::I32
+            | DType::I64
+            | DType::FP8E4M3
+            | DType::FP8E5M2 => {
                 if batch_size > 1 {
                     matmul_batched_native(self, a, b, dtype, batch_size, m, k, n)
                 } else {
@@ -167,9 +175,16 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             .product();
         let batch_size = batch_size.max(1);
 
-        // Native tiled CUDA kernel with fused bias
+        // Native tiled CUDA kernel with fused bias. FP8 is included: CPU seeds
+        // its F32 accumulator with the bias, so composing matmul with a separate
+        // add would narrow to FP8 twice and report a different number.
         match dtype {
-            DType::F32 | DType::F64 | DType::F16 | DType::BF16 => {
+            DType::F32
+            | DType::F64
+            | DType::F16
+            | DType::BF16
+            | DType::FP8E4M3
+            | DType::FP8E5M2 => {
                 if batch_size > 1 {
                     matmul_bias_batched_native(self, a, b, bias, dtype, batch_size, m, k, n)
                 } else {
@@ -199,7 +214,8 @@ impl MatmulOps<CudaRuntime> for CudaClient {
                 }
             }
             _ => {
-                // FP8 and other dtypes: fall back to matmul + add
+                // The integer dtypes have no fused-bias kernel, so they compose
+                // from a native matmul and a native add.
                 let mm = self.matmul(a, b)?;
                 self.add(&mm, &bias.reshape(&[1, n])?)
             }

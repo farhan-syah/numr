@@ -69,6 +69,7 @@ fn compile_cuda_kernels() {
         "gemv.cu",
         "gemv_int.cu",
         "matmul.cu",
+        "matmul_fp8.cu",
         "matmul_int.cu",
         "norm.cu",
         "semiring_matmul.cu",
