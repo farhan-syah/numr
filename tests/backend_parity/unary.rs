@@ -417,6 +417,19 @@ unary_case!(
     &[
         TestInput::new(vec![1.1, -2.3, 3.9, -4.7], vec![4]),
         TestInput::new(vec![0.5, 1.5, -0.5, -1.5], vec![2, 2]),
+        // Both shapes of double-rounding error the old floor(x + 0.5) shader
+        // produced: 0.5 - 2^-25 is the largest f32 below 0.5, which the
+        // addition rounded up to 1.0 before the floor; 8388609.0 (2^23 + 1)
+        // is where the addition itself loses a whole ULP.
+        TestInput::new(
+            vec![
+                0.5 - 2f64.powi(-25),
+                -(0.5 - 2f64.powi(-25)),
+                8388609.0,
+                -8388609.0,
+            ],
+            vec![4],
+        ),
     ]
 );
 

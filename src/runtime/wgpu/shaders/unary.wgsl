@@ -115,13 +115,17 @@ fn ceil_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 // Ties away from zero, matching Rust's f32::round. The WGSL builtin round()
-// breaks ties to even, so it cannot be used here.
+// is roundTiesToEven, so it cannot be used here. floor(x + 0.5) is also
+// wrong: the addition rounds before the floor, so the largest f32 below 0.5
+// comes out as 1.0, and any |x| >= 2^23 gains a whole ULP. x - trunc(x) is
+// exact, which is what makes this form correct.
 @compute @workgroup_size(256)
 fn round_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     if (idx < unary_params.numel) {
         let x = unary_a[idx];
-        unary_out[idx] = select(ceil(x - 0.5), floor(x + 0.5), x >= 0.0);
+        let t = trunc(x);
+        unary_out[idx] = select(t, t + sign(x), abs(x - t) >= 0.5);
     }
 }
 
