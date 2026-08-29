@@ -211,6 +211,29 @@ pub fn pow_scalar_output_dtype(dtype: DType, scalar: f64) -> DType {
     }
 }
 
+/// Cap an integer power's exponent above 1024 to preserve parity.
+///
+/// Above 1024, the result depends only on the base's magnitude (0, 1, or
+/// saturated to the dtype bound) and the exponent's parity, since any base
+/// outside `{-1, 0, 1}` has already saturated well before an exponent that
+/// large. Capping to 1024 (even) or 1025 (odd) keeps the parity a negative
+/// base needs while leaving the value small enough to cast losslessly into a
+/// kernel's integer type. Caller must already know the exponent is a
+/// non-negative whole number reaching an integer dtype — this does not
+/// re-check that.
+///
+/// CUDA device code (`numr_ipow_scalar` in `runtime/cuda/kernels/ipow.cuh`)
+/// cannot call this function, so it duplicates the cap by hand; that
+/// duplicate must keep agreeing with this one.
+#[inline]
+pub fn cap_ipow_exponent(scalar: f64) -> f64 {
+    if scalar > 1024.0 {
+        1024.0 + f64::from(scalar % 2.0 != 0.0)
+    } else {
+        scalar
+    }
+}
+
 /// Compute broadcast shape for binary operations.
 ///
 /// Returns the output shape after broadcasting, or an error if shapes are incompatible.

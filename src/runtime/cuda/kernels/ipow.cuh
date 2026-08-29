@@ -97,9 +97,10 @@ __device__ __forceinline__ I numr_ipow_scalar(I base, double exp) {
     // Above 1024 the outcome depends only on the base's magnitude and the
     // exponent's parity: magnitude 0 or 1 is already fixed, and anything larger
     // saturates. Capping there keeps the cast to I in range while preserving
-    // parity, which is what a negative base needs. CPU applies the identical
-    // cap, so the two backends stay element-for-element equal on exponents no
-    // integer type could hold.
+    // parity, which is what a negative base needs. Device code cannot call the
+    // shared Rust helper, so this cap is a hand-kept mirror of
+    // `cap_ipow_exponent` in `runtime/common/helpers.rs` (also used by CPU and
+    // WebGPU) — the two must keep agreeing.
     double capped = exp;
     if (capped > 1024.0) {
         capped = 1024.0 + (fmod(exp, 2.0) == 0.0 ? 0.0 : 1.0);

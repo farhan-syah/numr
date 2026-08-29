@@ -3,9 +3,9 @@
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::ScalarOps;
-use crate::runtime::pow_scalar_output_dtype;
 use crate::runtime::wgpu::ops::native::{native_fused_mul_add_scalar, native_scalar_op};
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
+use crate::runtime::{cap_ipow_exponent, pow_scalar_output_dtype};
 use crate::tensor::Tensor;
 
 impl ScalarOps<WgpuRuntime> for WgpuClient {
@@ -36,7 +36,17 @@ impl ScalarOps<WgpuRuntime> for WgpuClient {
                 op: "pow_scalar",
             });
         }
-        native_scalar_op(self, "pow_scalar", a, scalar)
+        // The exponent reaches the shader as an i32/u32, so a huge one would
+        // otherwise saturate on the host and flip parity: `as i32` turns 2^40
+        // into i32::MAX, which is odd, and a negative base would then saturate
+        // to the wrong bound. `cap_ipow_exponent` caps it the way CPU and CUDA
+        // do, which preserves parity and leaves the result unchanged.
+        let exponent = if a.dtype().is_int() {
+            cap_ipow_exponent(scalar)
+        } else {
+            scalar
+        };
+        native_scalar_op(self, "pow_scalar", a, exponent)
     }
 
     fn rsub_scalar(&self, a: &Tensor<WgpuRuntime>, scalar: f64) -> Result<Tensor<WgpuRuntime>> {

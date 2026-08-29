@@ -48,16 +48,9 @@ pub fn pow_elem<T: Element>(base: T, exp: T) -> T {
 #[inline]
 pub fn pow_elem_scalar<T: Element>(base: T, scalar: f64) -> T {
     if T::DTYPE.is_int() {
-        // Above 1024 the outcome depends only on the base's magnitude and the
-        // exponent's parity: magnitude 0 or 1 is already fixed, and anything
-        // larger saturates. Capping there preserves parity, which is what a
-        // negative base needs, and avoids an `as u128` that would saturate to an
-        // odd value. CUDA applies the identical cap.
-        let exp = if scalar > 1024.0 {
-            1024u128 + u128::from(scalar % 2.0 != 0.0)
-        } else {
-            scalar as u128
-        };
+        // See `cap_ipow_exponent` for why exponents above 1024 are capped;
+        // CPU, CUDA, and WebGPU all rely on this cap agreeing.
+        let exp = crate::runtime::cap_ipow_exponent(scalar) as u128;
         return ipow_from_parts::<T>(base.to_i128(), exp);
     }
     T::from_f64(base.to_f64().powf(scalar))

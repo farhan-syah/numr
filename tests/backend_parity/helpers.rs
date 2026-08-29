@@ -155,3 +155,30 @@ where
         .expect("WGPU feature is enabled but WGPU runtime is unavailable");
     f(client, device);
 }
+
+/// Same lock as `with_wgpu_backend`, but skips instead of panicking when no
+/// adapter is present. Use this for tests that must run cleanly on machines
+/// without a WebGPU-capable GPU.
+///
+/// The lock itself is mandatory, not optional: concurrent WebGPU device use
+/// loses the device (`Buffer ... is invalid` validation errors), and that
+/// failure cascades into every other WebGPU test in the binary, not just the
+/// one that raced. Every wgpu test must serialize through this lock or
+/// `with_wgpu_backend`.
+#[cfg(feature = "wgpu")]
+pub fn with_wgpu_backend_or_skip<F>(mut f: F)
+where
+    F: FnMut(numr::runtime::wgpu::WgpuClient, numr::runtime::wgpu::WgpuDevice),
+{
+    if !numr::runtime::wgpu::is_wgpu_available() {
+        println!("skipping: no WGPU adapter available");
+        return;
+    }
+    let _guard = WGPU_BACKEND_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (client, device) = create_wgpu_client_checked()
+        .expect("WGPU feature is enabled but WGPU runtime is unavailable");
+    f(client, device);
+}

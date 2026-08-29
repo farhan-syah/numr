@@ -56,3 +56,11 @@ fn min_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
         binary_out[idx] = min(binary_a[idx], binary_b[idx]);
     }
 }
+
+@compute @workgroup_size(256)
+fn pow_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < binary_params.numel) {
+        binary_out[idx] = numr_ipow_u32(binary_a[idx], binary_b[idx]);
+    }
+}

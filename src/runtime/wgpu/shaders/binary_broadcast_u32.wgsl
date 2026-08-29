@@ -114,3 +114,20 @@ fn broadcast_min_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     broadcast_out[idx] = min(broadcast_a[a_offset], broadcast_b[b_offset]);
 }
+
+@compute @workgroup_size(256)
+fn broadcast_pow_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= broadcast_params.numel) { return; }
+    var remaining = idx;
+    var a_offset: u32 = 0u;
+    var b_offset: u32 = 0u;
+    for (var d: u32 = 0u; d < broadcast_params.ndim; d = d + 1u) {
+        let stride = broadcast_out_strides[d];
+        let coord = remaining / stride;
+        remaining = remaining % stride;
+        a_offset = a_offset + coord * broadcast_a_strides[d];
+        b_offset = b_offset + coord * broadcast_b_strides[d];
+    }
+    broadcast_out[idx] = numr_ipow_u32(broadcast_a[a_offset], broadcast_b[b_offset]);
+}

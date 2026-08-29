@@ -2,7 +2,7 @@
 //!
 //! Binary and broadcast-binary ops support F32, I32, U32.
 //! Unary ops: most are F32 only; neg/abs support I32, abs supports U32.
-//! Scalar ops: F32, I32, U32 (no pow for integers).
+//! Scalar ops: F32, I32, U32.
 //! Compare ops: F32, I32, U32.
 
 use wgpu::{Buffer, Queue};
@@ -16,17 +16,44 @@ use crate::error::{Error, Result};
 // ============================================================================
 
 const BINARY_F32_SHADER: &str = include_str!("binary.wgsl");
-const BINARY_I32_SHADER: &str = include_str!("binary_i32.wgsl");
-const BINARY_U32_SHADER: &str = include_str!("binary_u32.wgsl");
+// The integer shaders share one saturating-power helper, prepended to each
+// module that calls it. WGSL has no include, so this is where the single copy
+// in the repository reaches the three I32 and three U32 modules.
+const BINARY_I32_SHADER: &str = concat!(
+    include_str!("ipow_common.wgsl"),
+    include_str!("ipow_i32.wgsl"),
+    include_str!("binary_i32.wgsl")
+);
+const BINARY_U32_SHADER: &str = concat!(
+    include_str!("ipow_common.wgsl"),
+    include_str!("ipow_u32.wgsl"),
+    include_str!("binary_u32.wgsl")
+);
 const BINARY_BROADCAST_F32_SHADER: &str = include_str!("binary_broadcast.wgsl");
-const BINARY_BROADCAST_I32_SHADER: &str = include_str!("binary_broadcast_i32.wgsl");
-const BINARY_BROADCAST_U32_SHADER: &str = include_str!("binary_broadcast_u32.wgsl");
+const BINARY_BROADCAST_I32_SHADER: &str = concat!(
+    include_str!("ipow_common.wgsl"),
+    include_str!("ipow_i32.wgsl"),
+    include_str!("binary_broadcast_i32.wgsl")
+);
+const BINARY_BROADCAST_U32_SHADER: &str = concat!(
+    include_str!("ipow_common.wgsl"),
+    include_str!("ipow_u32.wgsl"),
+    include_str!("binary_broadcast_u32.wgsl")
+);
 const UNARY_SHADER: &str = include_str!("unary.wgsl");
 const UNARY_I32_SHADER: &str = include_str!("unary_i32.wgsl");
 const UNARY_U32_SHADER: &str = include_str!("unary_u32.wgsl");
 const SCALAR_SHADER: &str = include_str!("scalar.wgsl");
-const SCALAR_I32_SHADER: &str = include_str!("scalar_i32.wgsl");
-const SCALAR_U32_SHADER: &str = include_str!("scalar_u32.wgsl");
+const SCALAR_I32_SHADER: &str = concat!(
+    include_str!("ipow_common.wgsl"),
+    include_str!("ipow_i32.wgsl"),
+    include_str!("scalar_i32.wgsl")
+);
+const SCALAR_U32_SHADER: &str = concat!(
+    include_str!("ipow_common.wgsl"),
+    include_str!("ipow_u32.wgsl"),
+    include_str!("scalar_u32.wgsl")
+);
 const COMPARE_SHADER: &str = include_str!("compare.wgsl");
 const COMPARE_I32_SHADER: &str = include_str!("compare_i32.wgsl");
 const COMPARE_U32_SHADER: &str = include_str!("compare_u32.wgsl");
@@ -67,8 +94,9 @@ pub fn launch_binary_op(
         _ => return Err(Error::UnsupportedDType { dtype, op }),
     };
 
-    // pow and atan2 are float-only
-    if matches!(op_name, "pow" | "atan2") && dtype != DType::F32 {
+    // atan2 has no integer meaning, so it stays float-only. Integer pow is
+    // exact by squaring and saturating, matching CPU.
+    if op_name == "atan2" && dtype != DType::F32 {
         return Err(Error::UnsupportedDType { dtype, op });
     }
 
@@ -126,11 +154,6 @@ pub fn launch_broadcast_binary_op(
         DType::U32 => ("binary_broadcast_u32", BINARY_BROADCAST_U32_SHADER, "u32"),
         _ => return Err(Error::UnsupportedDType { dtype, op }),
     };
-
-    // pow is float-only
-    if op_name == "pow" && dtype != DType::F32 {
-        return Err(Error::UnsupportedDType { dtype, op });
-    }
 
     let entry_point: String = format!("broadcast_{}_{}", op_name, suffix);
     let module = cache.get_or_create_module(module_key, shader);
@@ -275,7 +298,7 @@ pub fn launch_unary_op(
 // ============================================================================
 
 /// Launch a scalar operation: `out[i] = a[i] op scalar`. F32, I32, U32.
-/// pow_scalar, leaky_relu, elu are F32-only.
+/// leaky_relu and elu are F32-only.
 pub fn launch_scalar_op(
     cache: &PipelineCache,
     queue: &Queue,
@@ -286,8 +309,8 @@ pub fn launch_scalar_op(
     numel: usize,
     dtype: DType,
 ) -> Result<()> {
-    // pow_scalar, leaky_relu, elu are F32-only
-    if matches!(op, "pow_scalar" | "leaky_relu" | "elu") && dtype != DType::F32 {
+    // leaky_relu and elu have no integer meaning, so they stay float-only.
+    if matches!(op, "leaky_relu" | "elu") && dtype != DType::F32 {
         return Err(Error::UnsupportedDType { dtype, op });
     }
 
@@ -317,9 +340,8 @@ pub fn launch_scalar_op(
         _ => {
             // I32/U32: format entry point
             match op {
-                "add_scalar" | "sub_scalar" | "rsub_scalar" | "mul_scalar" | "div_scalar" => {
-                    format!("{}_{}", op, suffix)
-                }
+                "add_scalar" | "sub_scalar" | "rsub_scalar" | "mul_scalar" | "div_scalar"
+                | "pow_scalar" => format!("{}_{}", op, suffix),
                 _ => return Err(Error::Internal(format!("Unknown scalar op: {}", op))),
             }
         }
