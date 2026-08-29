@@ -11,7 +11,11 @@ use crate::ops::TensorOps;
 // this empty impl to satisfy the supertrait requirement.
 impl TensorOps<CpuRuntime> for CpuClient {}
 
-// Load all CPU operation implementations from src/ops/cpu/
+// Load all CPU operation implementations from src/ops/cpu/.
+//
+// THIS LIST IS THE MODULE TREE for src/ops/cpu/. That directory has no mod.rs
+// and `crate::ops` declares no `mod cpu`, so a file added under src/ops/cpu/
+// is compiled ONLY if it gets a `#[path]` + `mod` entry here.
 #[path = "../../ops/cpu/type_conversion.rs"]
 mod type_conversion;
 

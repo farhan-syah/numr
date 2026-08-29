@@ -11,7 +11,12 @@ use crate::ops::TensorOps;
 // this empty impl to satisfy the supertrait requirement.
 impl TensorOps<WgpuRuntime> for WgpuClient {}
 
-// Load all WebGPU operation implementations from src/ops/wgpu/
+// Load all WebGPU operation implementations from src/ops/wgpu/.
+//
+// THIS LIST IS THE MODULE TREE for src/ops/wgpu/. That directory has no mod.rs
+// and `crate::ops` declares no `mod wgpu`, so a file added under src/ops/wgpu/
+// is compiled ONLY if it gets a `#[path]` + `mod` entry here. Subdirectories
+// (e.g. `indexing/`) keep their own mod.rs, reached through the entry below.
 #[path = "../../../ops/wgpu/type_conversion.rs"]
 mod type_conversion;
 
