@@ -13,7 +13,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 struct WhereTestCase {
@@ -45,13 +45,26 @@ impl WhereTestCase {
     }
 }
 
+// The condition is a boolean mask, never the parameterised dtype: only x and y
+// carry it. A backend takes the mask in the boolean carrier its `where_cond`
+// kernels accept — a byte on CPU and CUDA, a 32-bit word on WebGPU, which has
+// no narrower type.
+fn mask_u8(cond: &[f64]) -> Vec<u8> {
+    cond.iter().map(|&v| u8::from(v != 0.0)).collect()
+}
+
+#[cfg(feature = "wgpu")]
+fn mask_u32(cond: &[f64]) -> Vec<u32> {
+    cond.iter().map(|&v| u32::from(v != 0.0)).collect()
+}
+
 fn test_where_cond_parity(test_cases: &[WhereTestCase], dtype: DType) {
     let (cpu_client, cpu_device) = create_cpu_client();
 
     let cpu_results: Vec<Tensor<numr::runtime::cpu::CpuRuntime>> = test_cases
         .iter()
         .map(|tc| {
-            let cond = tensor_from_f64(&tc.cond, &tc.cond_shape, dtype, &cpu_device, &cpu_client)
+            let cond = Tensor::from_slice(&mask_u8(&tc.cond), &tc.cond_shape, &cpu_device)
                 .unwrap_or_else(|e| panic!("CPU cond tensor failed for {dtype:?}: {e}"));
             let x = tensor_from_f64(&tc.x, &tc.x_shape, dtype, &cpu_device, &cpu_client)
                 .unwrap_or_else(|e| panic!("CPU x tensor failed for {dtype:?}: {e}"));
@@ -68,9 +81,8 @@ fn test_where_cond_parity(test_cases: &[WhereTestCase], dtype: DType) {
     if is_dtype_supported("cuda", dtype) {
         with_cuda_backend(|cuda_client, cuda_device| {
             for (idx, tc) in test_cases.iter().enumerate() {
-                let cond =
-                    tensor_from_f64(&tc.cond, &tc.cond_shape, dtype, &cuda_device, &cuda_client)
-                        .unwrap_or_else(|e| panic!("CUDA cond tensor failed for {dtype:?}: {e}"));
+                let cond = Tensor::from_slice(&mask_u8(&tc.cond), &tc.cond_shape, &cuda_device)
+                    .unwrap_or_else(|e| panic!("CUDA cond tensor failed for {dtype:?}: {e}"));
                 let x = tensor_from_f64(&tc.x, &tc.x_shape, dtype, &cuda_device, &cuda_client)
                     .unwrap_or_else(|e| panic!("CUDA x tensor failed for {dtype:?}: {e}"));
                 let y = tensor_from_f64(&tc.y, &tc.y_shape, dtype, &cuda_device, &cuda_client)
@@ -94,9 +106,8 @@ fn test_where_cond_parity(test_cases: &[WhereTestCase], dtype: DType) {
     if is_dtype_supported("wgpu", dtype) {
         with_wgpu_backend(|wgpu_client, wgpu_device| {
             for (idx, tc) in test_cases.iter().enumerate() {
-                let cond =
-                    tensor_from_f64(&tc.cond, &tc.cond_shape, dtype, &wgpu_device, &wgpu_client)
-                        .unwrap_or_else(|e| panic!("WebGPU cond tensor failed for {dtype:?}: {e}"));
+                let cond = Tensor::from_slice(&mask_u32(&tc.cond), &tc.cond_shape, &wgpu_device)
+                    .unwrap_or_else(|e| panic!("WebGPU cond tensor failed for {dtype:?}: {e}"));
                 let x = tensor_from_f64(&tc.x, &tc.x_shape, dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU x tensor failed for {dtype:?}: {e}"));
                 let y = tensor_from_f64(&tc.y, &tc.y_shape, dtype, &wgpu_device, &wgpu_client)
@@ -170,7 +181,7 @@ fn where_test_cases() -> Vec<WhereTestCase> {
 #[test]
 fn test_where_cond_parity_all_dtypes() {
     let cases = where_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_where_cond_parity(&cases, dtype);
     }
 }

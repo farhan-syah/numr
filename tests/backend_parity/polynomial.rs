@@ -14,7 +14,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -143,7 +143,7 @@ fn test_polymul_parity() {
         PolymulTest::new(vec![1.0], vec![5.0, 6.0, 7.0]),
     ];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         run_polymul_parity(test_cases, dtype);
     }
 }
@@ -237,7 +237,7 @@ fn test_polyval_parity() {
         PolyvalTest::new(vec![5.0, -3.0, 2.0, 1.0], vec![-1.0, 0.0, 1.0, 2.0]),
     ];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         run_polyval_parity(test_cases, dtype);
     }
 }
@@ -338,7 +338,7 @@ fn test_polyroots_parity() {
         PolyrootsTest::new(vec![0.0, 0.0, 1.0]),  // x^2
     ];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         run_polyroots_parity(test_cases, dtype);
     }
 }
@@ -451,7 +451,7 @@ fn test_polyfromroots_parity() {
         PolyfromrootsTest::new(vec![1.0, 1.0], vec![1.0, -1.0]), // Complex pair: 1±i
     ];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         run_polyfromroots_parity(test_cases, dtype);
     }
 }

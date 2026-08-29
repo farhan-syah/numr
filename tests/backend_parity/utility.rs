@@ -9,7 +9,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 use numr::dtype::DType;
 use numr::ops::UtilityOps;
@@ -70,7 +70,7 @@ fn test_clamp_parity(dtype: DType) {
 
 #[test]
 fn test_clamp_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_clamp_parity(dtype);
     }
 }
@@ -126,7 +126,7 @@ fn test_fill_parity(dtype: DType) {
 
 #[test]
 fn test_fill_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_fill_parity(dtype);
     }
 }
@@ -185,7 +185,7 @@ fn test_arange_parity(dtype: DType) {
 
 #[test]
 fn test_arange_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_arange_parity(dtype);
     }
 }
@@ -244,7 +244,7 @@ fn test_linspace_parity(dtype: DType) {
 
 #[test]
 fn test_linspace_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_linspace_parity(dtype);
     }
 }
@@ -297,7 +297,7 @@ fn test_eye_parity(dtype: DType) {
 
 #[test]
 fn test_eye_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_eye_parity(dtype);
     }
 }

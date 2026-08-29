@@ -14,7 +14,8 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    ToF64, assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, ToF64, assert_tensor_allclose, create_cpu_client, is_dtype_supported,
+    parity_dtypes,
 };
 
 // ============================================================================
@@ -142,7 +143,7 @@ macro_rules! scalar_case {
     ($name:ident, $op:expr, $cases:expr) => {
         #[test]
         fn $name() {
-            for dtype in supported_dtypes("cpu") {
+            for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
                 test_scalar_parity($op, $cases, dtype);
             }
         }
@@ -193,15 +194,88 @@ scalar_case!(
     ]
 );
 
+// A whole exponent keeps the input dtype on every dtype, so the shared harness
+// compares the result directly.
 scalar_case!(
     test_pow_scalar_parity,
     "pow_scalar",
     &[
         ScalarTest::new(vec![2.0, 3.0, 4.0, 5.0], vec![4], 2.0),
         ScalarTest::new(vec![2.0, 3.0, 4.0, 5.0], vec![2, 2], 3.0),
-        ScalarTest::new(vec![4.0, 9.0, 16.0, 25.0], vec![2, 2], 0.5),
     ]
 );
+
+// A fractional exponent leaves a float dtype in place, so float parity also
+// runs through the shared harness.
+#[test]
+fn test_pow_scalar_fractional_exponent_float_parity() {
+    let cases = [ScalarTest::new(vec![4.0, 9.0, 16.0, 25.0], vec![2, 2], 0.5)];
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
+        test_scalar_parity("pow_scalar", &cases, dtype);
+    }
+}
+
+// An integer base with a non-integral exponent promotes to F64
+// (`pow_scalar_output_dtype`). WebGPU is 32-bit only, so it must refuse the
+// promoted dtype instead of returning a truncated integer.
+#[test]
+fn test_pow_scalar_fractional_exponent_int_promotes_to_f64() {
+    let data = vec![4.0, 9.0, 16.0, 25.0];
+    let shape = [2usize, 2];
+    let exponent = 0.5;
+    let (cpu_client, cpu_device) = create_cpu_client();
+
+    for dtype in parity_dtypes(DTypeDomain::IntsOnly, "cpu") {
+        let tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
+            .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
+        let cpu_result = cpu_client
+            .pow_scalar(&tensor, exponent)
+            .unwrap_or_else(|e| panic!("CPU pow_scalar failed for {dtype:?}: {e}"));
+        assert_eq!(
+            cpu_result.dtype(),
+            DType::F64,
+            "CPU pow_scalar [{dtype:?}] must promote a fractional exponent to F64"
+        );
+
+        #[cfg(feature = "cuda")]
+        if is_dtype_supported("cuda", dtype) {
+            with_cuda_backend(|cuda_client, cuda_device| {
+                let tensor = tensor_from_f64(&data, &shape, dtype, &cuda_device, &cuda_client)
+                    .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
+                let result = cuda_client
+                    .pow_scalar(&tensor, exponent)
+                    .unwrap_or_else(|e| panic!("CUDA pow_scalar failed for {dtype:?}: {e}"));
+                assert_tensor_allclose(
+                    &result,
+                    &cpu_result,
+                    DType::F64,
+                    &format!("pow_scalar CUDA vs CPU [{dtype:?} base, fractional exponent]"),
+                );
+            });
+        }
+
+        #[cfg(feature = "wgpu")]
+        if is_dtype_supported("wgpu", dtype) {
+            with_wgpu_backend(|wgpu_client, wgpu_device| {
+                let tensor = tensor_from_f64(&data, &shape, dtype, &wgpu_device, &wgpu_client)
+                    .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
+                let err = wgpu_client
+                    .pow_scalar(&tensor, exponent)
+                    .expect_err("WebGPU has no F64 and must reject the promoted result");
+                assert!(
+                    matches!(
+                        &err,
+                        numr::error::Error::UnsupportedDType {
+                            dtype: DType::F64,
+                            op: "pow_scalar"
+                        }
+                    ),
+                    "WebGPU pow_scalar [{dtype:?}] returned the wrong error: {err}"
+                );
+            });
+        }
+    }
+}
 
 scalar_case!(
     test_rsub_scalar_parity,
@@ -228,7 +302,7 @@ scalar_case!(
 fn test_pow_scalar_negative_base_cpu_exact() {
     let (cpu_client, cpu_device) = create_cpu_client();
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         if !dtype.is_float() {
             continue;
         }
@@ -279,7 +353,7 @@ fn test_pow_scalar_negative_base_parity() {
     let data = vec![-3.0, 2.0, -5.0, 4.0, -1.0, 0.0];
     let shape = vec![data.len()];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         if !dtype.is_float() {
             continue;
         }

@@ -16,7 +16,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -121,7 +121,7 @@ macro_rules! reduce_case {
     ($name:ident, $op:expr, $cases:expr) => {
         #[test]
         fn $name() {
-            for dtype in supported_dtypes("cpu") {
+            for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
                 test_reduce_parity($op, $cases, dtype);
             }
         }

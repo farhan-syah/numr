@@ -8,7 +8,7 @@ use numr::ops::RandomOps;
 use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
-use crate::common::{ToF64, create_cpu_client, is_dtype_supported, supported_dtypes};
+use crate::common::{DTypeDomain, ToF64, create_cpu_client, is_dtype_supported, parity_dtypes};
 
 /// Check uniform distribution: all values in [0, 1) for floating-point dtypes
 pub(super) fn check_uniform_range<T: ToF64>(vals: &[T], dtype: DType) {
@@ -56,7 +56,7 @@ pub(super) fn check_normal_stats<T: ToF64>(vals: &[T], dtype: DType) {
 /// Test rand() produces correct shape, dtype, and values in [0, 1) on all backends
 #[test]
 fn test_rand_invariants_all_backends() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         // Skip integer types - rand() is for floating-point only
         if matches!(dtype, DType::I32 | DType::I64 | DType::U32 | DType::Bool) {
             continue;
@@ -153,7 +153,7 @@ fn test_rand_invariants_all_backends() {
 /// Test randn() produces correct shape, dtype, and normal distribution on all backends
 #[test]
 fn test_randn_invariants_all_backends() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         // Skip integer types - randn() is for floating-point only
         if matches!(dtype, DType::I32 | DType::I64 | DType::U32 | DType::Bool) {
             continue;
@@ -296,7 +296,7 @@ fn test_randint_invariants_all_backends() {
 /// Test rand() with multidimensional shapes on all backends
 #[test]
 fn test_rand_shape_dtype_all_backends() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         // Skip integer types - rand() is for floating-point only
         if matches!(dtype, DType::I32 | DType::I64 | DType::U32 | DType::Bool) {
             continue;

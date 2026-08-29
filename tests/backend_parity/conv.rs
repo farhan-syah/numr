@@ -11,7 +11,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 #[test]
@@ -19,7 +19,7 @@ fn test_conv1d_moving_average_parity() {
     let input = vec![1.0, 2.0, 3.0, 4.0, 5.0];
     let weight = vec![1.0, 1.0, 1.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_in = tensor_from_f64(&input, &[1, 1, 5], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -74,7 +74,7 @@ fn test_conv2d_box_blur_parity() {
     let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
     let weight = vec![1.0; 4];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_in = tensor_from_f64(&input, &[1, 1, 3, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -131,7 +131,7 @@ fn test_depthwise_conv2d_parity() {
     ];
     let weight = vec![1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_in = tensor_from_f64(&input, &[1, 2, 3, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -188,7 +188,7 @@ fn test_conv2d_invalid_groups_parity() {
     let input_data = vec![0.0; 5 * 8 * 8];
     let weight_data = vec![0.0; 10 * 3 * 3 * 3];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_in = tensor_from_f64(&input_data, &[1, 5, 8, 8], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -273,7 +273,7 @@ fn test_conv_transpose1d_upsample_parity() {
     // weight [c_in=1, c_out=1, k=3]
     let weight = vec![0.5, -1.5, 2.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_in = tensor_from_f64(&input, &[1, 1, 4], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -335,7 +335,7 @@ fn test_conv_transpose1d_grouped_bias_parity() {
     let weight = vec![1.0, 0.5, -2.0, 3.0];
     let bias = vec![0.25, -0.75];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_in = tensor_from_f64(&input, &[1, 2, 3], dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));

@@ -13,7 +13,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -22,7 +22,7 @@ use crate::common::{
 
 #[test]
 fn test_masked_select_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         // Test case 1: 2D tensor with row mask
@@ -79,7 +79,7 @@ fn test_masked_select_parity() {
 
 #[test]
 fn test_masked_select_column_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -135,7 +135,7 @@ fn test_masked_select_column_parity() {
 
 #[test]
 fn test_masked_select_3d_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
@@ -191,7 +191,7 @@ fn test_masked_select_3d_parity() {
 
 #[test]
 fn test_masked_fill_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -247,7 +247,7 @@ fn test_masked_fill_parity() {
 
 #[test]
 fn test_masked_fill_column_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -307,7 +307,7 @@ fn test_masked_fill_column_parity() {
 
 #[test]
 fn test_take_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
@@ -363,7 +363,7 @@ fn test_take_parity() {
 
 #[test]
 fn test_put_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
@@ -437,7 +437,7 @@ fn test_put_parity() {
 
 #[test]
 fn test_take_i64_indices_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];
@@ -493,7 +493,7 @@ fn test_take_i64_indices_parity() {
 
 #[test]
 fn test_put_i64_indices_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let a_data = vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0];

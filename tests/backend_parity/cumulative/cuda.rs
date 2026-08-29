@@ -1,9 +1,9 @@
 // Backend parity tests for I64 / U64 `cumsum` - CUDA vs CPU.
 //
-// `supported_dtypes("cpu")` in `../mod.rs` never yields I64/U64, so the
-// macro-driven tests there never touch 64-bit integer cumsum on any backend.
-// This file fills that hole for CUDA, the backend whose 64-bit `cumsum` used
-// to wrap on overflow instead of saturating like CPU (see
+// The CPU backend scope in `../../common/mod.rs` stops at 32 bits, so the
+// macro-driven tests in `../mod.rs` never reach 64-bit integer cumsum. This file
+// fills that hole for CUDA, the backend whose 64-bit `cumsum` used to wrap on
+// overflow instead of saturating like CPU (see
 // `runtime/cuda/kernels/cumulative.cu`).
 //
 // Every test below is `#[cfg(feature = "cuda")]`, so these imports are too -

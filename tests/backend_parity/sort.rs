@@ -11,7 +11,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 #[test]
@@ -19,7 +19,7 @@ fn test_sort_parity() {
     let data = vec![3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];
     let shape = vec![8];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -68,7 +68,7 @@ fn test_argsort_parity() {
     let data = vec![3.0, 1.0, 4.0, 1.0, 5.0];
     let shape = vec![5];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -314,7 +314,7 @@ fn test_topk_parity() {
     let data = vec![3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];
     let shape = vec![8];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -375,7 +375,7 @@ fn test_unique_parity() {
     let data = vec![1.0, 2.0, 2.0, 3.0, 1.0, 4.0];
     let shape = vec![6];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -424,7 +424,7 @@ fn test_nonzero_parity() {
     let data = vec![0.0, 1.0, 0.0, 2.0, 3.0];
     let shape = vec![5];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
             .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -475,7 +475,7 @@ fn test_searchsorted_parity() {
     let sorted_shape = vec![5];
     let values_shape = vec![4];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_sorted =
             tensor_from_f64(&sorted_data, &sorted_shape, dtype, &cpu_device, &cpu_client)

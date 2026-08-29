@@ -14,7 +14,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -149,7 +149,7 @@ fn test_erf_parity() {
     let data = vec![0.0, 0.5, 1.0, 2.0];
     let shape = vec![4];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_special_unary_parity("erf", data.clone(), shape.clone(), dtype);
     }
 }
@@ -159,7 +159,7 @@ fn test_gamma_parity() {
     let data = vec![0.5, 1.0, 2.0, 3.0];
     let shape = vec![4];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_special_unary_parity("gamma", data.clone(), shape.clone(), dtype);
     }
 }
@@ -170,7 +170,7 @@ fn test_gammainc_parity() {
     let x_data = vec![1.0, 2.0, 3.0];
     let shape = vec![3];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_special_binary_parity(
             "gammainc",
             a_data.clone(),
@@ -187,7 +187,7 @@ fn test_gammaincc_parity() {
     let x_data = vec![1.0, 2.0, 3.0];
     let shape = vec![3];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_special_binary_parity(
             "gammaincc",
             a_data.clone(),

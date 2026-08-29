@@ -12,7 +12,7 @@ use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::backend_parity::helpers::with_wgpu_backend_or_skip;
 #[cfg(feature = "cuda")]
 use crate::common::is_dtype_supported;
-use crate::common::{ToF64, create_cpu_client, supported_dtypes};
+use crate::common::{DTypeDomain, ToF64, create_cpu_client, parity_dtypes};
 
 use super::distributions::check_normal_stats;
 
@@ -104,7 +104,7 @@ fn check_not_uniform<T: ToF64>(vals: &[T]) {
 
 #[test]
 fn test_randn_seeded_reproducibility_cpu_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         // Skip integer types - randn_seeded() is for floating-point only
         if matches!(dtype, DType::I32 | DType::I64 | DType::U32 | DType::Bool) {
             continue;

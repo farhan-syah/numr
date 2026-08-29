@@ -15,7 +15,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -164,7 +164,7 @@ fn test_fused_add_rms_norm_parity_impl(dtype: DType) {
 
 #[test]
 fn test_fused_add_rms_norm_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_add_rms_norm_parity_impl(dtype);
     }
 }
@@ -294,7 +294,7 @@ fn test_fused_add_layer_norm_parity_impl(dtype: DType) {
 
 #[test]
 fn test_fused_add_layer_norm_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_add_layer_norm_parity_impl(dtype);
     }
 }
@@ -433,7 +433,7 @@ fn test_fused_add_rms_norm_bwd_parity_impl(dtype: DType) {
 
 #[test]
 fn test_fused_add_rms_norm_bwd_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_add_rms_norm_bwd_parity_impl(dtype);
     }
 }
@@ -612,7 +612,7 @@ fn test_fused_add_layer_norm_bwd_parity_impl(dtype: DType) {
 
 #[test]
 fn test_fused_add_layer_norm_bwd_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_add_layer_norm_bwd_parity_impl(dtype);
     }
 }

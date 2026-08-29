@@ -13,7 +13,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -120,7 +120,7 @@ fn test_fused_mul_add_parity(dtype: DType) {
 
 #[test]
 fn test_fused_mul_add_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_fused_mul_add_parity(dtype);
     }
 }
@@ -188,7 +188,7 @@ fn test_fused_add_mul_parity(dtype: DType) {
 
 #[test]
 fn test_fused_add_mul_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_fused_add_mul_parity(dtype);
     }
 }
@@ -279,7 +279,7 @@ fn test_fused_mul_add_scalar_parity(dtype: DType) {
 
 #[test]
 fn test_fused_mul_add_scalar_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_fused_mul_add_scalar_parity(dtype);
     }
 }

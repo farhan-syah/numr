@@ -13,7 +13,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 #[test]
@@ -21,7 +21,7 @@ fn test_index_select_parity() {
     let input_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
     let indices = [2i32, 0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let cpu_x = tensor_from_f64(&input_data, &[3, 2], dtype, &cpu_device, &cpu_client)
@@ -81,7 +81,7 @@ fn test_i32_indices_parity() {
     let scatter_reduce_src_data = vec![1.0, 2.0, 3.0];
     let scatter_dst_data = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let input = tensor_from_f64(&input_data, &[3, 2], dtype, &cpu_device, &cpu_client)
@@ -493,7 +493,7 @@ fn test_gather_scatter_parity() {
     let src_data = vec![1.0, 2.0, 3.0, 4.0];
     let dst_data = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let cpu_x = tensor_from_f64(&input_data, &[3, 2], dtype, &cpu_device, &cpu_client)
@@ -585,7 +585,7 @@ fn test_gather_nd_bincount_embedding_parity() {
     let emb_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let emb_idx_i64 = [3i64, 0, 1];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let input = tensor_from_f64(&input_data, &[2, 2], dtype, &cpu_device, &cpu_client)
@@ -693,7 +693,7 @@ fn test_scatter_reduce_sum_parity() {
     let indices = [0i32, 0, 2];
     let src_data = vec![1.0, 2.0, 3.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let dst = tensor_from_f64(&dst_data, &[4], dtype, &cpu_device, &cpu_client)
@@ -753,7 +753,7 @@ fn test_scatter_reduce_mean_prod_parity() {
     let indices = [0i32, 0, 2];
     let src_data = vec![2.0, 4.0, 8.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let dst = tensor_from_f64(&dst_data, &[4], dtype, &cpu_device, &cpu_client)

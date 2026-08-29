@@ -16,18 +16,14 @@ use crate::backend_parity::helpers::assert_parity_u32;
 use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend_or_skip;
-use crate::common::{create_cpu_client, is_dtype_supported, supported_dtypes};
+use crate::common::{DTypeDomain, create_cpu_client, is_dtype_supported, parity_dtypes};
 
 /// Dtypes the compare parity tests run over.
 ///
-/// `supported_dtypes("cpu")` yields floats only. Compare is defined for the
-/// integer dtypes on every backend, and leaving them untested is what let a
-/// WebGPU output-dtype divergence ship, so they are added here explicitly.
+/// Comparison is an order relation, defined on every numeric dtype. Leaving the
+/// integers untested is what let a WebGPU output-dtype divergence ship.
 fn compare_dtypes() -> Vec<DType> {
-    let mut dtypes = supported_dtypes("cpu");
-    dtypes.push(DType::I32);
-    dtypes.push(DType::U32);
-    dtypes
+    parity_dtypes(DTypeDomain::AllNumeric, "cpu")
 }
 
 // ============================================================================

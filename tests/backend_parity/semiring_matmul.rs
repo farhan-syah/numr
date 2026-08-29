@@ -9,7 +9,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 use numr::dtype::DType;
 use numr::ops::{SemiringMatmulOps, SemiringOp};
@@ -152,7 +152,7 @@ fn test_semiring_parity(dtype: DType) {
 
 #[test]
 fn test_semiring_matmul_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_semiring_parity(dtype);
     }
 }

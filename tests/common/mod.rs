@@ -92,22 +92,23 @@ pub fn assert_allclose_f32(a: &[f32], b: &[f32], rtol: f32, atol: f32, msg: &str
 // DType Support Framework
 // ============================================================================
 
-/// Returns list of dtypes supported by a specific backend
+/// The backend's design scope: which dtypes it can represent at all.
 ///
-/// Used internally by `supported_dtypes` to determine which dtypes to test.
-/// This is the source of truth for backend capabilities.
+/// This is one of the two axes a parity test intersects, the other being
+/// [`DTypeDomain`]. Keep it narrow and principled. WebGPU is 32-bit by design,
+/// so F64 and the narrow floats are out of scope there permanently. A dtype the
+/// backend could represent but has no kernel for does NOT belong here — that is
+/// a gap the tests exist to surface.
 pub fn backend_supported_dtypes(backend: &str) -> Vec<DType> {
     match backend {
-        // CUDA's unsigned coverage is partial: `cumsum` and `cumprod` have U32
-        // kernels, but `compare`, `cast`, and the binary ops do not. U32 is left
-        // out because a per-backend list cannot express per-op support, and
-        // claiming it produces failures rather than skips.
+        // CUDA can represent every one of these, so all four are in scope.
+        // U32's missing `compare`, `cast`, and binary kernels are gaps, not a
+        // design limit, and the tests exist to surface them.
         //
-        // I32 and I64 are in because CUDA's arithmetic pipeline (`binary.cu`)
-        // and its integer `matmul` kernels cover exactly those two signed
-        // integers. The other six integer dtypes have no CUDA arithmetic at all.
+        // The other six integer dtypes stay out: CUDA has no arithmetic
+        // pipeline for them at all.
         #[cfg(feature = "cuda")]
-        "cuda" => build_dtype_list(&[DType::F32, DType::F64, DType::I32, DType::I64]),
+        "cuda" => build_dtype_list(&[DType::F32, DType::F64, DType::I32, DType::I64, DType::U32]),
         #[cfg(feature = "wgpu")]
         "wgpu" => {
             // WebGPU: 32-bit types only (F32, I32, U32)
@@ -146,21 +147,57 @@ pub fn is_dtype_supported(backend: &str, dtype: DType) -> bool {
     backend_supported_dtypes(backend).contains(&dtype)
 }
 
-/// Returns list of dtypes to test for a given backend
+// ============================================================================
+// Operation DType Domain
+// ============================================================================
+
+/// The dtypes an operation is mathematically defined for.
 ///
-/// This is used by test macros to determine which dtypes to parameterize over.
-/// For testing purposes, we test:
-/// - CPU: All supported dtypes (F32, F64 always; F16/BF16 if f16 feature; FP8 if fp8 feature)
-/// - CUDA: All supported dtypes
-/// - WebGPU: F32 only (32-bit types only)
-pub fn supported_dtypes(backend: &str) -> Vec<DType> {
-    match backend {
-        #[cfg(feature = "cuda")]
-        "cuda" => build_dtype_list(&[DType::F32, DType::F64]),
-        #[cfg(feature = "wgpu")]
-        "wgpu" => vec![DType::F32],
-        _ => build_dtype_list(&[DType::F32, DType::F64]),
+/// This is the operation's OWN domain and is independent of any backend. `log`
+/// is undefined on an integer tensor however capable the hardware is, and `add`
+/// is defined on every numeric dtype however few kernels a backend ships.
+///
+/// Keeping this separate from [`backend_supported_dtypes`] is what lets a parity
+/// test run integer dtypes without claiming every op accepts them. Variants
+/// derive their membership from `DType`'s own predicates, so a new dtype joins
+/// the right sets without editing a list here.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DTypeDomain {
+    /// Floats and integers alike: binary arithmetic, compare, reductions,
+    /// cumulative, matmul, indexing, shape ops, sort, cast, logical.
+    AllNumeric,
+    /// Floats only: transcendentals, activations, normalization, decompositions,
+    /// matrix functions, conv, distance, statistics, FFT, random distributions.
+    FloatsOnly,
+    /// Floats and signed integers: ops that need a representable negation.
+    SignedOnly,
+    /// Signed and unsigned integers only.
+    IntsOnly,
+}
+
+impl DTypeDomain {
+    /// True when the operation is mathematically defined for `dtype`.
+    pub fn admits(self, dtype: DType) -> bool {
+        match self {
+            Self::AllNumeric => dtype.is_float() || dtype.is_int(),
+            Self::FloatsOnly => dtype.is_float(),
+            Self::SignedOnly => dtype.is_float() || dtype.is_signed_int(),
+            Self::IntsOnly => dtype.is_int(),
+        }
     }
+}
+
+/// Dtypes a parity test runs: the operation's domain intersected with the
+/// backend's design scope.
+///
+/// A dtype that survives the intersection is expected to work. If the backend
+/// then fails on it, the test FAILS — that gap is the reason the intersection
+/// exists. There is no third axis here for a missing kernel to opt out through.
+pub fn parity_dtypes(domain: DTypeDomain, backend: &str) -> Vec<DType> {
+    backend_supported_dtypes(backend)
+        .into_iter()
+        .filter(|&dtype| domain.admits(dtype))
+        .collect()
 }
 
 /// Returns (rtol, atol) tolerance pair for a given dtype
@@ -229,18 +266,34 @@ pub fn assert_allclose_for_dtype(actual: &[f64], expected: &[f64], dtype: DType,
     }
 }
 
-/// Assert two tensors are close by reading back in native dtype and comparing.
+/// Assert two tensors are close by reading each back in ITS OWN dtype.
 ///
-/// Dispatches on `dtype` to call `to_vec::<T>()` with the correct native type,
-/// then compares element-wise using dtype-appropriate tolerance.
-/// No unnecessary casting - F32 compares as f32, F64 as f64, F16 as f16, etc.
-pub fn assert_tensor_allclose<R1: Runtime, R2: Runtime>(
+/// `dtype` is the dtype the test was parameterised on. It selects the tolerance,
+/// because the input precision is what bounds the achievable error, and it
+/// labels the failure message. It does NOT select the read type: an op may
+/// promote, and `pow_scalar` on an I32 tensor with a fractional exponent returns
+/// F64. Reading those F64 bytes as I32 reinterprets the mantissa as an integer,
+/// so two results agreeing to 1e-16 report as `0` vs `-1`.
+///
+/// The two tensors must carry the same dtype. A dtype divergence between
+/// backends is itself a parity failure, and it is reported as one.
+pub fn assert_tensor_allclose<R1: Runtime<DType = DType>, R2: Runtime<DType = DType>>(
     actual: &numr::tensor::Tensor<R1>,
     expected: &numr::tensor::Tensor<R2>,
     dtype: DType,
     msg: &str,
 ) {
     let (rtol, atol) = tolerance_for_dtype(dtype);
+    let result_dtype = actual.dtype();
+    assert_eq!(
+        result_dtype,
+        expected.dtype(),
+        "{}: input dtype={:?}: result dtype divergence: {:?} vs {:?}",
+        msg,
+        dtype,
+        result_dtype,
+        expected.dtype()
+    );
 
     macro_rules! compare_native {
         ($T:ty) => {{
@@ -251,7 +304,7 @@ pub fn assert_tensor_allclose<R1: Runtime, R2: Runtime>(
                 e_vec.len(),
                 "{}: dtype={:?}: length mismatch ({} vs {})",
                 msg,
-                dtype,
+                result_dtype,
                 a_vec.len(),
                 e_vec.len()
             );
@@ -264,7 +317,7 @@ pub fn assert_tensor_allclose<R1: Runtime, R2: Runtime>(
                     values_close(a_f64, e_f64, rtol, atol),
                     "{}: dtype={:?}: element {} differs: {} vs {} (diff={:.2e}, tol={:.2e})",
                     msg,
-                    dtype,
+                    result_dtype,
                     i,
                     a_f64,
                     e_f64,
@@ -275,7 +328,7 @@ pub fn assert_tensor_allclose<R1: Runtime, R2: Runtime>(
         }};
     }
 
-    match dtype {
+    match result_dtype {
         DType::F64 => compare_native!(f64),
         DType::F32 => compare_native!(f32),
         #[cfg(feature = "f16")]
@@ -288,9 +341,13 @@ pub fn assert_tensor_allclose<R1: Runtime, R2: Runtime>(
         DType::FP8E5M2 => compare_native!(numr::dtype::FP8E5M2),
         DType::I64 => compare_native!(i64),
         DType::I32 => compare_native!(i32),
+        DType::I16 => compare_native!(i16),
+        DType::I8 => compare_native!(i8),
+        DType::U64 => compare_native!(u64),
         DType::U32 => compare_native!(u32),
-        DType::Bool => compare_native!(u8),
-        _ => panic!("assert_tensor_allclose: unsupported dtype {dtype:?}"),
+        DType::U16 => compare_native!(u16),
+        DType::U8 | DType::Bool => compare_native!(u8),
+        other => panic!("assert_tensor_allclose: unsupported result dtype {other:?}"),
     }
 }
 
@@ -319,7 +376,27 @@ impl ToF64 for i32 {
         self as f64
     }
 }
+impl ToF64 for i16 {
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+impl ToF64 for i8 {
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+impl ToF64 for u64 {
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
 impl ToF64 for u32 {
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+}
+impl ToF64 for u16 {
     fn to_f64(self) -> f64 {
         self as f64
     }
@@ -388,39 +465,4 @@ pub fn readback_as_bool<R: Runtime<DType = DType>>(tensor: &numr::tensor::Tensor
         DType::FP8E5M2 => nonzero!(numr::dtype::FP8E5M2),
         other => panic!("readback_as_bool: unsupported dtype {other:?}"),
     }
-}
-
-/// Macro for parameterized testing across dtypes
-///
-/// Usage:
-/// ```ignore
-/// #[test]
-/// fn test_add_parity() {
-///     test_all_dtypes!("cuda", dtype => {
-///         // test body using `dtype`
-///         let result = client.add(&a, &b)?;
-///         assert_eq!(result.dtype(), dtype);
-///     });
-/// }
-/// ```
-#[macro_export]
-macro_rules! test_all_dtypes {
-    ($backend:expr, $dtype:ident => $body:block) => {
-        for $dtype in $crate::common::supported_dtypes($backend) {
-            $body
-        }
-    };
-}
-
-/// Macro for conditional dtype testing (only on CUDA)
-///
-/// Useful for tests that only work on specific backends
-#[macro_export]
-macro_rules! test_cuda_dtypes {
-    ($dtype:ident => $body:block) => {
-        #[cfg(feature = "cuda")]
-        for $dtype in $crate::common::supported_dtypes("cuda") {
-            $body
-        }
-    };
 }

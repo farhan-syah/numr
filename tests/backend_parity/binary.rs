@@ -15,7 +15,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -129,11 +129,13 @@ fn test_binary_parity(op: BinaryOp, test_cases: &[TestCase], dtype: DType) {
     }
 }
 
+// The domain is per-op, not per-module: this module mixes plain arithmetic with
+// `atan2`, whose result is an angle.
 macro_rules! binary_case {
-    ($name:ident, $op:expr, $cases:expr) => {
+    ($name:ident, $op:expr, $cases:expr, $domain:expr) => {
         #[test]
         fn $name() {
-            for dtype in supported_dtypes("cpu") {
+            for dtype in parity_dtypes($domain, "cpu") {
                 test_binary_parity($op, $cases, dtype);
             }
         }
@@ -158,7 +160,8 @@ binary_case!(
         ),
         TestCase::new(vec![1.0, 2.0, 3.0, 4.0], vec![4], vec![10.0], vec![1]),
         TestCase::new(vec![1.0, 2.0, 3.0, 4.0], vec![4], vec![5.0], vec![]),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 binary_case!(
@@ -177,7 +180,8 @@ binary_case!(
             vec![1.0, 1.0, 1.0, 1.0],
             vec![2, 2]
         ),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 binary_case!(
@@ -197,7 +201,8 @@ binary_case!(
             vec![2, 2]
         ),
         TestCase::new(vec![1.0, 2.0, 3.0, 4.0], vec![4], vec![2.0], vec![]),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 binary_case!(
@@ -216,7 +221,8 @@ binary_case!(
             vec![2.0, 4.0, 5.0, 8.0],
             vec![2, 2],
         ),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 binary_case!(
@@ -235,7 +241,8 @@ binary_case!(
             vec![0.0, 1.0, 2.0, 3.0],
             vec![2, 2]
         ),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 binary_case!(
@@ -254,7 +261,8 @@ binary_case!(
             vec![15.0, 15.0, 15.0, 15.0],
             vec![2, 2],
         ),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 binary_case!(
@@ -273,7 +281,8 @@ binary_case!(
             vec![15.0, 15.0, 15.0, 15.0],
             vec![2, 2],
         ),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 binary_case!(
@@ -292,7 +301,8 @@ binary_case!(
             vec![1.0, 1.0, -1.0, -1.0],
             vec![2, 2]
         ),
-    ]
+    ],
+    DTypeDomain::FloatsOnly
 );
 
 // Destination-passing `add_into`: must match the allocating `add` on every
@@ -401,7 +411,7 @@ fn test_add_into_matches_add() {
         // Broadcast path (a [4] + b [1]).
         TestCase::new(vec![1.0, 2.0, 3.0, 4.0], vec![4], vec![10.0], vec![1]),
     ];
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         test_add_into_parity(&cases, dtype);
     }
 }

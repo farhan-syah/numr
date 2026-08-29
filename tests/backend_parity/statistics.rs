@@ -13,23 +13,21 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
 // Test Utilities
 // ============================================================================
 
-/// Helper to check if dtype is floating-point (for statistical ops that require it)
-fn is_float_dtype(dtype: DType) -> bool {
-    matches!(dtype, DType::F16 | DType::BF16 | DType::F32 | DType::F64)
-}
-
-/// Helper to get floating-point dtypes only
+/// Statistical ops carry a mean or a variance, so they need a float.
+///
+/// FP8 is excluded: a 4-bit mantissa cannot hold an accumulated moment, so a
+/// mismatch there reports precision, not a parity break.
 fn float_dtypes(backend: &str) -> Vec<DType> {
-    supported_dtypes(backend)
+    parity_dtypes(DTypeDomain::FloatsOnly, backend)
         .into_iter()
-        .filter(|&dtype| is_float_dtype(dtype))
+        .filter(|dtype| !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2))
         .collect()
 }
 
@@ -446,7 +444,7 @@ fn test_mode_parity_float() {
 
 #[test]
 fn test_mode_parity_i32() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::IntsOnly, "cpu") {
         if !matches!(dtype, DType::I32) {
             continue;
         }

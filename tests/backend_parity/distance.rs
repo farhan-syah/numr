@@ -12,7 +12,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -145,7 +145,7 @@ fn test_cdist_parity(dtype: DType) {
 
 #[test]
 fn test_cdist_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_cdist_parity(dtype);
     }
 }
@@ -213,7 +213,7 @@ fn test_pdist_parity(dtype: DType) {
 
 #[test]
 fn test_pdist_parity_all_dtypes() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_pdist_parity(dtype);
     }
 }

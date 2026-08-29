@@ -16,7 +16,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -288,7 +288,7 @@ fn standard_test_cases() -> Vec<FusedTestCase> {
 #[test]
 fn test_silu_mul_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_fwd_parity(FusedActivationOp::SiluMul, &cases, dtype);
     }
 }
@@ -296,7 +296,7 @@ fn test_silu_mul_parity() {
 #[test]
 fn test_gelu_mul_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_fwd_parity(FusedActivationOp::GeluMul, &cases, dtype);
     }
 }
@@ -304,7 +304,7 @@ fn test_gelu_mul_parity() {
 #[test]
 fn test_relu_mul_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_fwd_parity(FusedActivationOp::ReluMul, &cases, dtype);
     }
 }
@@ -312,7 +312,7 @@ fn test_relu_mul_parity() {
 #[test]
 fn test_sigmoid_mul_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_fwd_parity(FusedActivationOp::SigmoidMul, &cases, dtype);
     }
 }
@@ -324,7 +324,7 @@ fn test_sigmoid_mul_parity() {
 #[test]
 fn test_silu_mul_bwd_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_bwd_parity(FusedActivationOp::SiluMul, &cases, dtype);
     }
 }
@@ -332,7 +332,7 @@ fn test_silu_mul_bwd_parity() {
 #[test]
 fn test_gelu_mul_bwd_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_bwd_parity(FusedActivationOp::GeluMul, &cases, dtype);
     }
 }
@@ -340,7 +340,7 @@ fn test_gelu_mul_bwd_parity() {
 #[test]
 fn test_relu_mul_bwd_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_bwd_parity(FusedActivationOp::ReluMul, &cases, dtype);
     }
 }
@@ -348,7 +348,7 @@ fn test_relu_mul_bwd_parity() {
 #[test]
 fn test_sigmoid_mul_bwd_parity() {
     let cases = standard_test_cases();
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         test_fused_bwd_parity(FusedActivationOp::SigmoidMul, &cases, dtype);
     }
 }

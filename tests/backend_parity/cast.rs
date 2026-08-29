@@ -21,8 +21,8 @@ use crate::common::{assert_tensor_allclose, create_cpu_client};
 // ============================================================================
 
 /// All dtypes that participate in cast tests.
-/// This is broader than `supported_dtypes` because cast specifically tests
-/// conversions between types, including Bool and integer types.
+/// Cast is defined between every dtype pair, so this list is its own domain: it
+/// names Bool and I64, which no other op's domain reaches.
 fn cast_dtypes(backend: &str) -> Vec<DType> {
     match backend {
         #[cfg(feature = "wgpu")]

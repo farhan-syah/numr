@@ -15,7 +15,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -446,7 +446,7 @@ fn test_flip_on_backends(data: &[f64], shape: &[usize], dim: isize, dtype: DType
 
 #[test]
 fn test_cat_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let a = [1.0, 2.0, 3.0, 4.0];
         let b = [10.0, 20.0];
         test_cat_on_backends(&a, &[2, 2], &b, &[2, 1], -1, dtype);
@@ -455,7 +455,7 @@ fn test_cat_parity_negative_dim() {
 
 #[test]
 fn test_stack_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let a = [1.0, 2.0, 3.0, 4.0];
         let b = [10.0, 20.0, 30.0, 40.0];
         test_stack_on_backends(&a, &[2, 2], &b, &[2, 2], -1, dtype);
@@ -464,7 +464,7 @@ fn test_stack_parity_negative_dim() {
 
 #[test]
 fn test_split_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
         test_split_on_backends(&data, &[2, 5], 2, -1, dtype);
     }
@@ -472,7 +472,7 @@ fn test_split_parity_negative_dim() {
 
 #[test]
 fn test_chunk_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
         test_chunk_on_backends(&data, &[2, 5], 3, -1, dtype);
     }
@@ -480,7 +480,7 @@ fn test_chunk_parity_negative_dim() {
 
 #[test]
 fn test_repeat_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_repeat_on_backends(&data, &[2, 3], &[2, 3], dtype);
     }
@@ -488,7 +488,7 @@ fn test_repeat_parity() {
 
 #[test]
 fn test_pad_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         // Pad last dim by (1, 2), second-to-last by (1, 1)
         test_pad_on_backends(&data, &[2, 3], &[1, 2, 1, 1], 0.0, dtype);
@@ -497,7 +497,7 @@ fn test_pad_parity() {
 
 #[test]
 fn test_roll_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_roll_on_backends(&data, &[2, 3], 2, 1, dtype);
     }
@@ -505,7 +505,7 @@ fn test_roll_parity() {
 
 #[test]
 fn test_roll_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_roll_on_backends(&data, &[2, 3], -1, -1, dtype);
     }
@@ -513,7 +513,7 @@ fn test_roll_parity_negative_dim() {
 
 #[test]
 fn test_flip_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_flip_on_backends(&data, &[2, 3], 1, dtype);
     }
@@ -521,7 +521,7 @@ fn test_flip_parity() {
 
 #[test]
 fn test_flip_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_flip_on_backends(&data, &[2, 3], -1, dtype);
     }
@@ -529,7 +529,7 @@ fn test_flip_parity_negative_dim() {
 
 #[test]
 fn test_unfold_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_unfold_on_backends(&data, &[2, 3], 1, 2, 1, dtype);
     }
@@ -537,7 +537,7 @@ fn test_unfold_parity() {
 
 #[test]
 fn test_unfold_parity_dim0() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_unfold_on_backends(&data, &[2, 3], 0, 2, 1, dtype);
     }
@@ -545,7 +545,7 @@ fn test_unfold_parity_dim0() {
 
 #[test]
 fn test_unfold_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         test_unfold_on_backends(&data, &[2, 3], -1, 2, 1, dtype);
     }
@@ -553,7 +553,7 @@ fn test_unfold_parity_negative_dim() {
 
 #[test]
 fn test_repeat_interleave_parity() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0];
         test_repeat_interleave_on_backends(&data, &[2, 2], 2, Some(1), dtype);
     }
@@ -561,7 +561,7 @@ fn test_repeat_interleave_parity() {
 
 #[test]
 fn test_repeat_interleave_parity_negative_dim() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0];
         test_repeat_interleave_on_backends(&data, &[2, 2], 2, Some(-1), dtype);
     }
@@ -569,7 +569,7 @@ fn test_repeat_interleave_parity_negative_dim() {
 
 #[test]
 fn test_repeat_interleave_parity_flattened() {
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let data = [1.0, 2.0, 3.0, 4.0];
         test_repeat_interleave_on_backends(&data, &[2, 2], 2, None, dtype);
     }

@@ -11,7 +11,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 #[test]
@@ -21,7 +21,7 @@ fn test_pinverse_parity() {
     ];
     let shape = vec![4, 3];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
@@ -71,7 +71,7 @@ fn test_cond_parity() {
     let data = vec![4.0, 2.0, 2.0, 3.0];
     let shape = vec![2, 2];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
@@ -121,7 +121,7 @@ fn test_cov_parity() {
     let data = vec![1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0];
     let shape = vec![3, 3];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
@@ -171,7 +171,7 @@ fn test_corrcoef_parity() {
     let data = vec![1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0];
     let shape = vec![3, 3];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
@@ -221,7 +221,7 @@ fn test_corrcoef_zero_variance_parity() {
     let data = vec![1.0, 2.0, 1.0, 3.0, 1.0, 4.0];
     let shape = vec![3, 2];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
 
         let cpu_tensor = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)

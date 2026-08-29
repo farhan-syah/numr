@@ -17,16 +17,16 @@ use crate::backend_parity::dtype_helpers::tensor_from_f64;
 use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
-use crate::common::{ToF64, create_cpu_client, is_dtype_supported, supported_dtypes};
+use crate::common::{DTypeDomain, ToF64, create_cpu_client, is_dtype_supported, parity_dtypes};
 
 /// Float dtypes worth exercising for NaN ordering.
 ///
 /// FP8 is excluded: its 8-bit range cannot represent the distinct magnitudes
 /// these cases rely on, so a mismatch would report precision, not ordering.
 fn nan_dtypes() -> Vec<DType> {
-    supported_dtypes("cpu")
+    parity_dtypes(DTypeDomain::FloatsOnly, "cpu")
         .into_iter()
-        .filter(|d| d.is_float() && !matches!(d, DType::FP8E4M3 | DType::FP8E5M2))
+        .filter(|d| !matches!(d, DType::FP8E4M3 | DType::FP8E5M2))
         .collect()
 }
 

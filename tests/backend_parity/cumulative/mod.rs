@@ -3,11 +3,10 @@
 // Tests verify that all CumulativeOps operations produce identical results across
 // CPU, CUDA, and WebGPU backends, for all supported dtypes.
 //
-// `supported_dtypes("cpu")` below never yields I32/U32/I64/U64, so the
-// macro-driven tests in this file never exercise integer cumsum/cumprod.
-// `wgpu` holds the hand-built WebGPU-vs-CPU I32/U32 coverage, and `cuda`
-// holds the hand-built CUDA-vs-CPU I32/U32/I64/U64 coverage, that fill that
-// hole.
+// The macro-driven tests below run the whole numeric domain, so they now
+// exercise integer cumsum/cumprod wherever the backend scope reaches. That scope
+// stops at 32 bits, and it says nothing about saturation, so `wgpu` and `cuda`
+// keep their hand-built I64/U64 and overflow-boundary coverage.
 
 pub mod cuda;
 pub mod wgpu;
@@ -23,7 +22,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -123,11 +122,13 @@ fn test_cumulative_parity(op: &str, test_cases: Vec<CumulativeTest>, dtype: DTyp
 // Test Macro for DType Parameterization
 // ============================================================================
 
+// The domain is per-op, not per-module: `cumsum` and `cumprod` are closed over
+// the integers, `logsumexp` is a logarithm and CPU itself rejects integer input.
 macro_rules! cumulative_case {
-    ($name:ident, $op:expr, $cases:expr) => {
+    ($name:ident, $op:expr, $cases:expr, $domain:expr) => {
         #[test]
         fn $name() {
-            for dtype in supported_dtypes("cpu") {
+            for dtype in parity_dtypes($domain, "cpu") {
                 test_cumulative_parity($op, $cases, dtype);
             }
         }
@@ -154,7 +155,8 @@ cumulative_case!(
             vec![2, 2, 2],
             1,
         ),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 cumulative_case!(
@@ -167,7 +169,8 @@ cumulative_case!(
         CumulativeTest::new(vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0], vec![2, 3], 0),
         // 2D cumprod along columns
         CumulativeTest::new(vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0], vec![2, 3], 1),
-    ]
+    ],
+    DTypeDomain::AllNumeric
 );
 
 cumulative_case!(
@@ -180,5 +183,6 @@ cumulative_case!(
         CumulativeTest::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3], 0),
         // 2D logsumexp along columns
         CumulativeTest::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3], 1),
-    ]
+    ],
+    DTypeDomain::FloatsOnly
 );

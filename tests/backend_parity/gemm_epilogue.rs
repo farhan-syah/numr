@@ -12,7 +12,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -55,7 +55,7 @@ fn gemm_bias_activation_2d_parity(activation: GemmActivation, label: &str) {
     let b = vec![0.5f64, -0.3, 0.1, 0.7, -0.2, 0.4];
     let bias = vec![-0.1f64, 0.2];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 3], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[3, 2], dtype, &cpu_device, &cpu_client).unwrap();
@@ -119,7 +119,7 @@ fn test_gemm_bias_activation_batched_3d_parity() {
     ];
     let bias = vec![0.01f64, 0.02];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 2, 3], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[2, 3, 2], dtype, &cpu_device, &cpu_client).unwrap();
@@ -183,7 +183,7 @@ fn test_gemm_bias_residual_2d_parity() {
     let bias = vec![-0.1f64, 0.2];
     let residual = vec![1.0f64, 2.0, 3.0, 4.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 3], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[3, 2], dtype, &cpu_device, &cpu_client).unwrap();
@@ -277,7 +277,7 @@ fn gemm_bias_activation_bwd_parity(activation: GemmActivation, label: &str) {
     let bias = vec![0.0f64, 0.0];
     let grad = vec![1.0f64, 1.0, 1.0, 1.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();
@@ -375,7 +375,7 @@ fn test_gemm_bias_activation_bwd_batched_3d_parity() {
         GemmActivation::ReLU,
         GemmActivation::SiLU,
     ] {
-        for dtype in supported_dtypes("cpu") {
+        for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
             let (cpu_client, cpu_device) = create_cpu_client();
             let a_t = tensor_from_f64(&a, &[2, 2, 3], dtype, &cpu_device, &cpu_client).unwrap();
             let b_t = tensor_from_f64(&b, &[2, 3, 2], dtype, &cpu_device, &cpu_client).unwrap();
@@ -535,7 +535,7 @@ fn test_gemm_bias_activation_bwd_negative_values_parity() {
         GemmActivation::SiLU,
         GemmActivation::GELU,
     ] {
-        for dtype in supported_dtypes("cpu") {
+        for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
             let (cpu_client, cpu_device) = create_cpu_client();
             let a_t = tensor_from_f64(&a, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();
             let b_t = tensor_from_f64(&b, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();

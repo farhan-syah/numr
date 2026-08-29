@@ -1,10 +1,9 @@
 // Backend parity tests for integer `cumsum` / `cumprod` - WebGPU vs CPU.
 //
-// `supported_dtypes("cpu")` in `../mod.rs` never yields I32/U32, so the
-// macro-driven tests there never touch integer cumulative ops on any
-// backend. This file fills that hole for WebGPU, the backend whose integer
-// `cumsum` used to wrap instead of saturate (see cumsum_i32.wgsl /
-// cumsum_u32.wgsl).
+// The macro-driven tests in `../mod.rs` cover integer cumulative ops, but their
+// inputs stay small. This file pins the overflow boundary for WebGPU, the
+// backend whose integer `cumsum` used to wrap instead of saturate (see
+// cumsum_i32.wgsl / cumsum_u32.wgsl).
 
 // Every test below is `#[cfg(feature = "wgpu")]`, so these imports are too -
 // otherwise a non-WebGPU build would warn on all of them as unused.

@@ -1,9 +1,9 @@
 // Backend parity tests for I32 / I64 `matmul` - CUDA vs CPU.
 //
-// `supported_dtypes("cpu")` in `../../common/mod.rs` never yields an integer
-// dtype, so the macro-driven tests in `float.rs` never touch integer matmul on
-// any backend. CUDA used to answer integer matmul by copying both operands to
-// the host, so this file is the coverage that keeps the native kernel honest.
+// The CPU backend scope in `../../common/mod.rs` stops at 32-bit integers, so the
+// macro-driven tests in `float.rs` never reach I64 matmul. CUDA used to answer
+// integer matmul by copying both operands to the host, so this file is the
+// coverage that keeps the native kernel honest across both widths.
 //
 // Both backends accumulate in a 128-bit accumulator and saturate exactly once,
 // at the narrow-back store: CPU in `matmul_scalar_acc::<T, i128>`, CUDA in

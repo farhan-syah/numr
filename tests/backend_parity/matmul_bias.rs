@@ -14,7 +14,7 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    assert_tensor_allclose, create_cpu_client, is_dtype_supported, supported_dtypes,
+    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
 };
 
 /// Test matmul_bias with 2D matrices across all supported dtypes and backends
@@ -24,7 +24,7 @@ fn test_matmul_bias_2d_parity() {
     let b = vec![5.0f64, 6.0, 7.0, 8.0];
     let bias = vec![1.0f64, 2.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[2, 2], dtype, &cpu_device, &cpu_client).unwrap();
@@ -74,7 +74,7 @@ fn test_matmul_bias_batched_parity() {
     let b = vec![1.0f64, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0];
     let bias = vec![0.5f64, 1.0];
 
-    for dtype in supported_dtypes("cpu") {
+    for dtype in parity_dtypes(DTypeDomain::AllNumeric, "cpu") {
         let (cpu_client, cpu_device) = create_cpu_client();
         let a_t = tensor_from_f64(&a, &[2, 2, 2], dtype, &cpu_device, &cpu_client).unwrap();
         let b_t = tensor_from_f64(&b, &[2, 2, 2], dtype, &cpu_device, &cpu_client).unwrap();
