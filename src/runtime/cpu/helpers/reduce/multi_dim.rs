@@ -6,7 +6,7 @@ use crate::dtype::Element;
 use crate::error::Result;
 use crate::ops::{AccumulationPrecision, ReduceOp, reduce_output_shape};
 use crate::runtime::cpu::kernels::Accumulator;
-use crate::runtime::cpu::kernels::wide_acc::int_mean_from_sum;
+use crate::runtime::cpu::kernels::wide_acc::{WideAcc, int_mean_from_sum};
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
 use crate::tensor::Tensor;
 
@@ -55,11 +55,14 @@ pub(super) fn reduce_multi_dim_fused(
 
     dispatch_dtype!(a.dtype(), T => {
         unsafe {
-            // Integer `mean` keeps one accumulator per output bucket, and in the
-            // element type that accumulator wraps on a sum whose average the
-            // output dtype could still represent. Sum in i128 and divide there.
-            if T::DTYPE.is_int() && matches!(op, ReduceOp::Mean) {
-                reduce_multi_dim_fused_int_mean::<T>(
+            // Integer `sum`, `prod` and `mean` keep one accumulator per output
+            // bucket, and in the element type that accumulator wraps (release)
+            // or panics (debug) on a total the dtype cannot hold. Accumulate in
+            // i128 and narrow once at write-out, saturating, exactly as the
+            // scalar reduce kernel does.
+            if T::DTYPE.is_int() && matches!(op, ReduceOp::Sum | ReduceOp::Prod | ReduceOp::Mean) {
+                reduce_multi_dim_fused_int::<T>(
+                    op,
                     in_ptr as *const T,
                     out_ptr as *mut T,
                     numel,
@@ -219,10 +222,12 @@ unsafe fn reduce_multi_dim_fused_native<T: Element>(
     }
 }
 
-/// Fused multi-dimension integer `mean`, accumulating in i128.
+/// Fused multi-dimension integer `sum`, `prod` and `mean`, accumulating in
+/// i128. `op` must be one of those three.
 #[allow(unsafe_op_in_unsafe_fn)]
 #[allow(clippy::too_many_arguments)]
-unsafe fn reduce_multi_dim_fused_int_mean<T: Element>(
+unsafe fn reduce_multi_dim_fused_int<T: Element>(
+    op: ReduceOp,
     input: *const T,
     output: *mut T,
     numel: usize,
@@ -234,20 +239,32 @@ unsafe fn reduce_multi_dim_fused_int_mean<T: Element>(
     out_strides: &[usize],
     reduce_count: usize,
 ) {
-    let mut acc = vec![0i128; out_numel];
+    let is_prod = matches!(op, ReduceOp::Prod);
+    let seed = if is_prod { i128::ONE } else { i128::ZERO };
+    let mut acc = vec![seed; out_numel];
 
     let mut coord = vec![0usize; shape.len()];
     for linear in 0..numel {
         let out_idx = out_index_from_coord(&coord, reduce_mask, keepdim, kept_axes, out_strides);
-        acc[out_idx] = acc[out_idx].saturating_add((*input.add(linear)).to_i128());
+        let val = i128::from_elem(*input.add(linear));
+        acc[out_idx] = if is_prod {
+            acc[out_idx].wide_mul(val)
+        } else {
+            acc[out_idx].wide_add(val)
+        };
 
         if linear + 1 < numel {
             advance_coord(&mut coord, shape);
         }
     }
 
-    for (i, &sum) in acc.iter().enumerate() {
-        *output.add(i) = int_mean_from_sum::<T>(sum, reduce_count);
+    let is_mean = matches!(op, ReduceOp::Mean);
+    for (i, &total) in acc.iter().enumerate() {
+        *output.add(i) = if is_mean {
+            int_mean_from_sum::<T>(total, reduce_count)
+        } else {
+            total.to_elem::<T>()
+        };
     }
 }
 

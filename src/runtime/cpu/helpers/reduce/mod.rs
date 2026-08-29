@@ -158,6 +158,75 @@ mod tests {
         assert_eq!(big_mean, vec![1]);
     }
 
+    /// A fused multi-dim integer `sum` whose total leaves the dtype's range
+    /// must saturate. Accumulating in i32 panics here in a debug build and
+    /// wraps to a negative value in a release build.
+    #[test]
+    fn test_fused_multi_dim_int_sum_saturates_on_overflow() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+        let data: Vec<i32> = vec![i32::MAX, i32::MAX, i32::MAX, i32::MAX];
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device).unwrap();
+
+        let sum: Vec<i32> = client.sum(&a, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(sum, vec![i32::MAX]);
+
+        let neg: Vec<i32> = vec![i32::MIN, i32::MIN, i32::MIN, i32::MIN];
+        let b = Tensor::<CpuRuntime>::from_slice(&neg, &[2, 2], &device).unwrap();
+        let sum_neg: Vec<i32> = client.sum(&b, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(sum_neg, vec![i32::MIN]);
+    }
+
+    /// The same for a fused multi-dim integer `prod`, in both signs.
+    #[test]
+    fn test_fused_multi_dim_int_prod_saturates_on_overflow() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+        let data: Vec<i32> = vec![100_000, 100_000, 100_000, 1];
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[2, 2], &device).unwrap();
+
+        let prod: Vec<i32> = client.prod(&a, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(prod, vec![i32::MAX]);
+
+        let neg: Vec<i32> = vec![-100_000, 100_000, 100_000, 1];
+        let b = Tensor::<CpuRuntime>::from_slice(&neg, &[2, 2], &device).unwrap();
+        let prod_neg: Vec<i32> = client.prod(&b, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(prod_neg, vec![i32::MIN]);
+    }
+
+    /// Widening the fused multi-dim integer accumulator must not perturb a
+    /// total that already fit: both `sum` and `prod` stay exact.
+    #[test]
+    fn test_fused_multi_dim_int_sum_prod_exact_when_not_overflowing() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+        let data: Vec<i32> = vec![1, 2, 3, 4, 5, 6];
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[3, 2], &device).unwrap();
+
+        let sum: Vec<i32> = client.sum(&a, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(sum, vec![21]);
+
+        let prod: Vec<i32> = client.prod(&a, &[0, 1], false).unwrap().to_vec();
+        assert_eq!(prod, vec![720]);
+    }
+
+    /// The strided single-dim path carries the same accumulator. Reducing
+    /// dim 0 of a `[2, 3]` tensor never reaches the SIMD kernel, so it pins
+    /// the non-last-dim integer `sum` and `prod` separately.
+    #[test]
+    fn test_non_last_dim_int_sum_prod_saturate_on_overflow() {
+        let device = CpuDevice::new();
+        let client = CpuRuntime::default_client(&device);
+        let data: Vec<i32> = vec![i32::MAX, 100_000, 7, i32::MAX, 100_000, 8];
+        let a = Tensor::<CpuRuntime>::from_slice(&data, &[2, 3], &device).unwrap();
+
+        let sum: Vec<i32> = client.sum(&a, &[0], false).unwrap().to_vec();
+        assert_eq!(sum, vec![i32::MAX, 200_000, 15]);
+
+        let prod: Vec<i32> = client.prod(&a, &[0], false).unwrap().to_vec();
+        assert_eq!(prod, vec![i32::MAX, i32::MAX, 56]);
+    }
+
     #[test]
     fn test_fused_multi_dim_sum_matches_expected() {
         let device = CpuDevice::new();

@@ -4,7 +4,7 @@ use crate::dispatch_dtype;
 use crate::dtype::Element;
 use crate::error::{Error, Result};
 use crate::ops::{Kernel, ReduceOp, reduce_output_shape};
-use crate::runtime::cpu::kernels::wide_acc::int_mean_from_sum;
+use crate::runtime::cpu::kernels::wide_acc::{WideAcc, int_mean_from_sum};
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
 use crate::tensor::Tensor;
 #[cfg(feature = "rayon")]
@@ -119,12 +119,13 @@ pub(super) unsafe fn reduce_non_last_dim_outer<T: Element>(
         return;
     }
 
-    // Integer `mean` is a sum-then-divide epilogue whose sum can leave the
-    // dtype's range while the mean stays inside it. Accumulate in i128 so that
-    // case returns the representable answer instead of a wrapped one. Every
-    // other integer reduction keeps the loop below.
-    if T::DTYPE.is_int() && matches!(op, ReduceOp::Mean) {
-        reduce_mean_int_non_last_dim_outer::<T>(a, out, outer, reduce_size, inner_size);
+    // Integer `sum`, `prod` and `mean` build a running total that can leave the
+    // dtype's range: the loop below would wrap (release) or panic (debug), and
+    // for `mean` the divided result can still be representable. Accumulate in
+    // i128 and saturate once at write-out. Every other integer reduction keeps
+    // the loop below.
+    if T::DTYPE.is_int() && matches!(op, ReduceOp::Sum | ReduceOp::Prod | ReduceOp::Mean) {
+        reduce_int_non_last_dim_outer::<T>(op, a, out, outer, reduce_size, inner_size);
         return;
     }
 
@@ -191,23 +192,36 @@ pub(super) unsafe fn reduce_non_last_dim_outer<T: Element>(
     }
 }
 
-/// Integer `mean` over one non-last dimension, accumulating in i128.
+/// Integer `sum`, `prod` and `mean` over one non-last dimension, accumulating
+/// in i128. `op` must be one of those three.
 #[allow(unsafe_op_in_unsafe_fn)]
 #[inline]
-unsafe fn reduce_mean_int_non_last_dim_outer<T: Element>(
+unsafe fn reduce_int_non_last_dim_outer<T: Element>(
+    op: ReduceOp,
     a: *const T,
     out: *mut T,
     outer: usize,
     reduce_size: usize,
     inner_size: usize,
 ) {
+    let is_prod = matches!(op, ReduceOp::Prod);
+    let is_mean = matches!(op, ReduceOp::Mean);
     for inner in 0..inner_size {
-        let mut sum = 0i128;
+        let mut acc = if is_prod { i128::ONE } else { i128::ZERO };
         for r in 0..reduce_size {
             let idx = outer * reduce_size * inner_size + r * inner_size + inner;
-            sum = sum.saturating_add((*a.add(idx)).to_i128());
+            let val = i128::from_elem(*a.add(idx));
+            acc = if is_prod {
+                acc.wide_mul(val)
+            } else {
+                acc.wide_add(val)
+            };
         }
-        *out.add(outer * inner_size + inner) = int_mean_from_sum::<T>(sum, reduce_size);
+        *out.add(outer * inner_size + inner) = if is_mean {
+            int_mean_from_sum::<T>(acc, reduce_size)
+        } else {
+            acc.to_elem::<T>()
+        };
     }
 }
 
