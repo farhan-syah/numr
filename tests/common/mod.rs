@@ -101,20 +101,39 @@ pub fn assert_allclose_f32(a: &[f32], b: &[f32], rtol: f32, atol: f32, msg: &str
 /// a gap the tests exist to surface.
 pub fn backend_supported_dtypes(backend: &str) -> Vec<DType> {
     match backend {
-        // CUDA can represent every one of these, so all four are in scope.
-        // U32's missing `compare`, `cast`, and binary kernels are gaps, not a
-        // design limit, and the tests exist to surface them.
-        //
-        // The other six integer dtypes stay out: CUDA has no arithmetic
-        // pipeline for them at all.
+        // CUDA carries native kernels for every float and every integer width,
+        // so all of them are in scope. `matmul` on I8 widens to I32, which is
+        // CPU's contract too, not a CUDA quirk.
         #[cfg(feature = "cuda")]
-        "cuda" => build_dtype_list(&[DType::F32, DType::F64, DType::I32, DType::I64, DType::U32]),
+        "cuda" => build_dtype_list(&[
+            DType::F32,
+            DType::F64,
+            DType::I32,
+            DType::I64,
+            DType::U32,
+            DType::I16,
+            DType::I8,
+            DType::U64,
+            DType::U16,
+            DType::U8,
+        ]),
         #[cfg(feature = "wgpu")]
         "wgpu" => {
             // WebGPU: 32-bit types only (F32, I32, U32)
             vec![DType::F32, DType::I32, DType::U32]
         }
-        _ => build_dtype_list(&[DType::F32, DType::F64, DType::I32, DType::U32]),
+        _ => build_dtype_list(&[
+            DType::F32,
+            DType::F64,
+            DType::I32,
+            DType::I64,
+            DType::U32,
+            DType::I16,
+            DType::I8,
+            DType::U64,
+            DType::U16,
+            DType::U8,
+        ]),
     }
 }
 

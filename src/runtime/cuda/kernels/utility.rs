@@ -566,58 +566,21 @@ pub unsafe fn launch_arange(
                 ))
             })?;
         },
-        DType::I32 => unsafe {
-            let start_i32 = start as i32;
-            let step_i32 = step as i32;
+        // Every integer dtype takes the f64 start and step and saturates once at
+        // the store, which is what the CPU kernel does. Narrowing the scalars
+        // here instead would wrap a start or step the element type cannot hold.
+        DType::I64
+        | DType::I32
+        | DType::I16
+        | DType::I8
+        | DType::U64
+        | DType::U32
+        | DType::U16
+        | DType::U8 => unsafe {
             let mut builder = stream.launch_builder(&func);
             builder.arg(&out_ptr);
-            builder.arg(&start_i32);
-            builder.arg(&step_i32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        DType::I64 => unsafe {
-            let start_i64 = start as i64;
-            let step_i64 = step as i64;
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_i64);
-            builder.arg(&step_i64);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        DType::U32 => unsafe {
-            let start_u32 = start as u32;
-            let step_i32 = step as i32; // step can be negative
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_u32);
-            builder.arg(&step_i32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        DType::U64 => unsafe {
-            let start_u64 = start as u64;
-            let step_i64 = step as i64; // step can be negative
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_u64);
-            builder.arg(&step_i64);
+            builder.arg(&start);
+            builder.arg(&step);
             builder.arg(&n);
             builder.launch(cfg).map_err(|e| {
                 Error::Internal(format!(
@@ -741,8 +704,15 @@ pub unsafe fn launch_linspace(
                 ))
             })?;
         },
-        // Integer types - computation in f64, then convert
-        DType::I32 | DType::I64 | DType::U32 | DType::U64 => unsafe {
+        // Integer types - computation in f64, saturating once at the store
+        DType::I64
+        | DType::I32
+        | DType::I16
+        | DType::I8
+        | DType::U64
+        | DType::U32
+        | DType::U16
+        | DType::U8 => unsafe {
             let mut builder = stream.launch_builder(&func);
             builder.arg(&out_ptr);
             builder.arg(&start); // Use f64 for precision

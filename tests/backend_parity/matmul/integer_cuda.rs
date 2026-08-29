@@ -469,31 +469,28 @@ fn test_matmul_i16_cuda_matches_cpu() {
 // The dtypes with no CUDA integer matmul kernel stay unsupported
 // ============================================================================
 //
-// `integer_dtypes_cuda.rs` covers the widths that were added after I32/I64.
-// I8 and Bool are what is left out, and for a reason worth pinning: CPU
-// `matmul` on I8 returns an I32 tensor (quantized accumulation), so an
-// I8-in/I8-out CUDA kernel would disagree with the reference on the output
-// dtype itself. Bool has no arithmetic pipeline at all.
+// Bool is the only one left: it has no arithmetic pipeline at all. I8 used to
+// sit here because its plain `matmul` returns an I32 tensor and no CUDA kernel
+// widened; the kernel exists now, so this test pins the behaviour it replaced -
+// I8 runs, and it runs with the widened output dtype. The values live in
+// `i8_cuda.rs`.
 
 #[cfg(feature = "cuda")]
 #[test]
-fn test_matmul_i8_and_bool_stay_unsupported_on_cuda() {
+fn test_matmul_i8_widens_and_bool_stays_unsupported_on_cuda() {
     with_cuda_backend(|client, device| {
         let a_i8 = Tensor::<CudaRuntime>::from_slice(&[1i8, 2, 3, 4], &[2, 2], &device).expect("A");
         let b_i8 = Tensor::<CudaRuntime>::from_slice(&[1i8, 0, 0, 1], &[2, 2], &device).expect("B");
-        let err = client
+        let result = client
             .matmul(&a_i8, &b_i8)
-            .expect_err("I8 matmul would change the output dtype, so it must not run");
-        assert!(
-            matches!(
-                err,
-                numr::error::Error::UnsupportedDType {
-                    dtype: DType::I8,
-                    ..
-                }
-            ),
-            "expected UnsupportedDType for I8, got {err:?}"
+            .expect("I8 matmul has a native CUDA kernel");
+        assert_eq!(
+            result.dtype(),
+            DType::I32,
+            "I8 matmul must widen to I32, matching CPU's quantized accumulation"
         );
+        // B is the identity, so the product is A itself, widened.
+        assert_eq!(result.to_vec::<i32>(), vec![1i32, 2, 3, 4]);
 
         // `bool` has no `Element` impl, so a Bool tensor is allocated by dtype
         // rather than built from a slice. The contents are never read: the call

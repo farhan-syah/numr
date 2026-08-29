@@ -103,7 +103,9 @@ impl MatmulOps<CudaRuntime> for CudaClient {
                 }
             }
             // Integers never take the WMMA padding branch above, so they only
-            // need the two native entry points.
+            // need the two native entry points. I8 is included and returns an
+            // I32 tensor: the helpers allocate through `int_matmul_output_dtype`,
+            // which mirrors CPU's quantized-accumulation branch.
             d if int_matmul_has_kernel(d) => {
                 if batch_size > 1 {
                     matmul_batched_native(self, a, b, dtype, batch_size, m, k, n)
@@ -226,6 +228,9 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             // fused is the only correct form: the bias seeds the 128-bit
             // accumulator, so composing a matmul with an elementwise add would
             // saturate the product and then wrap the bias into the element type.
+            // I8 keeps its element type here — CPU `matmul_bias` has no I8
+            // branch, so the bias is I8 and so is the result. Only the plain
+            // form widens.
             d if int_matmul_has_kernel(d) => {
                 if batch_size > 1 {
                     matmul_bias_batched_native(self, a, b, bias, dtype, batch_size, m, k, n)

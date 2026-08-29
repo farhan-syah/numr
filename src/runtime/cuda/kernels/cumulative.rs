@@ -10,8 +10,8 @@ use cudarc::driver::safe::{CudaContext, CudaStream};
 use std::sync::Arc;
 
 use super::loader::{
-    BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module, kernel_name,
-    kernel_names, launch_config,
+    BLOCK_SIZE, cumulative_module, elementwise_launch_config, get_kernel_function,
+    get_or_load_module, kernel_name, launch_config,
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -49,7 +49,7 @@ pub unsafe fn launch_cumsum(
     scan_size: usize,
     outer_size: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::CUMULATIVE_MODULE)?;
+    let module = get_or_load_module(context, device_index, cumulative_module(dtype))?;
     let func_name = kernel_name("cumsum", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -99,7 +99,7 @@ pub unsafe fn launch_cumsum_strided(
     outer_size: usize,
     inner_size: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::CUMULATIVE_MODULE)?;
+    let module = get_or_load_module(context, device_index, cumulative_module(dtype))?;
     let func_name = kernel_name("cumsum_strided", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -152,7 +152,7 @@ pub unsafe fn launch_cumprod(
     scan_size: usize,
     outer_size: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::CUMULATIVE_MODULE)?;
+    let module = get_or_load_module(context, device_index, cumulative_module(dtype))?;
     let func_name = kernel_name("cumprod", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -198,7 +198,7 @@ pub unsafe fn launch_cumprod_strided(
     outer_size: usize,
     inner_size: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::CUMULATIVE_MODULE)?;
+    let module = get_or_load_module(context, device_index, cumulative_module(dtype))?;
     let func_name = kernel_name("cumprod_strided", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -257,7 +257,7 @@ pub unsafe fn launch_logsumexp(
     reduce_size: usize,
     outer_size: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::CUMULATIVE_MODULE)?;
+    let module = get_or_load_module(context, device_index, cumulative_module(dtype))?;
     let func_name = kernel_name("logsumexp", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -310,7 +310,7 @@ pub unsafe fn launch_logsumexp_strided(
     outer_size: usize,
     inner_size: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::CUMULATIVE_MODULE)?;
+    let module = get_or_load_module(context, device_index, cumulative_module(dtype))?;
     let func_name = kernel_name("logsumexp_strided", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 

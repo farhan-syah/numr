@@ -2,7 +2,7 @@
 
 use super::super::kernels::launch_scalar_op_half;
 use super::super::kernels::{
-    AccumulationPrecision, launch_binary_op, launch_broadcast_binary_op,
+    AccumulationPrecision, int_matmul_output_dtype, launch_binary_op, launch_broadcast_binary_op,
     launch_broadcast_compare_op, launch_compare_op, launch_gemv_kernel_bt_mr,
     launch_matmul_batched_kernel, launch_matmul_bias_batched_kernel, launch_matmul_bias_kernel,
     launch_matmul_kernel, launch_reduce_dim_op, launch_scalar_op_f32, launch_scalar_op_f64,
@@ -42,10 +42,15 @@ fn is_simple_transpose_2d(tensor: &Tensor<CudaRuntime>) -> bool {
     strides[0] == 1 && strides[1] == shape[0] as isize
 }
 
-/// FP8 has no GEMV kernel, so every FP8 matmul takes the tiled path.
+/// Whether this dtype may take the small-M GEMV fast path in a plain matmul.
+///
+/// FP8 has no GEMV kernel at all. I8 has none either, and could not use one: its
+/// plain matmul widens to I32 (see `int_matmul_output_dtype`) while every GEMV
+/// kernel writes the element type. CPU excludes I8 from its own GEMV-BT path for
+/// the same reason, so both backends run the tiled kernel at every M.
 #[inline]
-fn is_fp8(dtype: DType) -> bool {
-    matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2)
+fn has_gemv_kernel(dtype: DType) -> bool {
+    !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2 | DType::I8)
 }
 
 pub(crate) fn matmul_native(
@@ -64,8 +69,8 @@ pub(crate) fn matmul_native(
 
     // Fast path: if B is a transposed view of contiguous [N,K] and M is small,
     // use gemv_bt kernel directly — avoids copying the entire weight matrix.
-    // FP8 is excluded: `gemv.cu` has no FP8 kernels.
-    if m <= 16 && !is_fp8(dtype) && is_simple_transpose_2d(b) {
+    // FP8 and I8 are excluded: see `has_gemv_kernel`.
+    if m <= 16 && has_gemv_kernel(dtype) && is_simple_transpose_2d(b) {
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
@@ -93,7 +98,11 @@ pub(crate) fn matmul_native(
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+    // I8 is the one dtype whose matmul does not write its own dtype: it widens
+    // to I32, matching CPU's quantized accumulation. Every other dtype maps to
+    // itself here.
+    let out =
+        Tensor::<CudaRuntime>::empty(&out_shape, int_matmul_output_dtype(dtype), &client.device)?;
 
     unsafe {
         launch_matmul_kernel(
@@ -150,9 +159,9 @@ pub(crate) fn matmul_batched_native(
     let (a, b) = (&operands.a, &operands.b);
     let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
-    // Fast path: transposed B with small M → gemv_bt. FP8 is excluded for the
-    // same reason as in matmul_native.
-    if m <= 16 && !is_fp8(dtype) && is_batched_transpose_last2(b) {
+    // Fast path: transposed B with small M → gemv_bt. FP8 and I8 are excluded
+    // for the same reason as in matmul_native.
+    if m <= 16 && has_gemv_kernel(dtype) && is_batched_transpose_last2(b) {
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
@@ -180,7 +189,9 @@ pub(crate) fn matmul_batched_native(
     let a_contig = ensure_contiguous(a)?;
     let b_contig = ensure_contiguous(b)?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+    // I8 widens to I32 here too — see `matmul_native`.
+    let out =
+        Tensor::<CudaRuntime>::empty(&out_shape, int_matmul_output_dtype(dtype), &client.device)?;
 
     unsafe {
         launch_matmul_batched_kernel(

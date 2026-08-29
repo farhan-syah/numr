@@ -319,6 +319,8 @@ pub mod kernel_names {
     pub const MATMUL_FP8_MODULE: &str = "matmul_fp8";
     /// Cumulative operations (cumsum, cumprod, logsumexp)
     pub const CUMULATIVE_MODULE: &str = "cumulative";
+    /// Integer cumulative operations, which accumulate in `Numr128`
+    pub const CUMULATIVE_INT_MODULE: &str = "cumulative_int";
     /// Distribution sampling operations (bernoulli, beta, gamma, etc.)
     pub const DISTRIBUTIONS_MODULE: &str = "distributions";
     /// Quasi-random sequence generation (sobol, halton, latin_hypercube)
@@ -383,8 +385,8 @@ pub fn kernel_name(base: &str, dtype: DType) -> String {
 /// Integer GEMV lives in its own translation unit: it accumulates in `Numr128`
 /// instead of a float register, and `gemv.cu` is already at its size limit.
 /// Every dtype that reaches a GEMV launcher has kernels in one module or the
-/// other, so there is no dtype gate on the small-M fast path: `matmul` admits
-/// only dtypes that `int_matmul_has_kernel` or `gemv.cu` covers.
+/// other. The small-M fast paths gate on dtype in exactly one place — I8, which
+/// `gemv_int.cu` does not instantiate because its matmul widens to I32.
 #[inline]
 fn gemv_module(dtype: DType) -> &'static str {
     if dtype.is_int() {
@@ -394,17 +396,52 @@ fn gemv_module(dtype: DType) -> &'static str {
     }
 }
 
-/// Whether `matmul_int.cu` and `gemv_int.cu` instantiate this dtype.
+/// Whether `matmul_int.cu` instantiates tiled GEMM kernels for this dtype.
 ///
-/// Both files instantiate the same list, so one predicate gates the tiled GEMM
-/// and the GEMV fast paths together, and `ops/cuda/matmul.rs` gates the public
-/// entry point on it. Every integer dtype is covered except I8: CPU `matmul` on
-/// I8 returns an I32 tensor (quantized accumulation, see `ops/cpu/matmul.rs`),
-/// so an I8-in/I8-out CUDA kernel would disagree with the reference on both the
-/// output dtype and the value.
+/// Every integer dtype has them, and `ops/cuda/matmul.rs` gates the public entry
+/// point on this. Bool is the only integer-adjacent dtype left out, and
+/// `DType::is_int` already excludes it.
+///
+/// `gemv_int.cu` instantiates the same list except I8, so the small-M GEMV fast
+/// paths carry their own I8 guard — see [`int_matmul_output_dtype`] for why an
+/// I8 GEMV kernel would be the wrong shape to write.
 #[inline]
 pub fn int_matmul_has_kernel(dtype: DType) -> bool {
-    dtype.is_int() && dtype != DType::I8
+    dtype.is_int()
+}
+
+/// The dtype a plain integer `matmul` writes for this element type.
+///
+/// I8 is the one width that widens: CPU `matmul` on I8 allocates an I32 output
+/// and runs `matmul_i8_to_i32_kernel` (quantized accumulation, see the I8 branch
+/// in `ops/cpu/matmul.rs`), so CUDA writes I32 too. Every other integer width
+/// writes its own dtype.
+///
+/// This covers the plain form only. CPU `matmul_bias` has no I8 branch, so a
+/// fused-bias I8 matmul takes an I8 bias and returns I8.
+#[inline]
+pub fn int_matmul_output_dtype(dtype: DType) -> DType {
+    if dtype == DType::I8 {
+        DType::I32
+    } else {
+        dtype
+    }
+}
+
+/// The PTX module holding this dtype's cumulative kernels.
+///
+/// Integer `cumsum` and `cumprod` live in their own translation unit: they
+/// accumulate in `Numr128` instead of a float register, and there is no integer
+/// `logsumexp`. `cumulative_int.cu` uses the same kernel names and the same
+/// launch ABI as `cumulative.cu`, so this is a straight swap of module, never of
+/// kernel name.
+#[inline]
+pub(crate) fn cumulative_module(dtype: DType) -> &'static str {
+    if dtype.is_int() {
+        kernel_names::CUMULATIVE_INT_MODULE
+    } else {
+        kernel_names::CUMULATIVE_MODULE
+    }
 }
 
 /// The PTX module holding this dtype's reduction kernels.
@@ -710,7 +747,11 @@ pub unsafe fn launch_matmul_kernel(
     }
     // Use GEMV kernel for small M (single-token decode in LLM inference)
     // The tiled GEMM wastes 99%+ compute when M < block_m (typically 128)
-    if m <= 16 {
+    //
+    // I8 is excluded: its plain matmul writes I32, and `gemv_int.cu` has no
+    // kernel that widens. CPU excludes I8 from its own GEMV-BT fast path for the
+    // same reason, so both backends reach the tiled kernel at every M.
+    if m <= 16 && dtype != DType::I8 {
         unsafe {
             return launch_gemv_kernel(
                 context,
@@ -1258,7 +1299,15 @@ unsafe fn launch_matmul_int_tiled(
         (true, true) => "matmul_bias",
         (true, false) => "matmul_bias_batched",
     };
-    let kernel_fn_name = format!("{}_{}_tiled_64x64x8_4x4", base, dtype_suffix(dtype));
+    // The plain I8 kernels write I32, so they carry an `i8_i32` suffix instead
+    // of the bare element suffix. The fused-bias I8 kernels write I8 like every
+    // other width and keep the plain suffix.
+    let suffix = if dtype == DType::I8 && bias_ptr.is_none() {
+        "i8_i32"
+    } else {
+        dtype_suffix(dtype)
+    };
+    let kernel_fn_name = format!("{}_{}_tiled_64x64x8_4x4", base, suffix);
 
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_INT_MODULE)?;
     let func = get_kernel_function(&module, &kernel_fn_name)?;
@@ -1475,8 +1524,10 @@ pub unsafe fn launch_matmul_batched_kernel(
             );
         }
     }
-    // Use GEMV kernel for small M (batched case)
-    if m <= 16 {
+    // Use GEMV kernel for small M (batched case). I8 is excluded for the same
+    // reason as in `launch_matmul_kernel`: it widens to I32 and `gemv_int.cu`
+    // has no widening kernel.
+    if m <= 16 && dtype != DType::I8 {
         unsafe {
             return launch_gemv_kernel(
                 context,

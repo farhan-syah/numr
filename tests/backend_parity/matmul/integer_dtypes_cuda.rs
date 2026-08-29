@@ -19,9 +19,9 @@
 //    that overflow the element type assert the clamped value, which is the one
 //    place a wrapping kernel is visibly wrong.
 //
-// I8 is absent by design: CPU `matmul` on I8 returns an I32 tensor (quantized
-// accumulation), so there is no I8-in/I8-out reference to match. See the
-// boundary test in `integer_cuda.rs`.
+// I8 is absent by design: its plain `matmul` returns an I32 tensor (quantized
+// accumulation), so the generic helpers here - which assert the output dtype is
+// the element type - cannot express it. It has its own file, `i8_cuda.rs`.
 //
 // Every test is `#[cfg(feature = "cuda")]`, so these imports are too.
 #[cfg(feature = "cuda")]

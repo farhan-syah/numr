@@ -45,6 +45,7 @@ fn compile_cuda_kernels() {
         "complex.cu",
         "conv.cu",
         "cumulative.cu",
+        "cumulative_int.cu",
         "distance.cu",
         "distributions.cu",
         "fft.cu",

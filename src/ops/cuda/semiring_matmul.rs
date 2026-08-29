@@ -40,7 +40,7 @@ impl SemiringMatmulOps<CudaRuntime> for CudaClient {
 
         // Supported CUDA kernel dtypes
         match dtype {
-            DType::F32 | DType::F64 | DType::I32 | DType::Bool | DType::U8 => {}
+            DType::F32 | DType::F64 | DType::I32 | DType::I64 | DType::Bool | DType::U8 => {}
             #[cfg(feature = "f16")]
             DType::F16 | DType::BF16 => {}
             #[cfg(feature = "fp8")]

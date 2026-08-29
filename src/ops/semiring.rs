@@ -32,6 +32,50 @@ pub enum SemiringOp {
     PlusMax,
 }
 
+/// Wrapping add for `combine`'s `+` (`MinPlus`/`MaxPlus`) and `PlusMax`'s
+/// `reduce`.
+///
+/// Rust's plain `+` panics on integer overflow in a debug build and wraps in
+/// release, so a library op cannot use it directly — the same defect class
+/// already fixed for element-wise binary ops in
+/// `src/runtime/cpu/kernels/binary_int.rs`. Per the convention documented in
+/// `src/runtime/cpu/kernels/wide_acc.rs`, **element-wise ops wrap, only
+/// accumulators saturate**.
+///
+/// `combine` is element-wise by definition (one op, one pair of elements), so
+/// it wraps. `PlusMax`'s `reduce` folds across K and looks like an
+/// accumulator, but it is not one here: the CUDA reference kernel
+/// (`runtime/cuda/kernels/semiring_matmul_ops.cuh`, `numr_sr_add`) does the
+/// addition in the unsigned type of the same width and casts back, i.e. it
+/// wraps, precisely because `combine` for `MinPlus`/`MaxPlus` and `reduce` for
+/// `PlusMax` are both "one elementwise addition" to that kernel — there is no
+/// separate saturating accumulator path for `+` in this semiring family.
+/// Wrapping here, not saturating, is what keeps CPU and CUDA producing
+/// identical results.
+///
+/// `binary_int_elem` in `src/runtime/cpu/kernels/binary_int.rs` already
+/// implements this wrapping convention, but it is `pub(super)` — visible only
+/// inside `runtime::cpu::kernels`, not from `ops::semiring`. Reusing it would
+/// require widening that visibility for a single call site, so this defines
+/// its own narrow helper instead: `SemiringOp::validate_dtype` only ever
+/// admits `I32`/`I64` as integer element types here (`OrAnd`, the only other
+/// integer-carrying variant, never calls this), so only those two need a
+/// dedicated path.
+#[inline]
+fn wrapping_add<T: Element>(a: T, b: T) -> T {
+    match T::DTYPE {
+        DType::I32 => {
+            let r = bytemuck::cast::<T, i32>(a).wrapping_add(bytemuck::cast::<T, i32>(b));
+            bytemuck::cast::<i32, T>(r)
+        }
+        DType::I64 => {
+            let r = bytemuck::cast::<T, i64>(a).wrapping_add(bytemuck::cast::<T, i64>(b));
+            bytemuck::cast::<i64, T>(r)
+        }
+        _ => a + b,
+    }
+}
+
 impl SemiringOp {
     /// Returns the identity element for the reduce operation as f64.
     ///
@@ -60,7 +104,7 @@ impl SemiringOp {
     #[inline]
     pub fn combine<T: Element>(self, a: T, b: T) -> T {
         match self {
-            SemiringOp::MinPlus | SemiringOp::MaxPlus => a + b,
+            SemiringOp::MinPlus | SemiringOp::MaxPlus => wrapping_add(a, b),
             SemiringOp::MaxMin => {
                 // combine = min
                 if a <= b { a } else { b }
@@ -106,7 +150,7 @@ impl SemiringOp {
             }
             SemiringOp::PlusMax => {
                 // sum
-                acc + val
+                wrapping_add(acc, val)
             }
         }
     }
@@ -229,6 +273,32 @@ mod tests {
     fn test_display() {
         assert_eq!(format!("{}", SemiringOp::MinPlus), "(min, +)");
         assert_eq!(format!("{}", SemiringOp::OrAnd), "(OR, AND)");
+    }
+
+    #[test]
+    fn test_combine_int_wraps_at_overflow_boundary() {
+        // MinPlus/MaxPlus combine is `+`. On the pre-fix code this panics in a
+        // debug build instead of wrapping.
+        assert_eq!(SemiringOp::MinPlus.combine(i32::MAX, 1i32), i32::MIN);
+        assert_eq!(SemiringOp::MaxPlus.combine(i32::MAX, 1i32), i32::MIN);
+        assert_eq!(SemiringOp::MinPlus.combine(i64::MAX, 1i64), i64::MIN);
+    }
+
+    #[test]
+    fn test_plus_max_reduce_int_wraps_at_overflow_boundary() {
+        // PlusMax's reduce is `+` too, and it wraps rather than saturates:
+        // the CUDA reference kernel does the same elementwise addition (in
+        // the unsigned type of the same width) for this path, so CPU must
+        // agree rather than clamp.
+        assert_eq!(SemiringOp::PlusMax.reduce(i32::MAX, 1i32), i32::MIN);
+        assert_eq!(SemiringOp::PlusMax.reduce(i64::MAX, 1i64), i64::MIN);
+    }
+
+    #[test]
+    fn test_combine_and_reduce_int_non_overflowing_unchanged() {
+        assert_eq!(SemiringOp::MinPlus.combine(3i32, 5i32), 8);
+        assert_eq!(SemiringOp::PlusMax.reduce(3i32, 5i32), 8);
+        assert_eq!(SemiringOp::MaxPlus.combine(3i64, 5i64), 8);
     }
 
     #[test]

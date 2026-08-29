@@ -88,18 +88,28 @@ fn readback_as_u32<R: Runtime<DType = DType>>(tensor: &Tensor<R>) -> Vec<u32> {
         };
     }
 
+    // Integers compare against zero in their own type: a u64 or i64 mask value
+    // must not round-trip through f64 on its way to a nonzero test.
+    macro_rules! via_int {
+        ($T:ty) => {
+            tensor
+                .to_vec::<$T>()
+                .iter()
+                .map(|&x| if x != 0 { 1u32 } else { 0u32 })
+                .collect()
+        };
+    }
+
     match tensor.dtype() {
         DType::Bool => tensor.to_vec::<u8>().iter().map(|&x| x as u32).collect(),
-        DType::U32 => tensor
-            .to_vec::<u32>()
-            .iter()
-            .map(|&x| if x != 0 { 1 } else { 0 })
-            .collect(),
-        DType::I32 => tensor
-            .to_vec::<i32>()
-            .iter()
-            .map(|&x| if x != 0 { 1 } else { 0 })
-            .collect(),
+        DType::U64 => via_int!(u64),
+        DType::U32 => via_int!(u32),
+        DType::U16 => via_int!(u16),
+        DType::U8 => via_int!(u8),
+        DType::I64 => via_int!(i64),
+        DType::I32 => via_int!(i32),
+        DType::I16 => via_int!(i16),
+        DType::I8 => via_int!(i8),
         DType::F32 => via_f64!(f32),
         DType::F64 => via_f64!(f64),
         #[cfg(feature = "f16")]
