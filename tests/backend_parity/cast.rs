@@ -417,3 +417,184 @@ fn test_cast_empty_cuda() {
         assert_eq!(result.numel(), 0);
     });
 }
+
+// ============================================================================
+// FP8 subnormal encoding - CUDA parity
+// ============================================================================
+//
+// The FP8 encoder exists twice: `src/dtype/fp8.rs` on CPU and
+// `runtime/cuda/kernels/dtype_traits.cuh` on CUDA. Both once shifted the
+// subnormal mantissa one bit too far, halving every subnormal and flushing the
+// smallest one to zero. The FP8 tolerance is atol=2.5, so no allclose check can
+// see an error of 2^-9 — these compare raw encodings instead.
+
+/// Every value whose E4M3 encoding is decided by the subnormal path, plus the
+/// rounding boundaries on either side of it.
+#[cfg(all(feature = "fp8", feature = "cuda"))]
+fn e4m3_subnormal_probes() -> Vec<f32> {
+    let mut values = Vec::new();
+    for m in 1..=7 {
+        // The m-th subnormal, straight from the format definition.
+        values.push((m as f32 / 8.0) * 2.0f32.powi(-6));
+    }
+    values.push(0.75 * 2.0f32.powi(-9)); // above the midpoint: rounds up
+    values.push(1.5 * 2.0f32.powi(-9)); // exact tie: rounds to even
+    values.push(2.0f32.powi(-10)); // tie against zero: rounds to zero
+    values.push(2.0f32.powi(-11)); // below the tie: zero
+    values.push(2.0f32.powi(-6)); // smallest normal, one step above the range
+    let negatives: Vec<f32> = values.iter().map(|v| -v).collect();
+    values.extend(negatives);
+    values
+}
+
+/// Same for E5M2, whose subnormals are (m / 4) * 2^-14.
+#[cfg(all(feature = "fp8", feature = "cuda"))]
+fn e5m2_subnormal_probes() -> Vec<f32> {
+    let mut values = Vec::new();
+    for m in 1..=3 {
+        values.push((m as f32 / 4.0) * 2.0f32.powi(-14));
+    }
+    values.push(0.75 * 2.0f32.powi(-16));
+    values.push(1.5 * 2.0f32.powi(-16));
+    values.push(2.0f32.powi(-17));
+    values.push(2.0f32.powi(-18));
+    values.push(2.0f32.powi(-14));
+    let negatives: Vec<f32> = values.iter().map(|v| -v).collect();
+    values.extend(negatives);
+    values
+}
+
+#[cfg(all(feature = "fp8", feature = "cuda"))]
+#[test]
+fn test_cast_f32_fp8e4m3_subnormal_bits_cuda_matches_cpu() {
+    use numr::dtype::FP8E4M3;
+
+    let values = e4m3_subnormal_probes();
+    let shape = [values.len()];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let cpu_src = Tensor::from_slice::<f32>(&values, &shape, &cpu_device).unwrap();
+    let cpu_out = cpu_client.cast(&cpu_src, DType::FP8E4M3).unwrap();
+    let cpu_bits: Vec<u8> = cpu_out
+        .to_vec::<FP8E4M3>()
+        .iter()
+        .map(|v| v.to_bits())
+        .collect();
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let src = Tensor::from_slice::<f32>(&values, &shape, &cuda_device).unwrap();
+        let out = cuda_client.cast(&src, DType::FP8E4M3).unwrap();
+        let bits: Vec<u8> = out
+            .to_vec::<FP8E4M3>()
+            .iter()
+            .map(|v| v.to_bits())
+            .collect();
+        for (i, (&cuda_bit, &cpu_bit)) in bits.iter().zip(cpu_bits.iter()).enumerate() {
+            assert_eq!(
+                cuda_bit, cpu_bit,
+                "E4M3 encoding of {} differs: CUDA 0x{:02X} vs CPU 0x{:02X}",
+                values[i], cuda_bit, cpu_bit
+            );
+        }
+    });
+}
+
+#[cfg(all(feature = "fp8", feature = "cuda"))]
+#[test]
+fn test_cast_f32_fp8e5m2_subnormal_bits_cuda_matches_cpu() {
+    use numr::dtype::FP8E5M2;
+
+    let values = e5m2_subnormal_probes();
+    let shape = [values.len()];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let cpu_src = Tensor::from_slice::<f32>(&values, &shape, &cpu_device).unwrap();
+    let cpu_out = cpu_client.cast(&cpu_src, DType::FP8E5M2).unwrap();
+    let cpu_bits: Vec<u8> = cpu_out
+        .to_vec::<FP8E5M2>()
+        .iter()
+        .map(|v| v.to_bits())
+        .collect();
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let src = Tensor::from_slice::<f32>(&values, &shape, &cuda_device).unwrap();
+        let out = cuda_client.cast(&src, DType::FP8E5M2).unwrap();
+        let bits: Vec<u8> = out
+            .to_vec::<FP8E5M2>()
+            .iter()
+            .map(|v| v.to_bits())
+            .collect();
+        for (i, (&cuda_bit, &cpu_bit)) in bits.iter().zip(cpu_bits.iter()).enumerate() {
+            assert_eq!(
+                cuda_bit, cpu_bit,
+                "E5M2 encoding of {} differs: CUDA 0x{:02X} vs CPU 0x{:02X}",
+                values[i], cuda_bit, cpu_bit
+            );
+        }
+    });
+}
+
+/// Every one of the 256 encodings decodes to the same f32 on both backends.
+/// The CUDA decoder once returned a large finite number where the format defines
+/// NaN or infinity, which no test over ordinary values reaches.
+#[cfg(all(feature = "fp8", feature = "cuda"))]
+#[test]
+fn test_cast_fp8_all_encodings_decode_cuda_matches_cpu() {
+    use numr::dtype::{FP8E4M3, FP8E5M2};
+
+    let e4m3: Vec<FP8E4M3> = (0..=u8::MAX).map(FP8E4M3::from_bits).collect();
+    let e5m2: Vec<FP8E5M2> = (0..=u8::MAX).map(FP8E5M2::from_bits).collect();
+    let shape = [256usize];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let cpu_e4m3 = cpu_client
+        .cast(
+            &Tensor::from_slice::<FP8E4M3>(&e4m3, &shape, &cpu_device).unwrap(),
+            DType::F32,
+        )
+        .unwrap()
+        .to_vec::<f32>();
+    let cpu_e5m2 = cpu_client
+        .cast(
+            &Tensor::from_slice::<FP8E5M2>(&e5m2, &shape, &cpu_device).unwrap(),
+            DType::F32,
+        )
+        .unwrap()
+        .to_vec::<f32>();
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let cuda_e4m3 = cuda_client
+            .cast(
+                &Tensor::from_slice::<FP8E4M3>(&e4m3, &shape, &cuda_device).unwrap(),
+                DType::F32,
+            )
+            .unwrap()
+            .to_vec::<f32>();
+        let cuda_e5m2 = cuda_client
+            .cast(
+                &Tensor::from_slice::<FP8E5M2>(&e5m2, &shape, &cuda_device).unwrap(),
+                DType::F32,
+            )
+            .unwrap()
+            .to_vec::<f32>();
+
+        for (bits, (&a, &e)) in cuda_e4m3.iter().zip(cpu_e4m3.iter()).enumerate() {
+            assert!(
+                a.to_bits() == e.to_bits() || (a.is_nan() && e.is_nan()),
+                "E4M3 0x{:02X} decodes to {} on CUDA and {} on CPU",
+                bits,
+                a,
+                e
+            );
+        }
+        for (bits, (&a, &e)) in cuda_e5m2.iter().zip(cpu_e5m2.iter()).enumerate() {
+            assert!(
+                a.to_bits() == e.to_bits() || (a.is_nan() && e.is_nan()),
+                "E5M2 0x{:02X} decodes to {} on CUDA and {} on CPU",
+                bits,
+                a,
+                e
+            );
+        }
+    });
+}

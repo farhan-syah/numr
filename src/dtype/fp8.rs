@@ -101,7 +101,7 @@ impl FP8E4M3 {
     ///
     /// Values outside the representable range are clamped:
     /// - |x| > 448 → ±MAX
-    /// - |x| < 2^-9 → ±0
+    /// - |x| ≤ 2^-10 → ±0 (round-to-nearest below the smallest subnormal)
     ///
     /// See [`f32_to_fp8_e4m3`] for detailed conversion semantics.
     #[inline]
@@ -301,7 +301,7 @@ impl FP8E5M2 {
     ///
     /// Values outside the representable range are clamped:
     /// - |x| > 57344 → ±Infinity
-    /// - |x| < 2^-16 → ±0
+    /// - |x| ≤ 2^-17 → ±0 (round-to-nearest below the smallest subnormal)
     ///
     /// See [`f32_to_fp8_e5m2`] for detailed conversion semantics.
     #[inline]
@@ -485,7 +485,7 @@ unsafe impl DeviceRepr for FP8E5M2 {}
 /// # Saturation Behavior
 ///
 /// - **Overflow** (|x| > 448): Saturates to ±MAX (0x7E / 0xFE)
-/// - **Underflow** (|x| < ~2^-9): Saturates to ±0
+/// - **Underflow** (|x| ≤ 2^-10): Rounds to ±0
 /// - **Infinity**: Saturates to ±MAX (E4M3 has no infinity representation)
 /// - **NaN**: Preserved as NaN (0x7F / 0xFF)
 /// - **Subnormals**: Converted correctly with gradual underflow
@@ -540,24 +540,37 @@ pub fn f32_to_fp8_e4m3(x: f32) -> u8 {
         return 0x7E | (sign << 7);
     }
 
-    if unbiased_exp < -9 {
-        // Underflow -> zero
+    if unbiased_exp < -10 {
+        // Below half the smallest subnormal (2^-10), so round-to-nearest gives zero.
         return sign << 7;
     }
 
     // Handle subnormals in E4M3 (exp stored as 0)
     if unbiased_exp < -6 {
-        // E4M3 subnormal: exp=0, implicit leading 0
-        // Value = 0.mant * 2^(-6)
-        let shift = (-6 - unbiased_exp) as u32;
-        let fp8_mant = if exp == 0 {
-            // F32 subnormal: add implicit 0.xxx
-            mant >> (23 - 3 + shift)
+        // E4M3 subnormal: exp=0, implicit leading 0.
+        // Value = (fp8_mant / 8) * 2^-6 = fp8_mant * 2^-9.
+        // The f32 significand is the value scaled by 2^(23 - unbiased_exp),
+        // so fp8_mant = significand >> (14 - unbiased_exp).
+        let significand = if exp == 0 {
+            // F32 subnormal: no implicit leading 1.
+            mant
         } else {
             // F32 normal: add implicit 1.xxx
-            (0x800000 | mant) >> (23 - 3 + shift + 1)
+            0x800000 | mant
         };
-        return (sign << 7) | (fp8_mant as u8 & 0x07);
+        let shift = (14 - unbiased_exp) as u32;
+        let truncated = significand >> shift;
+        let round_bit = (significand >> (shift - 1)) & 1;
+        let remainder = significand & ((1 << (shift - 1)) - 1);
+        // Round to nearest even, matching the normal path.
+        let fp8_mant = if round_bit != 0 && (remainder != 0 || (truncated & 1) != 0) {
+            truncated + 1
+        } else {
+            truncated
+        };
+        // A carry out of the 3-bit mantissa lands in the exponent field, which is
+        // exactly the smallest normal. No mask, or the carry would be discarded.
+        return (sign << 7) | fp8_mant as u8;
     }
 
     // Normal E4M3 value
@@ -661,7 +674,7 @@ pub fn fp8_e4m3_to_f32(x: u8) -> f32 {
 /// # Saturation Behavior
 ///
 /// - **Overflow** (|x| > 57344): Saturates to ±Infinity (0x7C / 0xFC)
-/// - **Underflow** (|x| < ~2^-16): Saturates to ±0
+/// - **Underflow** (|x| ≤ 2^-17): Rounds to ±0
 /// - **Infinity**: Preserved as ±Infinity (E5M2 supports infinity)
 /// - **NaN**: Preserved as NaN (0x7D-0x7F / 0xFD-0xFF)
 /// - **Subnormals**: Converted correctly with gradual underflow
@@ -714,22 +727,31 @@ pub fn f32_to_fp8_e5m2(x: f32) -> u8 {
         return 0x7C | (sign << 7);
     }
 
-    if unbiased_exp < -16 {
-        // Underflow -> zero
+    if unbiased_exp < -17 {
+        // Below half the smallest subnormal (2^-17), so round-to-nearest gives zero.
         return sign << 7;
     }
 
     // Handle subnormals in E5M2 (exp stored as 0)
     if unbiased_exp < -14 {
-        // E5M2 subnormal: exp=0, implicit leading 0
-        // Value = 0.mant * 2^(-14)
-        let shift = (-14 - unbiased_exp) as u32;
-        let fp8_mant = if exp == 0 {
-            mant >> (23 - 2 + shift)
+        // E5M2 subnormal: exp=0, implicit leading 0.
+        // Value = (fp8_mant / 4) * 2^-14 = fp8_mant * 2^-16.
+        // The f32 significand is the value scaled by 2^(23 - unbiased_exp),
+        // so fp8_mant = significand >> (7 - unbiased_exp).
+        let significand = if exp == 0 { mant } else { 0x800000 | mant };
+        let shift = (7 - unbiased_exp) as u32;
+        let truncated = significand >> shift;
+        let round_bit = (significand >> (shift - 1)) & 1;
+        let remainder = significand & ((1 << (shift - 1)) - 1);
+        // Round to nearest even, matching the normal path.
+        let fp8_mant = if round_bit != 0 && (remainder != 0 || (truncated & 1) != 0) {
+            truncated + 1
         } else {
-            (0x800000 | mant) >> (23 - 2 + shift + 1)
+            truncated
         };
-        return (sign << 7) | (fp8_mant as u8 & 0x03);
+        // A carry out of the 2-bit mantissa lands in the exponent field, which is
+        // exactly the smallest normal. No mask, or the carry would be discarded.
+        return (sign << 7) | fp8_mant as u8;
     }
 
     // Normal E5M2 value
@@ -993,6 +1015,193 @@ mod tests {
         let back: &[FP8E4M3] = bytemuck::cast_slice(bytes);
         assert_eq!(back[0], FP8E4M3::ZERO);
         assert_eq!(back[1], FP8E4M3::ONE);
+    }
+
+    // ========== Subnormal Encoding Tests ==========
+    //
+    // Derived from the format definitions, not from observed behaviour:
+    // E4M3 subnormals are (m / 8) * 2^-6 for m in 1..=7.
+    // E5M2 subnormals are (m / 4) * 2^-14 for m in 1..=3.
+
+    /// The m-th E4M3 subnormal, straight from the format definition.
+    fn e4m3_subnormal(m: u8) -> f32 {
+        (m as f32 / 8.0) * 2.0f32.powi(-6)
+    }
+
+    /// The m-th E5M2 subnormal, straight from the format definition.
+    fn e5m2_subnormal(m: u8) -> f32 {
+        (m as f32 / 4.0) * 2.0f32.powi(-14)
+    }
+
+    #[test]
+    fn test_fp8_e4m3_every_subnormal_roundtrips_exactly() {
+        for m in 1u8..=7 {
+            let value = e4m3_subnormal(m);
+            let encoded = FP8E4M3::from_f32(value);
+            assert_eq!(
+                encoded.to_bits(),
+                m,
+                "E4M3 subnormal {} should encode to mantissa {}",
+                value,
+                m
+            );
+            assert_eq!(
+                encoded.to_f32(),
+                value,
+                "E4M3 subnormal roundtrip failed for m={}",
+                m
+            );
+
+            let neg = FP8E4M3::from_f32(-value);
+            assert_eq!(neg.to_bits(), 0x80 | m);
+            assert_eq!(neg.to_f32(), -value);
+        }
+    }
+
+    #[test]
+    fn test_fp8_e4m3_smallest_subnormal_survives() {
+        // 2^-9 is the smallest E4M3 subnormal and must not flush to zero.
+        let smallest = 2.0f32.powi(-9);
+        assert_eq!(smallest, e4m3_subnormal(1));
+        assert_eq!(FP8E4M3::from_f32(smallest).to_f32(), smallest);
+        assert_eq!(FP8E4M3::from_f32(-smallest).to_f32(), -smallest);
+    }
+
+    #[test]
+    fn test_fp8_e4m3_subnormal_normal_boundary() {
+        // Largest subnormal is 7 * 2^-9, the next value up is the smallest normal 2^-6.
+        let largest_sub = e4m3_subnormal(7);
+        assert_eq!(FP8E4M3::from_f32(largest_sub).to_bits(), 0x07);
+        assert_eq!(FP8E4M3::from_f32(largest_sub).to_f32(), largest_sub);
+
+        let smallest_normal = 2.0f32.powi(-6);
+        assert_eq!(
+            FP8E4M3::from_f32(smallest_normal).to_bits(),
+            FP8E4M3::MIN_POSITIVE.to_bits()
+        );
+        assert_eq!(FP8E4M3::from_f32(smallest_normal).to_f32(), smallest_normal);
+        assert_eq!(
+            FP8E4M3::from_f32(-smallest_normal).to_f32(),
+            -smallest_normal
+        );
+    }
+
+    #[test]
+    fn test_fp8_e4m3_below_smallest_subnormal_flushes_to_zero() {
+        // 2^-10 is an exact tie against zero; round-to-nearest-even picks zero.
+        for &value in &[2.0f32.powi(-10), 2.0f32.powi(-11), 2.0f32.powi(-20), 1e-10] {
+            assert_eq!(FP8E4M3::from_f32(value).to_f32(), 0.0, "value {}", value);
+            assert_eq!(FP8E4M3::from_f32(-value).to_f32(), 0.0, "value {}", -value);
+        }
+    }
+
+    #[test]
+    fn test_fp8_e4m3_subnormal_rounds_to_nearest_even() {
+        // 0.75 * 2^-9 sits above the midpoint, so it rounds up to the smallest subnormal.
+        let value = 0.75 * 2.0f32.powi(-9);
+        assert_eq!(FP8E4M3::from_f32(value).to_f32(), 2.0f32.powi(-9));
+
+        // 1.5 * 2^-9 is a tie between m=1 and m=2; even wins.
+        let tie = 1.5 * 2.0f32.powi(-9);
+        assert_eq!(FP8E4M3::from_f32(tie).to_f32(), 2.0 * 2.0f32.powi(-9));
+    }
+
+    #[test]
+    fn test_fp8_e4m3_normals_unchanged() {
+        for &value in &[0.5f32, 1.0, 1.5, 2.0, 3.0, 16.0, 448.0, 0.015625] {
+            assert_eq!(FP8E4M3::from_f32(value).to_f32(), value, "value {}", value);
+            assert_eq!(
+                FP8E4M3::from_f32(-value).to_f32(),
+                -value,
+                "value {}",
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn test_fp8_e5m2_every_subnormal_roundtrips_exactly() {
+        for m in 1u8..=3 {
+            let value = e5m2_subnormal(m);
+            let encoded = FP8E5M2::from_f32(value);
+            assert_eq!(
+                encoded.to_bits(),
+                m,
+                "E5M2 subnormal {} should encode to mantissa {}",
+                value,
+                m
+            );
+            assert_eq!(
+                encoded.to_f32(),
+                value,
+                "E5M2 subnormal roundtrip failed for m={}",
+                m
+            );
+
+            let neg = FP8E5M2::from_f32(-value);
+            assert_eq!(neg.to_bits(), 0x80 | m);
+            assert_eq!(neg.to_f32(), -value);
+        }
+    }
+
+    #[test]
+    fn test_fp8_e5m2_smallest_subnormal_survives() {
+        // 2^-16 is the smallest E5M2 subnormal and must not flush to zero.
+        let smallest = 2.0f32.powi(-16);
+        assert_eq!(smallest, e5m2_subnormal(1));
+        assert_eq!(FP8E5M2::from_f32(smallest).to_f32(), smallest);
+        assert_eq!(FP8E5M2::from_f32(-smallest).to_f32(), -smallest);
+    }
+
+    #[test]
+    fn test_fp8_e5m2_subnormal_normal_boundary() {
+        let largest_sub = e5m2_subnormal(3);
+        assert_eq!(FP8E5M2::from_f32(largest_sub).to_bits(), 0x03);
+        assert_eq!(FP8E5M2::from_f32(largest_sub).to_f32(), largest_sub);
+
+        let smallest_normal = 2.0f32.powi(-14);
+        assert_eq!(
+            FP8E5M2::from_f32(smallest_normal).to_bits(),
+            FP8E5M2::MIN_POSITIVE.to_bits()
+        );
+        assert_eq!(FP8E5M2::from_f32(smallest_normal).to_f32(), smallest_normal);
+        assert_eq!(
+            FP8E5M2::from_f32(-smallest_normal).to_f32(),
+            -smallest_normal
+        );
+    }
+
+    #[test]
+    fn test_fp8_e5m2_below_smallest_subnormal_flushes_to_zero() {
+        // 2^-17 is an exact tie against zero; round-to-nearest-even picks zero.
+        for &value in &[2.0f32.powi(-17), 2.0f32.powi(-18), 2.0f32.powi(-30), 1e-12] {
+            assert_eq!(FP8E5M2::from_f32(value).to_f32(), 0.0, "value {}", value);
+            assert_eq!(FP8E5M2::from_f32(-value).to_f32(), 0.0, "value {}", -value);
+        }
+    }
+
+    #[test]
+    fn test_fp8_e5m2_subnormal_rounds_to_nearest_even() {
+        // 0.75 * 2^-16 sits above the midpoint, so it rounds up to the smallest subnormal.
+        let value = 0.75 * 2.0f32.powi(-16);
+        assert_eq!(FP8E5M2::from_f32(value).to_f32(), 2.0f32.powi(-16));
+
+        // 1.5 * 2^-16 is a tie between m=1 and m=2; even wins.
+        let tie = 1.5 * 2.0f32.powi(-16);
+        assert_eq!(FP8E5M2::from_f32(tie).to_f32(), 2.0 * 2.0f32.powi(-16));
+    }
+
+    #[test]
+    fn test_fp8_e5m2_normals_unchanged() {
+        for &value in &[0.5f32, 1.0, 1.5, 2.0, 3.0, 16.0, 57344.0, 0.25] {
+            assert_eq!(FP8E5M2::from_f32(value).to_f32(), value, "value {}", value);
+            assert_eq!(
+                FP8E5M2::from_f32(-value).to_f32(),
+                -value,
+                "value {}",
+                value
+            );
+        }
     }
 
     #[test]
