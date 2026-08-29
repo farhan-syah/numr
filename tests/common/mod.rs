@@ -95,8 +95,12 @@ pub fn assert_allclose_f32(a: &[f32], b: &[f32], rtol: f32, atol: f32, msg: &str
 /// This is the source of truth for backend capabilities.
 pub fn backend_supported_dtypes(backend: &str) -> Vec<DType> {
     match backend {
+        // CUDA's unsigned coverage is partial: `cumsum` and `cumprod` have U32
+        // kernels, but `compare`, `cast`, and the binary ops do not. U32 is left
+        // out because a per-backend list cannot express per-op support, and
+        // claiming it produces failures rather than skips.
         #[cfg(feature = "cuda")]
-        "cuda" => build_dtype_list(&[DType::F32, DType::F64, DType::I32, DType::U32]),
+        "cuda" => build_dtype_list(&[DType::F32, DType::F64, DType::I32]),
         #[cfg(feature = "wgpu")]
         "wgpu" => {
             // WebGPU: 32-bit types only (F32, I32, U32)

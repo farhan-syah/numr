@@ -1,8 +1,9 @@
 // Backend parity tests for CompareOps trait
 //
 // Dtype-parameterized: each test runs for all supported input dtypes across all backends.
-// Compare ops return boolean masks - output dtype may differ by backend (u8 vs u32),
-// so we read back as u32 for uniform comparison.
+// A compare op returns a mask whose dtype equals the INPUT dtype on every
+// backend, holding 1/0. The tests assert that dtype contract and read the mask
+// back as u32 so the values compare uniformly.
 
 use numr::dtype::DType;
 use numr::ops::CompareOps;
@@ -14,8 +15,20 @@ use crate::backend_parity::helpers::assert_parity_u32;
 #[cfg(feature = "cuda")]
 use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
-use crate::backend_parity::helpers::with_wgpu_backend;
+use crate::backend_parity::helpers::with_wgpu_backend_or_skip;
 use crate::common::{create_cpu_client, is_dtype_supported, supported_dtypes};
+
+/// Dtypes the compare parity tests run over.
+///
+/// `supported_dtypes("cpu")` yields floats only. Compare is defined for the
+/// integer dtypes on every backend, and leaving them untested is what let a
+/// WebGPU output-dtype divergence ship, so they are added here explicitly.
+fn compare_dtypes() -> Vec<DType> {
+    let mut dtypes = supported_dtypes("cpu");
+    dtypes.push(DType::I32);
+    dtypes.push(DType::U32);
+    dtypes
+}
 
 // ============================================================================
 // Test Utilities
@@ -58,8 +71,8 @@ fn apply_compare_op<R: Runtime>(
 }
 
 /// Read back a compare result as Vec<u32> regardless of backend output dtype.
-/// Some backends return Bool (u8), some U32, some keep the input dtype
-/// where nonzero = true, zero = false.
+/// Every backend keeps the input dtype, where nonzero = true and zero = false.
+/// The wider match also covers Bool (u8) masks.
 fn readback_as_u32<R: Runtime<DType = DType>>(tensor: &Tensor<R>) -> Vec<u32> {
     use crate::common::ToF64;
 
@@ -108,6 +121,9 @@ fn readback_as_u32<R: Runtime<DType = DType>>(tensor: &Tensor<R>) -> Vec<u32> {
 fn test_compare_parity(op: &str, test_cases: &[CompareTest], dtype: DType) {
     let (cpu_client, cpu_device) = create_cpu_client();
 
+    // Mask dtype is part of the contract, so record CPU's and compare it too.
+    let mut cpu_dtypes: Vec<DType> = Vec::with_capacity(test_cases.len());
+
     let cpu_results: Vec<Vec<u32>> = test_cases
         .iter()
         .map(|tc| {
@@ -117,6 +133,7 @@ fn test_compare_parity(op: &str, test_cases: &[CompareTest], dtype: DType) {
                 .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
             let result = apply_compare_op(&cpu_client, op, &a, &b)
                 .unwrap_or_else(|e| panic!("CPU {op} failed for {dtype:?}: {e}"));
+            cpu_dtypes.push(result.dtype());
             readback_as_u32(&result)
         })
         .collect();
@@ -131,6 +148,11 @@ fn test_compare_parity(op: &str, test_cases: &[CompareTest], dtype: DType) {
                     .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
                 let result = apply_compare_op(&cuda_client, op, &a, &b)
                     .unwrap_or_else(|e| panic!("CUDA {op} failed for {dtype:?}: {e}"));
+                assert_eq!(
+                    result.dtype(),
+                    cpu_dtypes[idx],
+                    "{op} CUDA vs CPU [{dtype:?}] case {idx}: mask dtype mismatch"
+                );
                 assert_parity_u32(
                     &cpu_results[idx],
                     &readback_as_u32(&result),
@@ -142,7 +164,7 @@ fn test_compare_parity(op: &str, test_cases: &[CompareTest], dtype: DType) {
 
     #[cfg(feature = "wgpu")]
     if is_dtype_supported("wgpu", dtype) {
-        with_wgpu_backend(|wgpu_client, wgpu_device| {
+        with_wgpu_backend_or_skip(|wgpu_client, wgpu_device| {
             for (idx, tc) in test_cases.iter().enumerate() {
                 let a = tensor_from_f64(&tc.a, &tc.a_shape, dtype, &wgpu_device, &wgpu_client)
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
@@ -150,6 +172,11 @@ fn test_compare_parity(op: &str, test_cases: &[CompareTest], dtype: DType) {
                     .unwrap_or_else(|e| panic!("WebGPU tensor_from_f64 failed for {dtype:?}: {e}"));
                 let result = apply_compare_op(&wgpu_client, op, &a, &b)
                     .unwrap_or_else(|e| panic!("WebGPU {op} failed for {dtype:?}: {e}"));
+                assert_eq!(
+                    result.dtype(),
+                    cpu_dtypes[idx],
+                    "{op} WebGPU vs CPU [{dtype:?}] case {idx}: mask dtype mismatch"
+                );
                 assert_parity_u32(
                     &cpu_results[idx],
                     &readback_as_u32(&result),
@@ -164,7 +191,7 @@ macro_rules! compare_case {
     ($name:ident, $op:expr, $cases:expr) => {
         #[test]
         fn $name() {
-            for dtype in supported_dtypes("cpu") {
+            for dtype in compare_dtypes() {
                 test_compare_parity($op, $cases, dtype);
             }
         }
@@ -285,6 +312,182 @@ compare_case!(
             vec![2, 2],
             vec![2.0, 4.0, 3.0, 1.0],
             vec![2, 2],
+        ),
+    ]
+);
+
+// ============================================================================
+// Broadcast Compare Parity Tests
+// ============================================================================
+//
+// Broadcasting was the WebGPU compare path's blind spot: mismatched shapes used
+// to leave the GPU entirely. These cases pin the three broadcast forms.
+// A shape-[1] operand is this suite's scalar, matching `binary.rs`.
+
+compare_case!(
+    test_eq_broadcast_parity,
+    "eq",
+    &[
+        // Row vector against a matrix: [2, 3] vs [3].
+        CompareTest::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+            vec![2.0, 5.0, 3.0],
+            vec![3],
+        ),
+        // Outer broadcast, both operands stretched: [4, 1] vs [1, 4].
+        CompareTest::new(
+            vec![1.0, 3.0, 5.0, 7.0],
+            vec![4, 1],
+            vec![2.0, 3.0, 6.0, 7.0],
+            vec![1, 4],
+        ),
+        // Scalar against a tensor: [1] vs [2, 3].
+        CompareTest::new(
+            vec![3.0],
+            vec![1],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+        ),
+    ]
+);
+
+compare_case!(
+    test_ne_broadcast_parity,
+    "ne",
+    &[
+        // Row vector against a matrix: [2, 3] vs [3].
+        CompareTest::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+            vec![2.0, 5.0, 3.0],
+            vec![3],
+        ),
+        // Outer broadcast, both operands stretched: [4, 1] vs [1, 4].
+        CompareTest::new(
+            vec![1.0, 3.0, 5.0, 7.0],
+            vec![4, 1],
+            vec![2.0, 3.0, 6.0, 7.0],
+            vec![1, 4],
+        ),
+        // Scalar against a tensor: [1] vs [2, 3].
+        CompareTest::new(
+            vec![3.0],
+            vec![1],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+        ),
+    ]
+);
+
+compare_case!(
+    test_lt_broadcast_parity,
+    "lt",
+    &[
+        // Row vector against a matrix: [2, 3] vs [3].
+        CompareTest::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+            vec![2.0, 5.0, 3.0],
+            vec![3],
+        ),
+        // Outer broadcast, both operands stretched: [4, 1] vs [1, 4].
+        CompareTest::new(
+            vec![1.0, 3.0, 5.0, 7.0],
+            vec![4, 1],
+            vec![2.0, 3.0, 6.0, 7.0],
+            vec![1, 4],
+        ),
+        // Scalar against a tensor: [1] vs [2, 3].
+        CompareTest::new(
+            vec![3.0],
+            vec![1],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+        ),
+    ]
+);
+
+compare_case!(
+    test_le_broadcast_parity,
+    "le",
+    &[
+        // Row vector against a matrix: [2, 3] vs [3].
+        CompareTest::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+            vec![2.0, 5.0, 3.0],
+            vec![3],
+        ),
+        // Outer broadcast, both operands stretched: [4, 1] vs [1, 4].
+        CompareTest::new(
+            vec![1.0, 3.0, 5.0, 7.0],
+            vec![4, 1],
+            vec![2.0, 3.0, 6.0, 7.0],
+            vec![1, 4],
+        ),
+        // Scalar against a tensor: [1] vs [2, 3].
+        CompareTest::new(
+            vec![3.0],
+            vec![1],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+        ),
+    ]
+);
+
+compare_case!(
+    test_gt_broadcast_parity,
+    "gt",
+    &[
+        // Row vector against a matrix: [2, 3] vs [3].
+        CompareTest::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+            vec![2.0, 5.0, 3.0],
+            vec![3],
+        ),
+        // Outer broadcast, both operands stretched: [4, 1] vs [1, 4].
+        CompareTest::new(
+            vec![1.0, 3.0, 5.0, 7.0],
+            vec![4, 1],
+            vec![2.0, 3.0, 6.0, 7.0],
+            vec![1, 4],
+        ),
+        // Scalar against a tensor: [1] vs [2, 3].
+        CompareTest::new(
+            vec![3.0],
+            vec![1],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+        ),
+    ]
+);
+
+compare_case!(
+    test_ge_broadcast_parity,
+    "ge",
+    &[
+        // Row vector against a matrix: [2, 3] vs [3].
+        CompareTest::new(
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
+            vec![2.0, 5.0, 3.0],
+            vec![3],
+        ),
+        // Outer broadcast, both operands stretched: [4, 1] vs [1, 4].
+        CompareTest::new(
+            vec![1.0, 3.0, 5.0, 7.0],
+            vec![4, 1],
+            vec![2.0, 3.0, 6.0, 7.0],
+            vec![1, 4],
+        ),
+        // Scalar against a tensor: [1] vs [2, 3].
+        CompareTest::new(
+            vec![3.0],
+            vec![1],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            vec![2, 3],
         ),
     ]
 );

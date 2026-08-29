@@ -127,6 +127,8 @@ pub fn launch_binary_op(
 }
 
 /// Launch a broadcast binary operation. F32, I32, U32.
+/// Also serves broadcast compare: its mask dtype equals the input dtype, so the
+/// buffer shape and bind-group layout are identical.
 #[allow(clippy::too_many_arguments)]
 pub fn launch_broadcast_binary_op(
     cache: &PipelineCache,
@@ -376,8 +378,8 @@ pub fn launch_scalar_op(
 // Comparison Operations
 // ============================================================================
 
-/// Launch a comparison operation: `out[i] = (a[i] op b[i]) ? 1.0 : 0.0`. F32, I32, U32.
-/// Output is always F32.
+/// Launch a comparison operation: `out[i] = (a[i] op b[i]) ? 1 : 0`. F32, I32, U32.
+/// The mask carries the input dtype, matching CPU and CUDA.
 pub fn launch_compare_op(
     cache: &PipelineCache,
     queue: &Queue,

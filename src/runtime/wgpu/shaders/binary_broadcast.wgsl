@@ -175,3 +175,141 @@ fn broadcast_pow_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     broadcast_out[idx] = pow(broadcast_a[a_offset], broadcast_b[b_offset]);
 }
+
+@compute @workgroup_size(256)
+fn broadcast_eq_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= broadcast_params.numel) {
+        return;
+    }
+
+    var remaining = idx;
+    var a_offset: u32 = 0u;
+    var b_offset: u32 = 0u;
+
+    for (var d: u32 = 0u; d < broadcast_params.ndim; d = d + 1u) {
+        let stride = broadcast_out_strides[d];
+        let coord = remaining / stride;
+        remaining = remaining % stride;
+
+        a_offset = a_offset + coord * broadcast_a_strides[d];
+        b_offset = b_offset + coord * broadcast_b_strides[d];
+    }
+
+    broadcast_out[idx] = select(0.0, 1.0, broadcast_a[a_offset] == broadcast_b[b_offset]);
+}
+
+@compute @workgroup_size(256)
+fn broadcast_ne_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= broadcast_params.numel) {
+        return;
+    }
+
+    var remaining = idx;
+    var a_offset: u32 = 0u;
+    var b_offset: u32 = 0u;
+
+    for (var d: u32 = 0u; d < broadcast_params.ndim; d = d + 1u) {
+        let stride = broadcast_out_strides[d];
+        let coord = remaining / stride;
+        remaining = remaining % stride;
+
+        a_offset = a_offset + coord * broadcast_a_strides[d];
+        b_offset = b_offset + coord * broadcast_b_strides[d];
+    }
+
+    broadcast_out[idx] = select(0.0, 1.0, broadcast_a[a_offset] != broadcast_b[b_offset]);
+}
+
+@compute @workgroup_size(256)
+fn broadcast_lt_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= broadcast_params.numel) {
+        return;
+    }
+
+    var remaining = idx;
+    var a_offset: u32 = 0u;
+    var b_offset: u32 = 0u;
+
+    for (var d: u32 = 0u; d < broadcast_params.ndim; d = d + 1u) {
+        let stride = broadcast_out_strides[d];
+        let coord = remaining / stride;
+        remaining = remaining % stride;
+
+        a_offset = a_offset + coord * broadcast_a_strides[d];
+        b_offset = b_offset + coord * broadcast_b_strides[d];
+    }
+
+    broadcast_out[idx] = select(0.0, 1.0, broadcast_a[a_offset] < broadcast_b[b_offset]);
+}
+
+@compute @workgroup_size(256)
+fn broadcast_le_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= broadcast_params.numel) {
+        return;
+    }
+
+    var remaining = idx;
+    var a_offset: u32 = 0u;
+    var b_offset: u32 = 0u;
+
+    for (var d: u32 = 0u; d < broadcast_params.ndim; d = d + 1u) {
+        let stride = broadcast_out_strides[d];
+        let coord = remaining / stride;
+        remaining = remaining % stride;
+
+        a_offset = a_offset + coord * broadcast_a_strides[d];
+        b_offset = b_offset + coord * broadcast_b_strides[d];
+    }
+
+    broadcast_out[idx] = select(0.0, 1.0, broadcast_a[a_offset] <= broadcast_b[b_offset]);
+}
+
+@compute @workgroup_size(256)
+fn broadcast_gt_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= broadcast_params.numel) {
+        return;
+    }
+
+    var remaining = idx;
+    var a_offset: u32 = 0u;
+    var b_offset: u32 = 0u;
+
+    for (var d: u32 = 0u; d < broadcast_params.ndim; d = d + 1u) {
+        let stride = broadcast_out_strides[d];
+        let coord = remaining / stride;
+        remaining = remaining % stride;
+
+        a_offset = a_offset + coord * broadcast_a_strides[d];
+        b_offset = b_offset + coord * broadcast_b_strides[d];
+    }
+
+    broadcast_out[idx] = select(0.0, 1.0, broadcast_a[a_offset] > broadcast_b[b_offset]);
+}
+
+@compute @workgroup_size(256)
+fn broadcast_ge_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= broadcast_params.numel) {
+        return;
+    }
+
+    var remaining = idx;
+    var a_offset: u32 = 0u;
+    var b_offset: u32 = 0u;
+
+    for (var d: u32 = 0u; d < broadcast_params.ndim; d = d + 1u) {
+        let stride = broadcast_out_strides[d];
+        let coord = remaining / stride;
+        remaining = remaining % stride;
+
+        a_offset = a_offset + coord * broadcast_a_strides[d];
+        b_offset = b_offset + coord * broadcast_b_strides[d];
+    }
+
+    broadcast_out[idx] = select(0.0, 1.0, broadcast_a[a_offset] >= broadcast_b[b_offset]);
+}

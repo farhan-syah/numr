@@ -81,7 +81,7 @@ fn run_binary(
 
     // Use broadcast kernel if shapes differ, element-wise kernel otherwise
     if a.shape() != b.shape() {
-        launch_broadcast_binary(
+        launch_broadcast(
             client,
             op,
             &a_buf,
@@ -113,60 +113,6 @@ fn run_binary(
     }
 
     Ok(())
-}
-
-/// Launch broadcast binary op with stride buffers.
-#[allow(clippy::too_many_arguments)]
-fn launch_broadcast_binary(
-    client: &WgpuClient,
-    op: &'static str,
-    a_buf: &wgpu::Buffer,
-    b_buf: &wgpu::Buffer,
-    out_buf: &wgpu::Buffer,
-    a_shape: &[usize],
-    b_shape: &[usize],
-    out_shape: &[usize],
-    numel: usize,
-    dtype: DType,
-) -> Result<()> {
-    let ndim = out_shape.len();
-
-    // Compute broadcast strides (0 for broadcast dimensions)
-    let a_strides = compute_broadcast_strides(a_shape, out_shape);
-    let b_strides = compute_broadcast_strides(b_shape, out_shape);
-
-    // Compute output strides (row-major)
-    let mut out_strides = vec![1u32; ndim];
-    for i in (0..ndim.saturating_sub(1)).rev() {
-        out_strides[i] = out_strides[i + 1] * out_shape[i + 1] as u32;
-    }
-
-    // Create stride buffers
-    let a_strides_buf = create_storage_buffer(client, &a_strides);
-    let b_strides_buf = create_storage_buffer(client, &b_strides);
-    let out_strides_buf = create_storage_buffer(client, &out_strides);
-
-    // Create params: [numel, ndim]
-    let params = BroadcastBinaryParams {
-        numel: numel as u32,
-        ndim: ndim as u32,
-    };
-    let params_buf = create_params_buffer(client, &params);
-
-    elementwise::launch_broadcast_binary_op(
-        client.pipeline_cache(),
-        client.wgpu_queue(),
-        op,
-        a_buf,
-        b_buf,
-        out_buf,
-        &a_strides_buf,
-        &b_strides_buf,
-        &out_strides_buf,
-        &params_buf,
-        numel,
-        dtype,
-    )
 }
 
 pub(crate) fn native_scalar_op(
