@@ -172,14 +172,17 @@ fn compile_cuda_kernels() {
     // changes and only the .cu files are watched.
     for header in [
         "dtype_traits.cuh",
+        "narrow_f64.cuh",
         "activation_deriv.cuh",
         "binary_ops.cuh",
+        "cumulative_ops.cuh",
         "ipow.cuh",
         "numr128.cuh",
         "scalar_ops.cuh",
         "index_ops.cuh",
         "index_nd_ops.cuh",
         "rng_xorshift.cuh",
+        "semiring_matmul_ops.cuh",
         "sort_bitonic.cuh",
         "sort_compare.cuh",
         "sort_scan.cuh",

@@ -18,6 +18,7 @@
 #include <cuda_bf16.h>
 #include <stdint.h>
 #include "dtype_traits.cuh"
+#include "narrow_f64.cuh"
 
 // Bool is stored as one byte, exactly like U8. A distinct C++ type keeps the two
 // apart in the templates below: U8 converts numerically, Bool collapses to 0/1.
@@ -91,9 +92,11 @@ template <typename Dst> __device__ __forceinline__ Dst cast_from_f64(double d);
 
 template <> __device__ __forceinline__ double cast_from_f64<double>(double d) { return d; }
 template <> __device__ __forceinline__ float cast_from_f64<float>(double d) { return (float)d; }
-// f16/bf16 round once from f64, matching half::f16::from_f64 / half::bf16::from_f64.
-template <> __device__ __forceinline__ __half cast_from_f64<__half>(double d) { return __double2half(d); }
-template <> __device__ __forceinline__ __nv_bfloat16 cast_from_f64<__nv_bfloat16>(double d) { return __double2bfloat16(d); }
+// f16/bf16 defer to narrow_f64.cuh: half::f16::from_f64 stages through f32 on
+// x86-64 with F16C and half::bf16::from_f64 runs its own software rounding, so
+// neither is __double2half/__double2bfloat16. Read that header before editing.
+template <> __device__ __forceinline__ __half cast_from_f64<__half>(double d) { return numr_f64_to_f16(d); }
+template <> __device__ __forceinline__ __nv_bfloat16 cast_from_f64<__nv_bfloat16>(double d) { return numr_f64_to_bf16(d); }
 // FP8 rounds via f32, matching FP8E4M3::from_f64 / FP8E5M2::from_f64.
 template <> __device__ __forceinline__ numr_fp8_e4m3 cast_from_f64<numr_fp8_e4m3>(double d) {
     return numr_fp8_e4m3(f32_to_fp8_e4m3((float)d));

@@ -66,3 +66,4 @@ pub mod statistics_var;
 pub mod svd;
 pub mod unary;
 pub mod utility;
+pub mod utility_float_precision;

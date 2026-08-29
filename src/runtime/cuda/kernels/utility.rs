@@ -519,56 +519,17 @@ pub unsafe fn launch_arange(
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
 
-    // Dispatch based on dtype to use appropriate types
+    // Every dtype's kernel takes the f64 start and step and narrows once at the
+    // store, which is what the CPU kernel does. Narrowing the scalars here
+    // instead would build each value in f32: a precision loss for F32 output,
+    // a double rounding for F16/BF16/FP8, and a wrap for an integer dtype that
+    // cannot hold the start or step.
     match dtype {
-        DType::F32 => unsafe {
-            let start_f32 = start as f32;
-            let step_f32 = step as f32;
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_f32);
-            builder.arg(&step_f32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        DType::F64 => unsafe {
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start);
-            builder.arg(&step);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
+        DType::F32 | DType::F64 => {}
         #[cfg(feature = "f16")]
-        DType::F16 | DType::BF16 => unsafe {
-            // F16/BF16 kernels take f32 parameters
-            let start_f32 = start as f32;
-            let step_f32 = step as f32;
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_f32);
-            builder.arg(&step_f32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        // Every integer dtype takes the f64 start and step and saturates once at
-        // the store, which is what the CPU kernel does. Narrowing the scalars
-        // here instead would wrap a start or step the element type cannot hold.
+        DType::F16 | DType::BF16 => {}
+        #[cfg(feature = "fp8")]
+        DType::FP8E4M3 | DType::FP8E5M2 => {}
         DType::I64
         | DType::I32
         | DType::I16
@@ -576,42 +537,27 @@ pub unsafe fn launch_arange(
         | DType::U64
         | DType::U32
         | DType::U16
-        | DType::U8 => unsafe {
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start);
-            builder.arg(&step);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        #[cfg(feature = "fp8")]
-        DType::FP8E4M3 | DType::FP8E5M2 => unsafe {
-            // FP8 kernels take f32 parameters (compute in f32, store as fp8)
-            let start_f32 = start as f32;
-            let step_f32 = step as f32;
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_f32);
-            builder.arg(&step_f32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA arange kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
+        | DType::U8 => {}
         _ => {
             return Err(Error::UnsupportedDType {
                 dtype,
                 op: "arange",
             });
         }
+    }
+
+    unsafe {
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&out_ptr);
+        builder.arg(&start);
+        builder.arg(&step);
+        builder.arg(&n);
+        builder.launch(cfg).map_err(|e| {
+            Error::Internal(format!(
+                "CUDA arange kernel '{}' launch failed: {:?}",
+                func_name, e
+            ))
+        })?;
     }
 
     Ok(())
@@ -659,52 +605,14 @@ pub unsafe fn launch_linspace(
     let n = steps as u32;
     let cfg = launch_config(grid, block, 0);
 
+    // Same widening as arange: the kernel takes f64 start and stop for every
+    // dtype and narrows once at the store.
     match dtype {
-        DType::F32 => unsafe {
-            let start_f32 = start as f32;
-            let stop_f32 = stop as f32;
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_f32);
-            builder.arg(&stop_f32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA linspace kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        DType::F64 => unsafe {
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start);
-            builder.arg(&stop);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA linspace kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
+        DType::F32 | DType::F64 => {}
         #[cfg(feature = "f16")]
-        DType::F16 | DType::BF16 => unsafe {
-            let start_f32 = start as f32;
-            let stop_f32 = stop as f32;
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_f32);
-            builder.arg(&stop_f32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA linspace kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        // Integer types - computation in f64, saturating once at the store
+        DType::F16 | DType::BF16 => {}
+        #[cfg(feature = "fp8")]
+        DType::FP8E4M3 | DType::FP8E5M2 => {}
         DType::I64
         | DType::I32
         | DType::I16
@@ -712,41 +620,27 @@ pub unsafe fn launch_linspace(
         | DType::U64
         | DType::U32
         | DType::U16
-        | DType::U8 => unsafe {
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start); // Use f64 for precision
-            builder.arg(&stop);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA linspace kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
-        #[cfg(feature = "fp8")]
-        DType::FP8E4M3 | DType::FP8E5M2 => unsafe {
-            let start_f32 = start as f32;
-            let stop_f32 = stop as f32;
-            let mut builder = stream.launch_builder(&func);
-            builder.arg(&out_ptr);
-            builder.arg(&start_f32);
-            builder.arg(&stop_f32);
-            builder.arg(&n);
-            builder.launch(cfg).map_err(|e| {
-                Error::Internal(format!(
-                    "CUDA linspace kernel '{}' launch failed: {:?}",
-                    func_name, e
-                ))
-            })?;
-        },
+        | DType::U8 => {}
         _ => {
             return Err(Error::UnsupportedDType {
                 dtype,
                 op: "linspace",
             });
         }
+    }
+
+    unsafe {
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&out_ptr);
+        builder.arg(&start);
+        builder.arg(&stop);
+        builder.arg(&n);
+        builder.launch(cfg).map_err(|e| {
+            Error::Internal(format!(
+                "CUDA linspace kernel '{}' launch failed: {:?}",
+                func_name, e
+            ))
+        })?;
     }
 
     Ok(())

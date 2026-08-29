@@ -11,6 +11,7 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 #include <stdint.h>
+#include "narrow_f64.cuh"
 
 // ============================================================================
 // Mathematical Constants
@@ -822,7 +823,10 @@ DEFINE_ACCUM_TRAITS_F32(numr_fp8_e5m2, fp8_e5m2_to_f32(p[i].data), p[i].data = f
 DEFINE_ACCUM_TRAITS_F64(float, (double)p[i], p[i] = (float)v, -INFINITY, INFINITY)
 DEFINE_ACCUM_TRAITS_F64(double, p[i], p[i] = v, -INFINITY, INFINITY)
 DEFINE_ACCUM_TRAITS_F64(__half, (double)__half2float(p[i]), p[i] = __float2half((float)v), -INFINITY, INFINITY)
-DEFINE_ACCUM_TRAITS_F64(__nv_bfloat16, (double)__bfloat162float(p[i]), p[i] = __float2bfloat16((float)v), -INFINITY, INFINITY)
+// The BF16 store is numr_f64_to_bf16, not __float2bfloat16((float)v): the CPU
+// reduce kernels store through Element::from_f64, whose BF16 arm is half's own
+// software rounding rather than an f32 stage. See narrow_f64.cuh.
+DEFINE_ACCUM_TRAITS_F64(__nv_bfloat16, (double)__bfloat162float(p[i]), p[i] = numr_f64_to_bf16(v), -INFINITY, INFINITY)
 DEFINE_ACCUM_TRAITS_F64(numr_fp8_e4m3, (double)fp8_e4m3_to_f32(p[i].data), p[i].data = f32_to_fp8_e4m3((float)v), -FP8_E4M3_MAX, FP8_E4M3_MAX)
 DEFINE_ACCUM_TRAITS_F64(numr_fp8_e5m2, (double)fp8_e5m2_to_f32(p[i].data), p[i].data = f32_to_fp8_e5m2((float)v), -FP8_E5M2_MAX, FP8_E5M2_MAX)
 

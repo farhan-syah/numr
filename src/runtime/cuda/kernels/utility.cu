@@ -10,6 +10,7 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 #include "dtype_traits.cuh"
+#include "narrow_f64.cuh"
 
 // ============================================================================
 // Saturating double -> integer conversion
@@ -48,6 +49,71 @@ NUMR_SAT_F64(unsigned short, 0, USHRT_MAX, 0.0, 65535.0)
 NUMR_SAT_F64(unsigned char, 0, UCHAR_MAX, 0.0, 255.0)
 
 #undef NUMR_SAT_F64
+
+// ============================================================================
+// double -> float element narrowing
+// ============================================================================
+// The CPU kernels build every value in f64 and store it through
+// `Element::from_f64`. F32/F64 round that f64 straight to the element type in
+// one step. F16, BF16 and the FP8 rows do not: each narrows the way its own CPU
+// reference narrows, so a value that is a tie in f64 lands on the same element
+// on both backends.
+//
+// F16 and BF16 defer to `narrow_f64.cuh`, which is where the rules live -
+// `half`'s F16 stages through f32 on x86-64 with F16C, `half`'s BF16 runs its
+// own software algorithm, and neither is a single rounding of the f64. Read
+// that header before touching either row. The FP8 rows round through f32
+// because their `Element::from_f64` is `from_f32(v as f32)`.
+
+template<typename T> struct NumrNarrowF64;
+
+template<> struct NumrNarrowF64<float> {
+    static __device__ __forceinline__ float apply(double v) { return (float)v; }
+};
+template<> struct NumrNarrowF64<double> {
+    static __device__ __forceinline__ double apply(double v) { return v; }
+};
+template<> struct NumrNarrowF64<__half> {
+    static __device__ __forceinline__ __half apply(double v) { return numr_f64_to_f16(v); }
+};
+template<> struct NumrNarrowF64<__nv_bfloat16> {
+    static __device__ __forceinline__ __nv_bfloat16 apply(double v) { return numr_f64_to_bf16(v); }
+};
+template<> struct NumrNarrowF64<numr_fp8_e4m3> {
+    static __device__ __forceinline__ numr_fp8_e4m3 apply(double v) {
+        return numr_fp8_e4m3(f32_to_fp8_e4m3((float)v));
+    }
+};
+template<> struct NumrNarrowF64<numr_fp8_e5m2> {
+    static __device__ __forceinline__ numr_fp8_e5m2 apply(double v) {
+        return numr_fp8_e5m2(f32_to_fp8_e5m2((float)v));
+    }
+};
+
+// ============================================================================
+// The value each index carries
+// ============================================================================
+// Both expressions are the CPU ones from `runtime/cpu/kernels/memory.rs`, term
+// for term, and both are written with the `__d*_rn` intrinsics rather than
+// operators. nvcc is compiled here with `--use_fast_math`, which implies
+// `--fmad=true`: written as `start + step * idx`, the compiler contracts the
+// multiply and add into one `fma.rn.f64` that rounds once where the CPU rounds
+// twice, and the two disagree in the last ulp. The intrinsics are never
+// contracted. `--use_fast_math` also implies `--prec-div=false`, but that
+// downgrades f32 division only, so `__ddiv_rn` here is plain IEEE.
+
+__device__ __forceinline__ double numr_arange_value(double start, double step, unsigned int idx) {
+    return __dadd_rn(start, __dmul_rn(step, (double)idx));
+}
+
+// Multiply before dividing, as the CPU kernel does. Forming the fraction first
+// rounds it, and an integer store turns that last ulp into a whole unit:
+// 300 * (1/3) truncates to 99, 300 * 1 / 3 to 100.
+__device__ __forceinline__ double numr_linspace_value(double start, double stop,
+                                                      unsigned int idx, unsigned int steps) {
+    double delta = __dsub_rn(stop, start);
+    return __dadd_rn(start, __ddiv_rn(__dmul_rn(delta, (double)idx), (double)(steps - 1)));
+}
 
 extern "C" {
 
@@ -95,18 +161,13 @@ NUMR_FILL(unsigned char, u8)
     __global__ void arange_##S(T* out, double start, double step, unsigned int n) { \
         unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
         if (idx < n) {                                                          \
-            out[idx] = NumrSatF64<T>::apply(start + step * (double)idx);        \
+            out[idx] = NumrSatF64<T>::apply(numr_arange_value(start, step, idx)); \
         }                                                                       \
     }                                                                           \
     __global__ void linspace_##S(T* out, double start, double stop, unsigned int steps) { \
         unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
         if (idx < steps) {                                                      \
-            /* Multiply before dividing, exactly as linspace_kernel in       */ \
-            /* runtime/cpu/kernels/memory.rs does. Forming the fraction first */ \
-            /* rounds it, and an integer store turns that last ulp into a    */ \
-            /* whole unit: 300 * (1/3) truncates to 99, 300 * 1 / 3 to 100.  */ \
-            double v = start + (stop - start) * (double)idx / (double)(steps - 1); \
-            out[idx] = NumrSatF64<T>::apply(v);                                 \
+            out[idx] = NumrSatF64<T>::apply(numr_linspace_value(start, stop, idx, steps)); \
         }                                                                       \
     }                                                                           \
     __global__ void eye_##S(T* out, unsigned int n, unsigned int m) {           \
@@ -128,144 +189,39 @@ NUMR_INT_CREATION_ROW(unsigned char, u8)
 // ============================================================================
 // Float arange, linspace, eye
 // ============================================================================
-// The float rows keep their own scalar types: F32/F16/BF16/FP8 take f32
-// parameters and F64 takes double, and those types are part of the launch ABI.
+// The float rows take the same double scalars as the integer rows and narrow
+// at the store, exactly where the CPU narrows. Taking them as float instead
+// built every value in f32, which is a genuine precision loss for F32 output
+// and a wrong starting value for every narrower dtype.
 
-__global__ void arange_f32(float* out, float start, float step, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = start + step * (float)idx;
+#define NUMR_FLOAT_CREATION_ROW(T, S)                                           \
+    __global__ void arange_##S(T* out, double start, double step, unsigned int n) { \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) {                                                          \
+            out[idx] = NumrNarrowF64<T>::apply(numr_arange_value(start, step, idx)); \
+        }                                                                       \
+    }                                                                           \
+    __global__ void linspace_##S(T* out, double start, double stop, unsigned int steps) { \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < steps) {                                                      \
+            out[idx] = NumrNarrowF64<T>::apply(numr_linspace_value(start, stop, idx, steps)); \
+        }                                                                       \
+    }                                                                           \
+    __global__ void eye_##S(T* out, unsigned int n, unsigned int m) {           \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n * m) {                                                      \
+            out[idx] = NumrNarrowF64<T>::apply((idx / m == idx % m) ? 1.0 : 0.0); \
+        }                                                                       \
     }
-}
 
-__global__ void arange_f64(double* out, double start, double step, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = start + step * (double)idx;
-    }
-}
+// Linspace divides by `steps - 1`; the launcher handles steps < 2 itself, so
+// that is never zero here.
 
-__global__ void arange_f16(__half* out, float start, float step, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half(start + step * (float)idx);
-    }
-}
-
-__global__ void arange_bf16(__nv_bfloat16* out, float start, float step, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16(start + step * (float)idx);
-    }
-}
-
-__global__ void arange_fp8_e4m3(numr_fp8_e4m3* out, float start, float step, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx].data = f32_to_fp8_e4m3(start + step * (float)idx);
-    }
-}
-
-__global__ void arange_fp8_e5m2(numr_fp8_e5m2* out, float start, float step, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx].data = f32_to_fp8_e5m2(start + step * (float)idx);
-    }
-}
-
-// Linspace: evenly spaced values from start to stop, both inclusive. The
-// launcher handles steps < 2 itself, so `steps - 1` is never zero here.
-
-__global__ void linspace_f32(float* out, float start, float stop, unsigned int steps) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < steps) {
-        float t = (float)idx / (float)(steps - 1);
-        out[idx] = start + (stop - start) * t;
-    }
-}
-
-__global__ void linspace_f64(double* out, double start, double stop, unsigned int steps) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < steps) {
-        double t = (double)idx / (double)(steps - 1);
-        out[idx] = start + (stop - start) * t;
-    }
-}
-
-__global__ void linspace_f16(__half* out, float start, float stop, unsigned int steps) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < steps) {
-        float t = (float)idx / (float)(steps - 1);
-        out[idx] = __float2half(start + (stop - start) * t);
-    }
-}
-
-__global__ void linspace_bf16(__nv_bfloat16* out, float start, float stop, unsigned int steps) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < steps) {
-        float t = (float)idx / (float)(steps - 1);
-        out[idx] = __float2bfloat16(start + (stop - start) * t);
-    }
-}
-
-__global__ void linspace_fp8_e4m3(numr_fp8_e4m3* out, float start, float stop, unsigned int steps) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < steps) {
-        float t = (float)idx / (float)(steps - 1);
-        out[idx].data = f32_to_fp8_e4m3(start + (stop - start) * t);
-    }
-}
-
-__global__ void linspace_fp8_e5m2(numr_fp8_e5m2* out, float start, float stop, unsigned int steps) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < steps) {
-        float t = (float)idx / (float)(steps - 1);
-        out[idx].data = f32_to_fp8_e5m2(start + (stop - start) * t);
-    }
-}
-
-// Eye: identity matrix, ones on the diagonal.
-
-__global__ void eye_f32(float* out, unsigned int n, unsigned int m) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * m) {
-        out[idx] = (idx / m == idx % m) ? 1.0f : 0.0f;
-    }
-}
-
-__global__ void eye_f64(double* out, unsigned int n, unsigned int m) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * m) {
-        out[idx] = (idx / m == idx % m) ? 1.0 : 0.0;
-    }
-}
-
-__global__ void eye_f16(__half* out, unsigned int n, unsigned int m) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * m) {
-        out[idx] = __float2half((idx / m == idx % m) ? 1.0f : 0.0f);
-    }
-}
-
-__global__ void eye_bf16(__nv_bfloat16* out, unsigned int n, unsigned int m) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * m) {
-        out[idx] = __float2bfloat16((idx / m == idx % m) ? 1.0f : 0.0f);
-    }
-}
-
-__global__ void eye_fp8_e4m3(numr_fp8_e4m3* out, unsigned int n, unsigned int m) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * m) {
-        out[idx].data = f32_to_fp8_e4m3((idx / m == idx % m) ? 1.0f : 0.0f);
-    }
-}
-
-__global__ void eye_fp8_e5m2(numr_fp8_e5m2* out, unsigned int n, unsigned int m) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * m) {
-        out[idx].data = f32_to_fp8_e5m2((idx / m == idx % m) ? 1.0f : 0.0f);
-    }
-}
+NUMR_FLOAT_CREATION_ROW(float, f32)
+NUMR_FLOAT_CREATION_ROW(double, f64)
+NUMR_FLOAT_CREATION_ROW(__half, f16)
+NUMR_FLOAT_CREATION_ROW(__nv_bfloat16, bf16)
+NUMR_FLOAT_CREATION_ROW(numr_fp8_e4m3, fp8_e4m3)
+NUMR_FLOAT_CREATION_ROW(numr_fp8_e5m2, fp8_e5m2)
 
 } // extern "C"

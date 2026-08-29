@@ -134,6 +134,54 @@ fn cast_i64_to_u16_saturates() {
     check_cast::<i64, u16>(&[70_000, -3, 1234], &[65535, 0, 1234], "i64 -> u16");
 }
 
+/// f64 -> F16 narrows the way `half::f16::from_f64` narrows, which on x86-64
+/// with F16C is f64 -> f32 -> f16: a DOUBLE rounding, not a single one.
+///
+/// 1 + 2^-11 is the exact midpoint between the F16 values 0x3c00 (1.0) and
+/// 0x3c01 (1.0009765625). The input adds 2^-30 on top, which puts it above the
+/// midpoint, so the two candidates are:
+///
+/// - 0x3c01 - a single IEEE rounding of the f64 sees the 2^-30 and rounds up.
+/// - 0x3c00 - CPU. 2^-30 is below half an f32 ulp at 1.0 (2^-24), so the f32
+///   stage drops it; the value is then exactly on the F16 midpoint and
+///   ties-to-even rounds down.
+#[cfg(feature = "f16")]
+#[test]
+fn cast_f64_to_f16_double_rounds_through_f32() {
+    check_cast::<f64, half::f16>(
+        &[1.0 + 1.0 / 2048.0 + 1.0 / 1_073_741_824.0],
+        &[half::f16::from_bits(0x3c00)],
+        "f64 -> f16 with bits below half an f32 ulp",
+    );
+}
+
+/// f64 -> BF16 narrows the way `half::bf16::from_f64` narrows, which is neither
+/// a single rounding nor an f32 stage: it discards the low 32 mantissa bits of
+/// the f64 outright, then rounds the remaining 20 bits to 7, half-to-even.
+///
+/// 1 + 2^-8 is the exact midpoint between the BF16 values 0x3f80 (1.0) and
+/// 0x3f81 (1.0078125). Both inputs add a bit on top of it, and both are 0x3f80
+/// on CPU because both added bits land in the discarded low 32:
+///
+/// - `+ 2^-30` - candidates 0x3f81 (single rounding, which sees the bit) and
+///   0x3f80 (CPU). An f32 stage would also give 0x3f80, since 2^-30 is below
+///   half an f32 ulp at 1.0.
+/// - `+ 2^-23` - candidates 0x3f81 (single rounding AND an f32 stage: 2^-23 is
+///   above half an f32 ulp, so f32 keeps it and the sticky bits are non-zero)
+///   and 0x3f80 (CPU). This is the value that separates BF16's rule from F16's.
+#[cfg(feature = "f16")]
+#[test]
+fn cast_f64_to_bf16_drops_the_low_32_mantissa_bits() {
+    check_cast::<f64, half::bf16>(
+        &[
+            1.0 + 1.0 / 256.0 + 1.0 / 1_073_741_824.0,
+            1.0 + 1.0 / 256.0 + 1.0 / 8_388_608.0,
+        ],
+        &[half::bf16::from_bits(0x3f80), half::bf16::from_bits(0x3f80)],
+        "f64 -> bf16 with bits below the discarded mantissa window",
+    );
+}
+
 /// Every ordered pair must resolve to a real kernel. A missing instantiation
 /// fails here at module lookup, not months later in a caller.
 #[test]
