@@ -24,6 +24,11 @@ mod normalization;
 #[path = "../../ops/cpu/matmul.rs"]
 mod matmul;
 
+// Fused matmul+bias carries `MatmulOps::matmul_bias`'s body; `matmul` keeps the
+// trait impl and delegates to it.
+#[path = "../../ops/cpu/matmul_bias.rs"]
+mod matmul_bias;
+
 // I8 matmul widens to I32, so it cannot share `matmul`'s same-dtype
 // generic path and lives in its own module.
 #[path = "../../ops/cpu/matmul_i8.rs"]
