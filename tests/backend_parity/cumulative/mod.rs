@@ -3,10 +3,12 @@
 // Tests verify that all CumulativeOps operations produce identical results across
 // CPU, CUDA, and WebGPU backends, for all supported dtypes.
 //
-// `supported_dtypes("cpu")` below never yields I32/U32, so the macro-driven
-// tests in this file never exercise integer cumsum/cumprod. `wgpu` holds the
-// hand-built WebGPU-vs-CPU integer coverage that fills that hole.
+// `supported_dtypes("cpu")` below never yields I32/U32/I64/U64, so the
+// macro-driven tests in this file never exercise integer cumsum/cumprod.
+// `wgpu` holds the hand-built WebGPU-vs-CPU I32/U32 coverage, and `cuda`
+// holds the hand-built CUDA-vs-CPU I64/U64 coverage, that fill that hole.
 
+pub mod cuda;
 pub mod wgpu;
 
 use numr::dtype::DType;

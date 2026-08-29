@@ -50,7 +50,9 @@ fn numr_u32_mul_exceeds(a: u32, b: u32, bound: u32) -> bool {
 // Saturating add, used by `cumsum_u32`. Element-wise: unsigned cumsum inputs
 // never go negative, so the running total is monotonic and a per-step
 // saturating add matches CPU's wide accumulator exactly - once clamped to
-// u32::MAX it can never need to come back down.
+// u32::MAX it can never need to come back down. Same reasoning as
+// `cumsum_u64_sat_add` in `runtime/cuda/kernels/cumulative.cu`, one limb
+// size up.
 fn numr_u32_sat_add(a: u32, b: u32) -> u32 {
     if (a > NUMR_U32_MAX - b) {
         return NUMR_U32_MAX;
@@ -66,7 +68,9 @@ fn numr_u32_sat_add(a: u32, b: u32) -> u32 {
 // per-step saturating add cannot do that (it would clamp the intermediate
 // and never recover), so the accumulator must actually be wider than i32.
 // 64 bits is far beyond any realistic scan length and needs no division to
-// maintain: only a wraparound compare detects the add's carry.
+// maintain: only a wraparound compare detects the add's carry. Same
+// technique as `Numr128` in `runtime/cuda/kernels/cumulative.cu`, one limb
+// size down.
 struct NumrI64 {
     lo: u32,
     hi: u32,
