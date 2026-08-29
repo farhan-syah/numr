@@ -5,7 +5,7 @@
 // is never negative, so there is no fractional branch. Overflow saturates to
 // u32's bound, matching the CPU reference.
 //
-// Overflow is detected by `numr_u32_mul_exceeds` in ipow_common.wgsl, which is
+// Overflow is detected by `numr_u32_mul_exceeds` in int_saturate.wgsl, which is
 // prepended to this module.
 
 fn numr_ipow_u32(base: u32, exp: u32) -> u32 {

@@ -7,12 +7,10 @@
 // reference saturates and a wrapping multiply would disagree on exactly the
 // inputs that overflow.
 //
-// Overflow is detected by `numr_u32_mul_exceeds` in ipow_common.wgsl, which is
+// Overflow is detected by `numr_u32_mul_exceeds` in int_saturate.wgsl, which is
 // prepended to this module. Magnitudes live in u32, so the signed and unsigned
-// helpers share one overflow rule.
-
-const NUMR_I32_MAX: i32 = 2147483647;
-const NUMR_I32_MIN: i32 = -2147483647 - 1;
+// helpers share one overflow rule. `NUMR_I32_MAX` / `NUMR_I32_MIN` also live
+// there.
 
 fn numr_ipow_i32(base: i32, exp: i32) -> i32 {
     if (exp < 0) {

@@ -20,23 +20,23 @@ const BINARY_F32_SHADER: &str = include_str!("binary.wgsl");
 // module that calls it. WGSL has no include, so this is where the single copy
 // in the repository reaches the three I32 and three U32 modules.
 const BINARY_I32_SHADER: &str = concat!(
-    include_str!("ipow_common.wgsl"),
+    include_str!("int_saturate.wgsl"),
     include_str!("ipow_i32.wgsl"),
     include_str!("binary_i32.wgsl")
 );
 const BINARY_U32_SHADER: &str = concat!(
-    include_str!("ipow_common.wgsl"),
+    include_str!("int_saturate.wgsl"),
     include_str!("ipow_u32.wgsl"),
     include_str!("binary_u32.wgsl")
 );
 const BINARY_BROADCAST_F32_SHADER: &str = include_str!("binary_broadcast.wgsl");
 const BINARY_BROADCAST_I32_SHADER: &str = concat!(
-    include_str!("ipow_common.wgsl"),
+    include_str!("int_saturate.wgsl"),
     include_str!("ipow_i32.wgsl"),
     include_str!("binary_broadcast_i32.wgsl")
 );
 const BINARY_BROADCAST_U32_SHADER: &str = concat!(
-    include_str!("ipow_common.wgsl"),
+    include_str!("int_saturate.wgsl"),
     include_str!("ipow_u32.wgsl"),
     include_str!("binary_broadcast_u32.wgsl")
 );
@@ -45,12 +45,12 @@ const UNARY_I32_SHADER: &str = include_str!("unary_i32.wgsl");
 const UNARY_U32_SHADER: &str = include_str!("unary_u32.wgsl");
 const SCALAR_SHADER: &str = include_str!("scalar.wgsl");
 const SCALAR_I32_SHADER: &str = concat!(
-    include_str!("ipow_common.wgsl"),
+    include_str!("int_saturate.wgsl"),
     include_str!("ipow_i32.wgsl"),
     include_str!("scalar_i32.wgsl")
 );
 const SCALAR_U32_SHADER: &str = concat!(
-    include_str!("ipow_common.wgsl"),
+    include_str!("int_saturate.wgsl"),
     include_str!("ipow_u32.wgsl"),
     include_str!("scalar_u32.wgsl")
 );

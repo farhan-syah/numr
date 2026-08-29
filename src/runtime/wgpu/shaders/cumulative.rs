@@ -1,6 +1,6 @@
 //! Cumulative operation WGSL kernel launchers
 //!
-//! - `cumsum` - F32 and I32
+//! - `cumsum` - F32, I32, U32
 //! - `cumprod` - F32, I32, U32
 //! - `logsumexp` - F32 only
 
@@ -11,10 +11,28 @@ use crate::dtype::DType;
 use crate::error::{Error, Result};
 
 const CUMSUM_F32_SHADER: &str = include_str!("cumsum_f32.wgsl");
-const CUMSUM_I32_SHADER: &str = include_str!("cumsum_i32.wgsl");
+// The I32 kernel needs the shared wide accumulator (`NumrI64`) and the U32
+// kernel needs the shared saturating add, both defined once in
+// int_saturate.wgsl and prepended here - the same file the `pow` shaders in
+// elementwise.rs share.
+const CUMSUM_I32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumsum_i32.wgsl")
+);
+const CUMSUM_U32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumsum_u32.wgsl")
+);
 
 const CUMSUM_STRIDED_F32_SHADER: &str = include_str!("cumsum_strided_f32.wgsl");
-const CUMSUM_STRIDED_I32_SHADER: &str = include_str!("cumsum_strided_i32.wgsl");
+const CUMSUM_STRIDED_I32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumsum_strided_i32.wgsl")
+);
+const CUMSUM_STRIDED_U32_SHADER: &str = concat!(
+    include_str!("int_saturate.wgsl"),
+    include_str!("cumsum_strided_u32.wgsl")
+);
 
 const CUMPROD_F32_SHADER: &str = include_str!("cumprod_f32.wgsl");
 const CUMPROD_I32_SHADER: &str = include_str!("cumprod_i32.wgsl");
@@ -34,13 +52,6 @@ fn check_f32(dtype: DType, op: &'static str) -> Result<()> {
     }
 }
 
-fn check_f32_i32(dtype: DType, op: &'static str) -> Result<()> {
-    match dtype {
-        DType::F32 | DType::I32 => Ok(()),
-        _ => Err(Error::UnsupportedDType { dtype, op }),
-    }
-}
-
 fn check_f32_i32_u32(dtype: DType, op: &'static str) -> Result<()> {
     match dtype {
         DType::F32 | DType::I32 | DType::U32 => Ok(()),
@@ -52,7 +63,7 @@ fn check_f32_i32_u32(dtype: DType, op: &'static str) -> Result<()> {
 // Cumulative Sum
 // ============================================================================
 
-/// Launch cumsum operation kernel (contiguous data). Supports F32 and I32.
+/// Launch cumsum operation kernel (contiguous data). Supports F32, I32, U32.
 pub fn launch_cumsum(
     cache: &PipelineCache,
     queue: &Queue,
@@ -62,11 +73,12 @@ pub fn launch_cumsum(
     outer_size: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_f32_i32(dtype, "cumsum")?;
+    check_f32_i32_u32(dtype, "cumsum")?;
 
     let (module_key, shader, entry_point) = match dtype {
         DType::F32 => ("cumsum_f32", CUMSUM_F32_SHADER, "cumsum_f32"),
         DType::I32 => ("cumsum_i32", CUMSUM_I32_SHADER, "cumsum_i32"),
+        DType::U32 => ("cumsum_u32", CUMSUM_U32_SHADER, "cumsum_u32"),
         _ => unreachable!(),
     };
 
@@ -97,7 +109,7 @@ pub fn launch_cumsum(
     Ok(())
 }
 
-/// Launch strided cumsum operation kernel. Supports F32 and I32.
+/// Launch strided cumsum operation kernel. Supports F32, I32, U32.
 pub fn launch_cumsum_strided(
     cache: &PipelineCache,
     queue: &Queue,
@@ -107,7 +119,7 @@ pub fn launch_cumsum_strided(
     total_inner: usize,
     dtype: DType,
 ) -> Result<()> {
-    check_f32_i32(dtype, "cumsum_strided")?;
+    check_f32_i32_u32(dtype, "cumsum_strided")?;
 
     let (module_key, shader, entry_point) = match dtype {
         DType::F32 => (
@@ -119,6 +131,11 @@ pub fn launch_cumsum_strided(
             "cumsum_strided_i32",
             CUMSUM_STRIDED_I32_SHADER,
             "cumsum_strided_i32",
+        ),
+        DType::U32 => (
+            "cumsum_strided_u32",
+            CUMSUM_STRIDED_U32_SHADER,
+            "cumsum_strided_u32",
         ),
         _ => unreachable!(),
     };
