@@ -98,3 +98,6 @@ dmypy.json
 .cargo/
 /releases/
 .agents/
+
+# Session scratch (prep files)
+.claude/prep/
