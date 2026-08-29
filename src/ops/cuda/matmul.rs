@@ -9,7 +9,7 @@ use crate::runtime::cuda::ops::helpers::{
     matmul_batched_native, matmul_bias_batched_native, matmul_bias_native, matmul_native,
 };
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
-use crate::runtime::fallback::validate_binary_dtypes;
+use crate::runtime::validate_binary_dtypes;
 use crate::tensor::Tensor;
 
 impl MatmulOps<CudaRuntime> for CudaClient {

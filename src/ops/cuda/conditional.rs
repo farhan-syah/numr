@@ -7,9 +7,7 @@ use crate::runtime::cuda::kernels::{
     launch_where_op,
 };
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
-use crate::runtime::{
-    ensure_contiguous, fallback::compute_broadcast_shape, fallback::validate_binary_dtypes,
-};
+use crate::runtime::{compute_broadcast_shape, ensure_contiguous, validate_binary_dtypes};
 use crate::tensor::Tensor;
 
 impl ConditionalOps<CudaRuntime> for CudaClient {

@@ -7,7 +7,7 @@ use crate::ops::matmul_output_shape;
 use crate::ops::semiring::SemiringOp;
 use crate::runtime::cuda::ops::helpers::{semiring_matmul_batched_native, semiring_matmul_native};
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
-use crate::runtime::fallback::validate_binary_dtypes;
+use crate::runtime::validate_binary_dtypes;
 use crate::tensor::Tensor;
 
 /// Map SemiringOp to the u32 op code used by the CUDA kernel.

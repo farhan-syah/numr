@@ -26,10 +26,6 @@ pub mod cuda;
 #[cfg(feature = "wgpu")]
 pub mod wgpu;
 
-// CPU fallback utilities for GPU backends (not common - GPU-specific)
-#[cfg(any(feature = "cuda", feature = "wgpu"))]
-pub(crate) mod fallback;
-
 // Common re-exports
 #[cfg(any(feature = "cuda", feature = "wgpu"))]
 pub(crate) use common::AllocGuard;
