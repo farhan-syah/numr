@@ -19,10 +19,15 @@ use numr::runtime::cuda::CudaRuntime;
 #[cfg(feature = "cuda")]
 use numr::tensor::Tensor;
 
+// Only the narrow-float cases below use these; they are gated on `f16`/`fp8`.
+#[cfg(all(feature = "cuda", any(feature = "f16", feature = "fp8")))]
+use crate::backend_parity::dtype_helpers::tensor_from_f64;
 #[cfg(feature = "cuda")]
 use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "cuda")]
 use crate::common::create_cpu_client;
+#[cfg(all(feature = "cuda", any(feature = "f16", feature = "fp8")))]
+use crate::common::{assert_tensor_allclose, is_dtype_supported};
 
 // ============================================================================
 // cumsum I64 - positive overflow saturates to i64::MAX
@@ -504,6 +509,143 @@ fn test_cumprod_i32_strided_saturates_cuda_matches_cpu() {
             result.to_vec::<i32>(),
             cpu_result.to_vec::<i32>(),
             "CUDA I32 strided cumprod must match CPU element for element"
+        );
+    });
+}
+
+// ============================================================================
+// cumprod narrow float - accumulator must widen to F32, not the element type
+//
+// `cumprod` must widen a narrow-float accumulator to F32 the same way
+// `cumsum` already does, or a running product drifts out of the element
+// type's range far sooner than the true value warrants. CUDA's F16/BF16
+// `cumprod` kernels already accumulate in F32 (`cumprod_simple_f16_impl` /
+// `_bf16_impl` in `runtime/cuda/kernels/cumulative.cu`); CPU's fix is what
+// these tests pin. Every case is a power of two so both backends compute the
+// exact same bit pattern at every step, and `assert_tensor_allclose` still
+// applies the dtype's usual tolerance in case a backend's F16/BF16 cast
+// rounds differently at the final narrow.
+// ============================================================================
+
+/// BF16: the partial product after two steps is `2^-140`, below BF16's
+/// smallest subnormal (`2^-133`). An accumulator held in BF16 flushes that to
+/// zero and stays zero; one held in F32 recovers the true `2^0 = 1.0`.
+#[cfg(all(feature = "f16", feature = "cuda"))]
+#[test]
+fn test_cumprod_bf16_recovers_after_underflow_cuda_matches_cpu() {
+    if !is_dtype_supported("cuda", DType::BF16) {
+        return;
+    }
+
+    let data = [2f64.powi(-70), 2f64.powi(-70), 2f64.powi(70), 2f64.powi(70)];
+    let shape = [4usize];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_cpu = tensor_from_f64(&data, &shape, DType::BF16, &cpu_device, &cpu_client)
+        .expect("CPU BF16 tensor creation failed");
+    let cpu_result = cpu_client
+        .cumprod(&a_cpu, 0)
+        .expect("CPU cumprod_bf16 failed");
+    assert_eq!(
+        cpu_result.to_vec::<half::bf16>()[3].to_f32(),
+        1.0,
+        "CPU BF16 cumprod did not recover from the intermediate underflow"
+    );
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let a = tensor_from_f64(&data, &shape, DType::BF16, &cuda_device, &cuda_client)
+            .expect("CUDA BF16 tensor creation failed");
+        let result = cuda_client
+            .cumprod(&a, 0)
+            .expect("cumprod_bf16 should succeed on CUDA");
+        assert_tensor_allclose(
+            &result,
+            &cpu_result,
+            DType::BF16,
+            "cumprod_bf16_recovers_after_underflow",
+        );
+    });
+}
+
+/// F16: the partial product after two steps is `2^20`, above F16's finite
+/// range. An accumulator held in F16 rounds that to infinity and stays
+/// infinite; one held in F32 recovers the true `2^-10`.
+#[cfg(all(feature = "f16", feature = "cuda"))]
+#[test]
+fn test_cumprod_f16_recovers_after_overflow_cuda_matches_cpu() {
+    if !is_dtype_supported("cuda", DType::F16) {
+        return;
+    }
+
+    let data = [2f64.powi(10), 2f64.powi(10), 2f64.powi(-15), 2f64.powi(-15)];
+    let shape = [4usize];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_cpu = tensor_from_f64(&data, &shape, DType::F16, &cpu_device, &cpu_client)
+        .expect("CPU F16 tensor creation failed");
+    let cpu_result = cpu_client
+        .cumprod(&a_cpu, 0)
+        .expect("CPU cumprod_f16 failed");
+    assert_eq!(
+        cpu_result.to_vec::<half::f16>()[3].to_f32(),
+        2f32.powi(-10),
+        "CPU F16 cumprod did not recover from the intermediate overflow"
+    );
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let a = tensor_from_f64(&data, &shape, DType::F16, &cuda_device, &cuda_client)
+            .expect("CUDA F16 tensor creation failed");
+        let result = cuda_client
+            .cumprod(&a, 0)
+            .expect("cumprod_f16 should succeed on CUDA");
+        assert_tensor_allclose(
+            &result,
+            &cpu_result,
+            DType::F16,
+            "cumprod_f16_recovers_after_overflow",
+        );
+    });
+}
+
+/// FP8E4M3: the partial product after two steps is `2^16`, above FP8E4M3's
+/// finite range. FP8E4M3 has no infinity, so an accumulator held in it
+/// saturates to `MAX` (448) instead, throwing away the true magnitude; one
+/// held in F32 recovers the true `2^0 = 1.0`.
+#[cfg(all(feature = "fp8", feature = "cuda"))]
+#[test]
+fn test_cumprod_fp8_e4m3_recovers_after_saturation_cuda_matches_cpu() {
+    use numr::dtype::FP8E4M3;
+
+    if !is_dtype_supported("cuda", DType::FP8E4M3) {
+        return;
+    }
+
+    let data = [2f64.powi(8), 2f64.powi(8), 2f64.powi(-8), 2f64.powi(-8)];
+    let shape = [4usize];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_cpu = tensor_from_f64(&data, &shape, DType::FP8E4M3, &cpu_device, &cpu_client)
+        .expect("CPU FP8E4M3 tensor creation failed");
+    let cpu_result = cpu_client
+        .cumprod(&a_cpu, 0)
+        .expect("CPU cumprod_fp8_e4m3 failed");
+    assert_eq!(
+        cpu_result.to_vec::<FP8E4M3>()[3].to_f32(),
+        1.0,
+        "CPU FP8E4M3 cumprod did not recover from the intermediate saturation"
+    );
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let a = tensor_from_f64(&data, &shape, DType::FP8E4M3, &cuda_device, &cuda_client)
+            .expect("CUDA FP8E4M3 tensor creation failed");
+        let result = cuda_client
+            .cumprod(&a, 0)
+            .expect("cumprod_fp8_e4m3 should succeed on CUDA");
+        assert_tensor_allclose(
+            &result,
+            &cpu_result,
+            DType::FP8E4M3,
+            "cumprod_fp8_e4m3_recovers_after_saturation",
         );
     });
 }

@@ -205,6 +205,13 @@ pub unsafe fn cumprod_kernel<T: Element>(
     scan_size: usize,
     outer_size: usize,
 ) {
+    // A running product in a float narrower than F32 underflows to zero or
+    // overflows to infinity far sooner than the true value warrants, the same
+    // failure `cumsum_kernel` fixes for sums. It widens for the same reason.
+    if T::DTYPE.is_narrow_float() {
+        cumprod_kernel_acc::<T, f32>(a, out, scan_size, outer_size);
+        return;
+    }
     // An integer running product leaves the element type's range far faster
     // than a running sum does: it wraps in release and panics in debug. It
     // accumulates in i128 and clamps once per element written, the same
@@ -226,10 +233,12 @@ pub unsafe fn cumprod_kernel<T: Element>(
 
 /// Cumulative product over a contiguous dimension with a wide accumulator.
 ///
-/// The accumulator saturates, so the output is the true product clamped to the
-/// element type's range. i128 is exact for any product that stays inside it,
-/// and once it saturates a later factor still moves the sign correctly:
-/// `i128::MAX * -1` saturates to `i128::MIN`, which narrows to `T::MIN`.
+/// For `A = i128` the accumulator saturates, so the output is the true product
+/// clamped to the element type's range. i128 is exact for any product that
+/// stays inside it, and once it saturates a later factor still moves the sign
+/// correctly: `i128::MAX * -1` saturates to `i128::MIN`, which narrows to
+/// `T::MIN`. For `A = f32` the accumulator holds every product a narrow float
+/// can represent, so no clamping happens before the final narrow.
 ///
 /// # Safety
 /// Same as [`cumprod_kernel`].
@@ -322,8 +331,13 @@ pub unsafe fn cumprod_strided_kernel<T: Element>(
         }
     }
 
-    // Scalar fallback. Integers never reach the SIMD block above, so they need
-    // the wide accumulator here for the same reason `cumprod_kernel` does.
+    // Scalar fallback. FP8 never reaches the SIMD block above, and neither do
+    // the integer dtypes, so both need the wide accumulator here for the same
+    // reason `cumprod_kernel` does.
+    if T::DTYPE.is_narrow_float() {
+        cumprod_strided_kernel_acc::<T, f32>(a, out, scan_size, outer_size, inner_size);
+        return;
+    }
     if T::DTYPE.is_int() {
         cumprod_strided_kernel_acc::<T, i128>(a, out, scan_size, outer_size, inner_size);
         return;
@@ -830,5 +844,101 @@ mod tests {
         }
 
         assert_eq!(out, [100_000, 2, u32::MAX, 6, u32::MAX, 24]);
+    }
+
+    /// Catches a `cumprod` accumulator held in the element type for BF16.
+    ///
+    /// All four factors are exact powers of two, so only exponent range can
+    /// diverge the two paths. The true product is `2^0 = 1.0`, but the
+    /// partial product after two steps is `2^-140`, below BF16's smallest
+    /// subnormal (`2^-133`). An accumulator held in BF16 flushes that partial
+    /// product to exactly zero, and every later factor keeps it zero.
+    #[cfg(feature = "f16")]
+    #[test]
+    fn test_cumprod_bf16_accumulates_wider_than_the_element_type() {
+        use half::bf16;
+
+        let a = [
+            bf16::from_f32(2f32.powi(-70)),
+            bf16::from_f32(2f32.powi(-70)),
+            bf16::from_f32(2f32.powi(70)),
+            bf16::from_f32(2f32.powi(70)),
+        ];
+        let mut out = [bf16::from_f32(0.0); 4];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 4, 1);
+        }
+
+        // An F32 accumulator keeps 2^-140 as a subnormal instead of flushing
+        // it to zero, so the running product recovers to the true 1.0.
+        assert_eq!(out[3].to_f32(), 1.0);
+    }
+
+    /// Catches a `cumprod` accumulator held in the element type for F16.
+    ///
+    /// Both factors are exact powers of two. The true product is
+    /// `2^-10 = 0.0009765625`, but the partial product after two steps is
+    /// `2^20`, above F16's finite range. An accumulator held in F16 rounds
+    /// that overflow to infinity, and infinity times any later finite factor
+    /// stays infinity.
+    #[cfg(feature = "f16")]
+    #[test]
+    fn test_cumprod_f16_accumulates_wider_than_the_element_type() {
+        use half::f16;
+
+        let a = [
+            f16::from_f32(2f32.powi(10)),
+            f16::from_f32(2f32.powi(10)),
+            f16::from_f32(2f32.powi(-15)),
+            f16::from_f32(2f32.powi(-15)),
+        ];
+        let mut out = [f16::from_f32(0.0); 4];
+
+        unsafe {
+            cumprod_kernel(a.as_ptr(), out.as_mut_ptr(), 4, 1);
+        }
+
+        // An F32 accumulator keeps 2^20 as a plain finite value instead of
+        // rounding it to infinity, so the running product recovers to the
+        // true 2^-10.
+        assert_eq!(out[3].to_f32(), 2f32.powi(-10));
+    }
+
+    /// Catches a `cumprod` accumulator held in the element type for FP8E4M3,
+    /// on the strided path.
+    ///
+    /// Column 0 is the same power-of-two overflow-then-recover shape as the
+    /// F16 case above, but FP8E4M3 saturates to its finite `MAX` (448)
+    /// instead of rounding to infinity. An accumulator held in FP8E4M3 loses
+    /// the true magnitude at that saturating step, so later factors recover
+    /// to the wrong value instead of the true `2^0 = 1.0`. Column 1 is a
+    /// steady product of ones, pinning that the fix leaves the ordinary case
+    /// untouched.
+    #[test]
+    fn test_cumprod_strided_fp8_accumulates_wider_than_the_element_type() {
+        use crate::dtype::FP8E4M3;
+
+        let a = [
+            FP8E4M3::from_f32(2f32.powi(8)),
+            FP8E4M3::from_f32(1.0),
+            FP8E4M3::from_f32(2f32.powi(8)),
+            FP8E4M3::from_f32(1.0),
+            FP8E4M3::from_f32(2f32.powi(-8)),
+            FP8E4M3::from_f32(1.0),
+            FP8E4M3::from_f32(2f32.powi(-8)),
+            FP8E4M3::from_f32(1.0),
+        ];
+        let mut out = [FP8E4M3::from_f32(0.0); 8];
+
+        unsafe {
+            cumprod_strided_kernel(a.as_ptr(), out.as_mut_ptr(), 4, 1, 2);
+        }
+
+        // An F32 accumulator keeps 2^16 exactly instead of saturating it to
+        // FP8E4M3's MAX, so column 0 recovers to the true 1.0.
+        assert_eq!(out[6].to_f32(), 1.0);
+        // Column 1 never leaves 1.0, in either implementation.
+        assert_eq!(out[7].to_f32(), 1.0);
     }
 }
