@@ -75,11 +75,35 @@ pub(super) struct UnaryParams {
     pub(super) numel: u32,
 }
 
+/// Parameters for tensor-scalar operations.
+///
+/// `scalar_bits` is the scalar re-encoded per dtype, not a plain `f32`. The
+/// scalar_f32/scalar_i32/scalar_u32 WGSL shaders all read this same 4-byte
+/// field but declare it as their own type (`f32`, `i32`, `u32`), so the bit
+/// pattern written here must already match the tensor's dtype — a raw `f32`
+/// cast would be bit-reinterpreted as garbage by the integer shaders.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct ScalarParams {
     pub(super) numel: u32,
-    pub(super) scalar: f32,
+    pub(super) scalar_bits: u32,
+}
+
+impl ScalarParams {
+    /// Build params for `numel` elements of `dtype`, encoding `scalar` the
+    /// same way the CPU backend does: convert to the element type first
+    /// (`as` cast, saturating for integers), then take that value's bits.
+    pub(super) fn new(numel: u32, scalar: f64, dtype: DType) -> Self {
+        let scalar_bits = match dtype {
+            DType::I32 => (scalar as i32).to_ne_bytes(),
+            DType::U32 => (scalar as u32).to_ne_bytes(),
+            _ => (scalar as f32).to_ne_bytes(),
+        };
+        Self {
+            numel,
+            scalar_bits: u32::from_ne_bytes(scalar_bits),
+        }
+    }
 }
 
 /// Parameters for clamp operation.

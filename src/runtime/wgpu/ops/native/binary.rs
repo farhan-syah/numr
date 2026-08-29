@@ -184,10 +184,7 @@ pub(crate) fn native_scalar_op(
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
-    let params = ScalarParams {
-        numel: numel as u32,
-        scalar: scalar as f32,
-    };
+    let params = ScalarParams::new(numel as u32, scalar, dtype);
     let params_buf = create_params_buffer(client, &params);
 
     elementwise::launch_scalar_op(

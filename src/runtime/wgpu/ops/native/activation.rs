@@ -25,11 +25,9 @@ pub(crate) fn native_parametric_activation(
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
-    // Uses ScalarParams to pass the parameter
-    let params = ScalarParams {
-        numel: numel as u32,
-        scalar: param as f32,
-    };
+    // Uses ScalarParams to pass the parameter. leaky_relu/elu are F32-only,
+    // so this always takes the f32 encoding path.
+    let params = ScalarParams::new(numel as u32, param, dtype);
     let params_buf = create_params_buffer(client, &params);
 
     match op {
