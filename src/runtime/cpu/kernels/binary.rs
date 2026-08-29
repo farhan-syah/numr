@@ -4,6 +4,7 @@
 //! On x86-64, f32 and f64 operations use AVX-512 or AVX2 when available.
 //! On aarch64, f32 and f64 operations use NEON when available.
 
+use super::binary_int::{binary_int_elem, binary_int_kernel};
 use super::ipow::pow_elem;
 use crate::dtype::Element;
 use crate::ops::BinaryOp;
@@ -85,6 +86,12 @@ unsafe fn binary_op_scalar<T: Element>(
     out: *mut T,
     len: usize,
 ) {
+    // Integer dtypes wrap on overflow and define division by zero; the plain
+    // operators below panic on both. See `binary_int`.
+    if binary_int_kernel(op, a, b, out, len) {
+        return;
+    }
+
     let a_slice = std::slice::from_raw_parts(a, len);
     let b_slice = std::slice::from_raw_parts(b, len);
     let out_slice = std::slice::from_raw_parts_mut(out, len);
@@ -382,27 +389,31 @@ pub unsafe fn binary_op_strided_kernel<T: Element>(
         let a_val = *a.offset(a_idx);
         let b_val = *b.offset(b_idx);
 
-        let result = match op {
-            BinaryOp::Add => a_val + b_val,
-            BinaryOp::Sub => a_val - b_val,
-            BinaryOp::Mul => a_val * b_val,
-            BinaryOp::Div => a_val / b_val,
-            BinaryOp::Pow => pow_elem(a_val, b_val),
-            BinaryOp::Max => {
-                if a_val > b_val {
-                    a_val
-                } else {
-                    b_val
+        // Integer dtypes take the wrapping path; see `binary_int`.
+        let result = match binary_int_elem(op, a_val, b_val) {
+            Some(v) => v,
+            None => match op {
+                BinaryOp::Add => a_val + b_val,
+                BinaryOp::Sub => a_val - b_val,
+                BinaryOp::Mul => a_val * b_val,
+                BinaryOp::Div => a_val / b_val,
+                BinaryOp::Pow => pow_elem(a_val, b_val),
+                BinaryOp::Max => {
+                    if a_val > b_val {
+                        a_val
+                    } else {
+                        b_val
+                    }
                 }
-            }
-            BinaryOp::Min => {
-                if a_val < b_val {
-                    a_val
-                } else {
-                    b_val
+                BinaryOp::Min => {
+                    if a_val < b_val {
+                        a_val
+                    } else {
+                        b_val
+                    }
                 }
-            }
-            BinaryOp::Atan2 => T::from_f64(a_val.to_f64().atan2(b_val.to_f64())),
+                BinaryOp::Atan2 => T::from_f64(a_val.to_f64().atan2(b_val.to_f64())),
+            },
         };
 
         *out.add(out_idx) = result;

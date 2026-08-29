@@ -3,6 +3,7 @@
 //! Provides tensor-scalar operations with automatic SIMD dispatch.
 //! On x86-64, f32 and f64 operations use AVX-512 or AVX2 when available.
 
+use super::binary_int::binary_int_elem;
 use super::ipow::pow_elem_scalar;
 use crate::dtype::Element;
 use crate::ops::BinaryOp;
@@ -81,6 +82,28 @@ unsafe fn scalar_op_kernel_scalar<T: Element>(
     let a_slice = std::slice::from_raw_parts(a, len);
     let out_slice = std::slice::from_raw_parts_mut(out, len);
     let s = T::from_f64(scalar);
+
+    // Integer add/sub/mul WRAP and integer div treats a zero divisor as 0.
+    // `T`'s bare `+`/`-`/`*` panic on overflow in a debug build and `/` panics
+    // on a zero divisor in both, so a tensor op must not use them. This is the
+    // same element function the tensor-tensor kernels use (see
+    // `binary_int.rs`), so `add_scalar(a, s)` and `add(a, full(s))` agree.
+    //
+    // Pow keeps `pow_elem_scalar`: its exponent must stay an f64, not be
+    // rounded into `T`. Max, min and atan2 cannot overflow.
+    if matches!(
+        op,
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div
+    ) && T::DTYPE.is_int()
+    {
+        for i in 0..len {
+            // `None` only for a non-integer dtype, which the guard excluded.
+            if let Some(v) = binary_int_elem(op, a_slice[i], s) {
+                out_slice[i] = v;
+            }
+        }
+        return;
+    }
 
     match op {
         BinaryOp::Add => {
@@ -178,6 +201,17 @@ pub unsafe fn rsub_scalar_kernel<T: Element>(a: *const T, scalar: f64, out: *mut
     let a_slice = std::slice::from_raw_parts(a, len);
     let out_slice = std::slice::from_raw_parts_mut(out, len);
     let s = T::from_f64(scalar);
+
+    // Integer subtraction wraps; see the note in `scalar_op_kernel_scalar`.
+    // Only the operand order differs here.
+    if T::DTYPE.is_int() {
+        for i in 0..len {
+            if let Some(v) = binary_int_elem(BinaryOp::Sub, s, a_slice[i]) {
+                out_slice[i] = v;
+            }
+        }
+        return;
+    }
 
     for i in 0..len {
         out_slice[i] = s - a_slice[i];

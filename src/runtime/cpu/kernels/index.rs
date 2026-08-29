@@ -1,5 +1,6 @@
 //! Index operation kernels (gather, scatter, masked operations)
 
+use super::scatter_reduce_int::scatter_reduce_int_kernel;
 use crate::dtype::Element;
 use crate::ops::ScatterReduceOp;
 
@@ -494,7 +495,8 @@ pub unsafe fn embedding_lookup_kernel<T: Element>(
 /// * `indices` - Index tensor pointer (i64 values)
 /// * `src` - Source values to scatter
 /// * `out` - Output pointer
-/// * `counts` - Optional count buffer for Mean reduction (must be pre-zeroed)
+/// * `counts` - Optional count buffer for Mean reduction (must be pre-zeroed).
+///   Unused for integer dtypes, which count inside `scatter_reduce_int_kernel`.
 /// * `shape` - Shape of destination tensor
 /// * `index_shape` - Shape of index/src tensors
 /// * `dim` - Dimension along which to scatter
@@ -520,6 +522,24 @@ pub unsafe fn scatter_reduce_kernel<T: Element>(
 ) {
     let ndim = shape.len();
     if ndim == 0 {
+        return;
+    }
+
+    // An integer reduction cannot keep its running total in the element type,
+    // so it takes the wide-accumulator kernel instead. See
+    // super::scatter_reduce_int.
+    if T::DTYPE.is_int() {
+        scatter_reduce_int_kernel::<T>(
+            dst,
+            indices,
+            src,
+            out,
+            shape,
+            index_shape,
+            dim,
+            op,
+            include_self,
+        );
         return;
     }
 

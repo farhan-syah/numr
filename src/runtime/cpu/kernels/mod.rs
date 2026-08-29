@@ -7,6 +7,7 @@
 
 pub mod advanced_random;
 pub mod binary;
+pub mod binary_int;
 pub mod compare;
 pub mod complex;
 pub mod conv;
@@ -29,6 +30,7 @@ pub mod quasirandom;
 pub mod reduce;
 pub(crate) mod rng;
 pub mod scalar;
+pub mod scatter_reduce_int;
 pub mod semiring_matmul;
 pub mod simd;
 pub mod sobol_data;
