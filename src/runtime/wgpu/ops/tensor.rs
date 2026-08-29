@@ -60,7 +60,7 @@ mod statistics;
 #[path = "../../../ops/wgpu/sorting.rs"]
 mod sorting;
 
-#[path = "../../../ops/wgpu/indexing.rs"]
+#[path = "../../../ops/wgpu/indexing/mod.rs"]
 mod indexing;
 
 #[path = "../../../ops/wgpu/reduce.rs"]
