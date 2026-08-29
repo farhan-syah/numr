@@ -106,6 +106,26 @@ pub unsafe fn launch_fused_mul_add_scalar(
     let scale_f32 = scale as f32;
     let bias_f32 = bias as f32;
 
+    // Each integer row's kernel takes scale and bias in its own element type.
+    // The `as` cast saturates, matching `Element::from_f64` on CPU, so the
+    // fused op and `add_scalar(mul_scalar(..))` see the same operands.
+    let scale_i64 = scale as i64;
+    let bias_i64 = bias as i64;
+    let scale_i32 = scale as i32;
+    let bias_i32 = bias as i32;
+    let scale_i16 = scale as i16;
+    let bias_i16 = bias as i16;
+    let scale_i8 = scale as i8;
+    let bias_i8 = bias as i8;
+    let scale_u64 = scale as u64;
+    let bias_u64 = bias as u64;
+    let scale_u32 = scale as u32;
+    let bias_u32 = bias as u32;
+    let scale_u16 = scale as u16;
+    let bias_u16 = bias as u16;
+    let scale_u8 = scale as u8;
+    let bias_u8 = bias as u8;
+
     let mut builder = stream.launch_builder(&func);
     unsafe {
         builder.arg(&a_ptr);
@@ -116,6 +136,38 @@ pub unsafe fn launch_fused_mul_add_scalar(
             DType::F64 => {
                 builder.arg(&scale);
                 builder.arg(&bias);
+            }
+            DType::I64 => {
+                builder.arg(&scale_i64);
+                builder.arg(&bias_i64);
+            }
+            DType::I32 => {
+                builder.arg(&scale_i32);
+                builder.arg(&bias_i32);
+            }
+            DType::I16 => {
+                builder.arg(&scale_i16);
+                builder.arg(&bias_i16);
+            }
+            DType::I8 => {
+                builder.arg(&scale_i8);
+                builder.arg(&bias_i8);
+            }
+            DType::U64 => {
+                builder.arg(&scale_u64);
+                builder.arg(&bias_u64);
+            }
+            DType::U32 => {
+                builder.arg(&scale_u32);
+                builder.arg(&bias_u32);
+            }
+            DType::U16 => {
+                builder.arg(&scale_u16);
+                builder.arg(&bias_u16);
+            }
+            DType::U8 => {
+                builder.arg(&scale_u8);
+                builder.arg(&bias_u8);
             }
             _ => {
                 builder.arg(&scale_f32);

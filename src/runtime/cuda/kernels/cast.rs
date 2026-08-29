@@ -13,13 +13,43 @@ use super::loader::{
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
+/// DTypes the `cast.cu` instantiation matrix covers.
+///
+/// Every ordered pair of these dtypes has a `cast_{src}_{dst}` kernel, so this
+/// is the single source of truth for what `launch_cast` accepts. Keep it in
+/// step with the row list at the bottom of `cast.cu`.
+const CAST_DTYPES: &[DType] = &[
+    DType::F32,
+    DType::F64,
+    DType::F16,
+    DType::BF16,
+    DType::FP8E4M3,
+    DType::FP8E5M2,
+    DType::I64,
+    DType::I32,
+    DType::I16,
+    DType::I8,
+    DType::U64,
+    DType::U32,
+    DType::U16,
+    DType::U8,
+    DType::Bool,
+];
+
 /// Launch a cast operation kernel.
 ///
 /// Converts tensor elements from `src_dtype` to `dst_dtype`.
 ///
 /// # Supported Conversions
 ///
-/// All combinations of: F32, F64, F16, BF16, FP8E4M3, FP8E5M2, I32, I64
+/// All ordered pairs of [`CAST_DTYPES`]. Complex dtypes are not supported.
+///
+/// # Numerical Semantics
+///
+/// Conversions go through f64 and saturate on the way to an integer, matching
+/// the CPU reference in `src/runtime/cpu/kernels/memory.rs`: NaN becomes 0 and
+/// out-of-range values clamp to the nearest bound. Integer to integer saturates
+/// too, because the CPU path also routes it through f64.
 ///
 /// # Safety
 ///
@@ -53,20 +83,7 @@ pub unsafe fn launch_cast(
     }
 
     // Validate supported types
-    let is_supported = |d: DType| {
-        matches!(
-            d,
-            DType::F32
-                | DType::F64
-                | DType::F16
-                | DType::BF16
-                | DType::FP8E4M3
-                | DType::FP8E5M2
-                | DType::I32
-                | DType::I64
-                | DType::Bool
-        )
-    };
+    let is_supported = |d: DType| CAST_DTYPES.contains(&d);
 
     if !is_supported(src_dtype) {
         return Err(Error::UnsupportedDType {

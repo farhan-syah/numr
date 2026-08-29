@@ -9,8 +9,7 @@ use super::super::kernels::{
     launch_semiring_matmul_batched_kernel, launch_semiring_matmul_kernel, launch_unary_op,
 };
 use super::super::kernels::{
-    launch_pow_scalar_int, launch_scalar_op_c64, launch_scalar_op_c128, launch_scalar_op_i32,
-    launch_scalar_op_i64,
+    launch_pow_scalar_int, launch_scalar_op_c64, launch_scalar_op_c128, launch_scalar_op_int,
 };
 use super::super::{CudaClient, CudaRuntime};
 use super::matmul_broadcast::resolve_batched_operands;
@@ -502,10 +501,36 @@ pub(crate) fn native_unary_op(
     Ok(out)
 }
 
+/// Whether `scalar.cu` instantiates this dtype's tensor-scalar kernels.
+///
+/// One list for both users in [`native_scalar_op`]: the empty-tensor shortcut,
+/// which must not report success for a dtype the op cannot run at all, and the
+/// launch dispatch, whose `_` arm reports the same dtypes as unsupported. A
+/// gate that admitted a dtype with no `.cu` row would turn a clean
+/// `UnsupportedDType` into a `named symbol not found` at launch.
+fn scalar_op_has_kernel(dtype: DType) -> bool {
+    match dtype {
+        DType::F32
+        | DType::F64
+        | DType::FP8E4M3
+        | DType::FP8E5M2
+        | DType::Complex64
+        | DType::Complex128 => true,
+        // NUMR_SCALAR_ROW_INT covers all eight integer dtypes.
+        d if d.is_int() => true,
+        // The half-precision rows exist in the PTX either way, but the launcher
+        // that reaches them is compiled out without the feature.
+        DType::F16 | DType::BF16 => cfg!(feature = "f16"),
+        _ => false,
+    }
+}
+
 /// Launch a native CUDA tensor-scalar operation.
 ///
-/// Dispatches to CUDA kernels for operations like add_scalar, mul_scalar, etc.
-/// For F32/F64, runs on GPU. For other dtypes, falls back to CPU.
+/// Dispatches to the CUDA kernels for add_scalar, sub_scalar, rsub_scalar,
+/// mul_scalar, div_scalar and pow_scalar. Every dtype
+/// [`scalar_op_has_kernel`] admits runs entirely on GPU; the rest report
+/// [`Error::UnsupportedDType`].
 ///
 /// # Arguments
 /// * `op` - Operation name (e.g., "add_scalar", "mul_scalar")
@@ -524,18 +549,7 @@ pub(crate) fn native_scalar_op(
     // is itself invalid, so skip the launch entirely. Still fall through to
     // the dtype match below for a dtype this op doesn't support at all, so an
     // empty tensor errors exactly like a non-empty one would.
-    let dtype_supported = matches!(
-        dtype,
-        DType::F32
-            | DType::F64
-            | DType::I32
-            | DType::I64
-            | DType::FP8E4M3
-            | DType::FP8E5M2
-            | DType::Complex64
-            | DType::Complex128
-    ) || (cfg!(feature = "f16") && matches!(dtype, DType::F16 | DType::BF16));
-    if out.numel() == 0 && dtype_supported {
+    if out.numel() == 0 && scalar_op_has_kernel(dtype) {
         return Ok(out);
     }
 
@@ -543,7 +557,7 @@ pub(crate) fn native_scalar_op(
     // type: `scalar as i32` would round 2.5 to 2 and silently answer a
     // different question. The op layer routes every non-integral exponent to an
     // F64 output before this point, so only a non-negative whole number arrives.
-    if op == "pow_scalar" && matches!(dtype, DType::I32 | DType::I64) {
+    if op == "pow_scalar" && dtype.is_int() {
         unsafe {
             launch_pow_scalar_int(
                 &client.context,
@@ -581,23 +595,17 @@ pub(crate) fn native_scalar_op(
                 out.ptr(),
                 out.numel(),
             )?,
-            DType::I32 => launch_scalar_op_i32(
+            // Every integer dtype: `launch_scalar_op_int` fans out to the
+            // per-dtype launcher, since each kernel takes the scalar in its own
+            // element type.
+            d if d.is_int() => launch_scalar_op_int(
                 &client.context,
                 &client.stream,
                 client.device.index,
                 op,
+                d,
                 a_contig.ptr(),
-                scalar as i32,
-                out.ptr(),
-                out.numel(),
-            )?,
-            DType::I64 => launch_scalar_op_i64(
-                &client.context,
-                &client.stream,
-                client.device.index,
-                op,
-                a_contig.ptr(),
-                scalar as i64,
+                scalar,
                 out.ptr(),
                 out.numel(),
             )?,
@@ -645,7 +653,10 @@ pub(crate) fn native_scalar_op(
                 out.numel(),
             )?,
             _ => {
-                // Remaining types (U8, Bool, etc.) return unsupported
+                // Bool, and F16/BF16 without the `f16` feature. Kept in step
+                // with `scalar_op_has_kernel` above: a dtype admitted there
+                // with no arm here would abort on an unreachable match instead
+                // of reporting the dtype.
                 return Err(Error::UnsupportedDType { dtype, op });
             }
         }

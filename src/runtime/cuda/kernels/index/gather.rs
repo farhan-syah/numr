@@ -5,9 +5,10 @@ use cudarc::driver::safe::{CudaContext, CudaStream};
 use std::sync::Arc;
 
 use super::super::loader::{
-    BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module, kernel_name,
-    launch_config,
+    BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module,
+    kernel_names::INDEX_ND_MODULE, launch_config,
 };
+use super::dtype_gate::index_dtype_suffix;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
@@ -15,7 +16,7 @@ use crate::error::{Error, Result};
 pub const INDEX_MODULE: &str = "index";
 
 /// Maximum number of tensor dimensions supported by gather/gather_nd kernels.
-/// Must match INDEX_MAX_DIMS in index.cu.
+/// Must match INDEX_MAX_DIMS in index_ops.cuh.
 const MAX_DIMS: usize = 8;
 
 /// Launch gather kernel.
@@ -80,7 +81,7 @@ pub unsafe fn launch_gather(
 
     unsafe {
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
-        let func_name = kernel_name("gather", dtype);
+        let func_name = format!("gather_{}", index_dtype_suffix(dtype, "gather")?);
         let func = get_kernel_function(&module, &func_name)?;
 
         let grid = elementwise_launch_config(total_elements);
@@ -179,8 +180,8 @@ pub unsafe fn launch_gather_nd(
     }
 
     unsafe {
-        let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
-        let func_name = kernel_name("gather_nd", dtype);
+        let module = get_or_load_module(context, device_index, INDEX_ND_MODULE)?;
+        let func_name = format!("gather_nd_{}", index_dtype_suffix(dtype, "gather_nd")?);
         let func = get_kernel_function(&module, &func_name)?;
 
         let grid = elementwise_launch_config(total);
@@ -244,8 +245,8 @@ pub unsafe fn launch_gather_2d(
     }
 
     unsafe {
-        let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
-        let func_name = kernel_name("gather_2d", dtype);
+        let module = get_or_load_module(context, device_index, INDEX_ND_MODULE)?;
+        let func_name = format!("gather_2d_{}", index_dtype_suffix(dtype, "gather_2d")?);
         let func = get_kernel_function(&module, &func_name)?;
 
         let grid = elementwise_launch_config(num_indices);

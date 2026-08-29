@@ -1,10 +1,10 @@
 //! Matrix multiplication operations for CUDA runtime
 use crate::dtype::DType;
 use crate::error::{Error, Result};
-use crate::ops::BinaryOps;
 use crate::ops::{
     MatmulOps, ShapeOps, matmul_bias_output_shape, matmul_output_shape, validate_matmul_bias_dtypes,
 };
+use crate::runtime::cuda::kernels::int_matmul_has_kernel;
 use crate::runtime::cuda::ops::helpers::{
     matmul_batched_native, matmul_bias_batched_native, matmul_bias_native, matmul_native,
 };
@@ -53,17 +53,16 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             .product();
         let batch_size = batch_size.max(1);
 
-        // Native tiled CUDA kernel. I32 and I64 are the only integer dtypes with
-        // a CUDA arithmetic pipeline (see `kernels/binary.cu`), so they are the
-        // only ones with an integer matmul kernel. FP8 has its own kernels in
-        // `kernels/matmul_fp8.cu` and accumulates in F32, matching CPU.
+        // Native tiled CUDA kernel. The integer dtypes are gated by
+        // `int_matmul_has_kernel`, which is the same predicate the launcher
+        // uses, so this match and `matmul_int.cu`'s instantiation list cannot
+        // drift apart. FP8 has its own kernels in `kernels/matmul_fp8.cu` and
+        // accumulates in F32, matching CPU.
         match dtype {
             DType::F32
             | DType::F64
             | DType::F16
             | DType::BF16
-            | DType::I32
-            | DType::I64
             | DType::FP8E4M3
             | DType::FP8E5M2 => {
                 if batch_size > 1 {
@@ -101,6 +100,15 @@ impl MatmulOps<CudaRuntime> for CudaClient {
                     } else {
                         matmul_native(self, a, b, dtype, m, k, n)
                     }
+                }
+            }
+            // Integers never take the WMMA padding branch above, so they only
+            // need the two native entry points.
+            d if int_matmul_has_kernel(d) => {
+                if batch_size > 1 {
+                    matmul_batched_native(self, a, b, dtype, batch_size, m, k, n)
+                } else {
+                    matmul_native(self, a, b, dtype, m, k, n)
                 }
             }
             _ => Err(Error::UnsupportedDType {
@@ -175,9 +183,10 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             .product();
         let batch_size = batch_size.max(1);
 
-        // Native tiled CUDA kernel with fused bias. FP8 is included: CPU seeds
-        // its F32 accumulator with the bias, so composing matmul with a separate
-        // add would narrow to FP8 twice and report a different number.
+        // Native tiled CUDA kernel with fused bias. FP8 and the integers are
+        // included: CPU seeds its wide accumulator with the bias, so composing
+        // matmul with a separate add would narrow twice and report a different
+        // number.
         match dtype {
             DType::F32
             | DType::F64
@@ -213,12 +222,21 @@ impl MatmulOps<CudaRuntime> for CudaClient {
                     }
                 }
             }
-            _ => {
-                // The integer dtypes have no fused-bias kernel, so they compose
-                // from a native matmul and a native add.
-                let mm = self.matmul(a, b)?;
-                self.add(&mm, &bias.reshape(&[1, n])?)
+            // Integers have their own fused-bias kernels in `matmul_int.cu`, and
+            // fused is the only correct form: the bias seeds the 128-bit
+            // accumulator, so composing a matmul with an elementwise add would
+            // saturate the product and then wrap the bias into the element type.
+            d if int_matmul_has_kernel(d) => {
+                if batch_size > 1 {
+                    matmul_bias_batched_native(self, a, b, bias, dtype, batch_size, m, k, n)
+                } else {
+                    matmul_bias_native(self, a, b, bias, dtype, m, k, n)
+                }
             }
+            _ => Err(Error::UnsupportedDType {
+                dtype,
+                op: "matmul_bias",
+            }),
         }
     }
 }

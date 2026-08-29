@@ -1,7 +1,7 @@
 //! Reduction CUDA kernel launchers
 //!
-//! Provides launchers for reduction operations (sum, max, min) that reduce
-//! tensors along specified dimensions.
+//! Provides launchers for reduction operations (sum, max, min, and the fused
+//! integer mean) that reduce tensors along specified dimensions.
 //!
 //! See [`AccumulationPrecision`] for documentation on accumulation precision options.
 
@@ -205,6 +205,70 @@ pub unsafe fn launch_reduce_dim_op(
         builder.launch(cfg).map_err(|e| {
             Error::Internal(format!(
                 "CUDA reduce_dim kernel '{}' launch failed: {:?}",
+                func_name, e
+            ))
+        })?;
+
+        Ok(())
+    }
+}
+
+/// Launch the fused integer `reduce_mean_dim` kernel along one dimension.
+///
+/// Only integer dtypes have this kernel (see `reduce_int.cu`): it sums the
+/// reduced axis in a 128-bit accumulator, divides by `divisor` inside that
+/// accumulator, and narrows to the element type exactly once. Unlike
+/// [`launch_reduce_dim_op`], `divisor` is a caller-supplied kernel argument
+/// rather than always `reduce_size` - a plain mean passes `reduce_size`
+/// itself, but an unbiased variance's `n - correction` is not the reduced
+/// axis length and needs the same divide-once guarantee.
+///
+/// # Safety
+///
+/// - All pointers must be valid device memory
+/// - `input_ptr` must have `outer_size * reduce_size * inner_size` elements
+/// - `output_ptr` must have space for `outer_size * inner_size` elements
+/// - `dtype` must be an integer dtype - the fused mean kernel has no float
+///   instantiation
+///
+/// # Arguments
+///
+/// * `divisor` - value the finished sum is divided by; the kernel forces a
+///   zero divisor to 1, mirroring the CPU epilogue's `count.max(1)`
+pub unsafe fn launch_reduce_mean_dim_int_op(
+    context: &Arc<CudaContext>,
+    stream: &CudaStream,
+    device_index: usize,
+    dtype: DType,
+    input_ptr: u64,
+    output_ptr: u64,
+    outer_size: usize,
+    reduce_size: usize,
+    inner_size: usize,
+    divisor: u64,
+) -> Result<()> {
+    unsafe {
+        let module = get_or_load_module(context, device_index, reduce_module(dtype))?;
+        let func_name = kernel_name("reduce_mean_dim", dtype);
+        let func = get_kernel_function(&module, &func_name)?;
+
+        let (grid, block) = reduce_dim_launch_config(outer_size, inner_size);
+        let outer = outer_size as u32;
+        let reduce = reduce_size as u32;
+        let inner = inner_size as u32;
+
+        let cfg = launch_config(grid, (block, 1, 1), 0);
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&input_ptr);
+        builder.arg(&output_ptr);
+        builder.arg(&outer);
+        builder.arg(&reduce);
+        builder.arg(&inner);
+        builder.arg(&divisor);
+
+        builder.launch(cfg).map_err(|e| {
+            Error::Internal(format!(
+                "CUDA reduce_mean_dim kernel '{}' launch failed: {:?}",
                 func_name, e
             ))
         })?;

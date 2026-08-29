@@ -1,6 +1,10 @@
-// Utility CUDA kernels
-// Supports: fill (initialize tensor with constant value)
-// Types: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, i32, i64, u8 (bool)
+// Deterministic tensor-creation CUDA kernels: fill, arange, linspace, eye.
+//
+// Random sampling lives in utility_random.cu (PTX module "utility_random");
+// this file is PTX module "utility" (kernel_names::UTILITY_MODULE).
+//
+// Kernel naming matches the names the Rust launchers build in
+// src/runtime/cuda/kernels/utility.rs from dtype_suffix() in loader.rs.
 
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
@@ -9,372 +13,43 @@
 extern "C" {
 
 // ============================================================================
-// Fill Operations - Initialize tensor with constant value
+// Fill - initialise a tensor with a constant value
 // ============================================================================
+// One kernel per dtype, because the value arrives as a kernel argument of that
+// dtype rather than as a widened scalar. Every dtype FillValue can name has a
+// kernel here: a dtype missing from this list would fall back to a wider fill
+// kernel and write past the end of each element.
 
-__global__ void fill_f32(float* out, float value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
+#define NUMR_FILL(T, S)                                                         \
+    __global__ void fill_##S(T* out, T value, unsigned int n) {                 \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) {                                                          \
+            out[idx] = value;                                                   \
+        }                                                                       \
     }
-}
 
-__global__ void fill_f64(double* out, double value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-__global__ void fill_f16(__half* out, __half value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-__global__ void fill_bf16(__nv_bfloat16* out, __nv_bfloat16 value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-__global__ void fill_i32(int* out, int value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-__global__ void fill_i64(long long* out, long long value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-__global__ void fill_u8(unsigned char* out, unsigned char value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-__global__ void fill_fp8_e4m3(numr_fp8_e4m3* out, numr_fp8_e4m3 value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-__global__ void fill_fp8_e5m2(numr_fp8_e5m2* out, numr_fp8_e5m2 value, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = value;
-    }
-}
-
-} // extern "C"
+NUMR_FILL(float, f32)
+NUMR_FILL(double, f64)
+NUMR_FILL(__half, f16)
+NUMR_FILL(__nv_bfloat16, bf16)
+NUMR_FILL(numr_fp8_e4m3, fp8_e4m3)
+NUMR_FILL(numr_fp8_e5m2, fp8_e5m2)
+NUMR_FILL(long long, i64)
+NUMR_FILL(int, i32)
+NUMR_FILL(short, i16)
+NUMR_FILL(signed char, i8)
+NUMR_FILL(unsigned long long, u64)
+NUMR_FILL(unsigned int, u32)
+NUMR_FILL(unsigned short, u16)
+NUMR_FILL(unsigned char, u8)
 
 // ============================================================================
-// Random Number Generation - Device Functions (outside extern "C")
+// Arange, linspace, eye
 // ============================================================================
+// These keep one hand-written kernel per dtype: the scalar parameters differ in
+// type from row to row (integer linspace interpolates in double, unsigned
+// arange offsets in signed 64-bit), and those types are part of the launch ABI.
 
-// xorshift128+ state per thread
-struct XorShift128PlusState {
-    unsigned long long s0;
-    unsigned long long s1;
-};
-
-// Initialize state from seed and thread index
-__device__ __forceinline__ void xorshift128plus_init(XorShift128PlusState* state, unsigned long long seed, unsigned int idx) {
-    // Use splitmix64 to initialize both state values from seed + idx
-    unsigned long long z = seed + (unsigned long long)idx * 0x9E3779B97F4A7C15ULL;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    state->s0 = z ^ (z >> 31);
-
-    z = seed + (unsigned long long)idx * 0x9E3779B97F4A7C15ULL + 1;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    state->s1 = z ^ (z >> 31);
-
-    // Ensure non-zero state
-    if (state->s0 == 0) state->s0 = 1;
-    if (state->s1 == 0) state->s1 = 1;
-}
-
-// Generate next random 64-bit value
-__device__ __forceinline__ unsigned long long xorshift128plus_next(XorShift128PlusState* state) {
-    unsigned long long s1 = state->s0;
-    unsigned long long s0 = state->s1;
-    unsigned long long result = s0 + s1;
-    state->s0 = s0;
-    s1 ^= s1 << 23;
-    state->s1 = s1 ^ s0 ^ (s1 >> 18) ^ (s0 >> 5);
-    return result;
-}
-
-// Convert to uniform [0, 1)
-__device__ __forceinline__ double xorshift128plus_uniform(XorShift128PlusState* state) {
-    // Use upper 53 bits for double precision
-    return (double)(xorshift128plus_next(state) >> 11) * (1.0 / 9007199254740992.0);
-}
-
-// Box-Muller transform for normal distribution
-__device__ __forceinline__ void box_muller(XorShift128PlusState* state, float* z0, float* z1) {
-    double u1 = xorshift128plus_uniform(state);
-    double u2 = xorshift128plus_uniform(state);
-
-    // Avoid log(0)
-    if (u1 < 1e-12) u1 = 1e-12;
-
-    double r = sqrt(-2.0 * log(u1));
-    double theta = 2.0 * M_PI * u2;
-
-    *z0 = (float)(r * cos(theta));
-    *z1 = (float)(r * sin(theta));
-}
-
-__device__ __forceinline__ void box_muller_f64(XorShift128PlusState* state, double* z0, double* z1) {
-    double u1 = xorshift128plus_uniform(state);
-    double u2 = xorshift128plus_uniform(state);
-
-    if (u1 < 1e-15) u1 = 1e-15;
-
-    double r = sqrt(-2.0 * log(u1));
-    double theta = 2.0 * M_PI * u2;
-
-    *z0 = r * cos(theta);
-    *z1 = r * sin(theta);
-}
-
-// ============================================================================
-// Uniform Random [0, 1) - Native CUDA kernels
-// ============================================================================
-
-extern "C" {
-
-__global__ void rand_f32(float* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        out[idx] = (float)xorshift128plus_uniform(&state);
-    }
-}
-
-__global__ void rand_f64(double* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        out[idx] = xorshift128plus_uniform(&state);
-    }
-}
-
-// ============================================================================
-// Normal Random (mean=0, std=1) - Native CUDA kernels using Box-Muller
-// ============================================================================
-
-__global__ void randn_f32(float* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // Box-Muller generates pairs, so we handle two elements per thread when possible
-    unsigned int pair_idx = idx * 2;
-
-    if (pair_idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-
-        float z0, z1;
-        box_muller(&state, &z0, &z1);
-
-        out[pair_idx] = z0;
-        if (pair_idx + 1 < n) {
-            out[pair_idx + 1] = z1;
-        }
-    }
-}
-
-__global__ void randn_f64(double* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int pair_idx = idx * 2;
-
-    if (pair_idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-
-        double z0, z1;
-        box_muller_f64(&state, &z0, &z1);
-
-        out[pair_idx] = z0;
-        if (pair_idx + 1 < n) {
-            out[pair_idx + 1] = z1;
-        }
-    }
-}
-
-// F16 variants
-__global__ void rand_f16(__half* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        __half val = __float2half((float)xorshift128plus_uniform(&state));
-        // rand must stay in [0, 1). Narrowing to half can round a value near
-        // 1.0 up to exactly 1.0, so clamp to F16's largest value below 1.0:
-        // `largest_value_below_one` in `src/dtype/dtype_enum.rs` is the
-        // authority for this bound (2047/2048, 10 mantissa bits).
-        if (__hge(val, __float2half(1.0f))) {
-            val = __float2half(0.99951171875f);
-        }
-        out[idx] = val;
-    }
-}
-
-__global__ void randn_f16(__half* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int pair_idx = idx * 2;
-
-    if (pair_idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-
-        float z0, z1;
-        box_muller(&state, &z0, &z1);
-
-        out[pair_idx] = __float2half(z0);
-        if (pair_idx + 1 < n) {
-            out[pair_idx + 1] = __float2half(z1);
-        }
-    }
-}
-
-// BF16 variants
-__global__ void rand_bf16(__nv_bfloat16* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        float fval = (float)xorshift128plus_uniform(&state);
-        __nv_bfloat16 val = __float2bfloat16(fval);
-        // rand must stay in [0, 1). Narrowing to bf16 can round a value near
-        // 1.0 up to exactly 1.0, so clamp to BF16's largest value below 1.0:
-        // `largest_value_below_one` in `src/dtype/dtype_enum.rs` is the
-        // authority for this bound (255/256, 7 mantissa bits).
-        if (__bfloat162float(val) >= 1.0f) {
-            val = __float2bfloat16(0.99609375f);
-        }
-        out[idx] = val;
-    }
-}
-
-__global__ void randn_bf16(__nv_bfloat16* out, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int pair_idx = idx * 2;
-
-    if (pair_idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-
-        float z0, z1;
-        box_muller(&state, &z0, &z1);
-
-        out[pair_idx] = __float2bfloat16(z0);
-        if (pair_idx + 1 < n) {
-            out[pair_idx + 1] = __float2bfloat16(z1);
-        }
-    }
-}
-
-// ============================================================================
-// Random Integer [low, high) - Native CUDA kernels
-// ============================================================================
-
-__global__ void randint_i8(signed char* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = (signed char)(low + (long long)(r % (unsigned long long)range));
-    }
-}
-
-__global__ void randint_i16(short* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = (short)(low + (long long)(r % (unsigned long long)range));
-    }
-}
-
-__global__ void randint_i32(int* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = (int)(low + (long long)(r % (unsigned long long)range));
-    }
-}
-
-__global__ void randint_i64(long long* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = low + (long long)(r % (unsigned long long)range);
-    }
-}
-
-__global__ void randint_u8(unsigned char* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = (unsigned char)(low + (long long)(r % (unsigned long long)range));
-    }
-}
-
-__global__ void randint_u16(unsigned short* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = (unsigned short)(low + (long long)(r % (unsigned long long)range));
-    }
-}
-
-__global__ void randint_u32(unsigned int* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = (unsigned int)(low + (long long)(r % (unsigned long long)range));
-    }
-}
-
-__global__ void randint_u64(unsigned long long* out, long long low, long long range, unsigned long long seed, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        XorShift128PlusState state;
-        xorshift128plus_init(&state, seed, idx);
-        unsigned long long r = xorshift128plus_next(&state);
-        out[idx] = (unsigned long long)(low + (long long)(r % (unsigned long long)range));
-    }
-}
-
-// ============================================================================
-// Arange - Generate evenly spaced values in [start, stop)
-// ============================================================================
 
 __global__ void arange_f32(float* out, float start, float step, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -653,193 +328,6 @@ __global__ void eye_fp8_e5m2(numr_fp8_e5m2* out, unsigned int n, unsigned int m)
         unsigned int col = idx % m;
         out[idx].data = (row == col) ? f32_to_fp8_e5m2(1.0f) : f32_to_fp8_e5m2(0.0f);
     }
-}
-
-} // extern "C" - close before template functions
-
-// ============================================================================
-// Multinomial Sampling - Template device functions (outside extern "C")
-// ============================================================================
-
-// Multinomial with replacement: each thread samples one index for one distribution
-// Uses prefix sum (CDF) + binary search for inverse transform sampling
-// Note: This is a device function that contains the kernel logic, called from typed __global__ wrappers
-template<typename T>
-__device__ void multinomial_with_replacement_impl(
-    const T* probs,           // [num_distributions, num_categories]
-    long long* out,           // [num_distributions, num_samples]
-    unsigned long long seed,
-    unsigned int num_distributions,
-    unsigned int num_categories,
-    unsigned int num_samples
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int total = num_distributions * num_samples;
-    if (idx >= total) return;
-
-    unsigned int dist = idx / num_samples;
-    unsigned int sample = idx % num_samples;
-
-    // Initialize RNG for this thread
-    XorShift128PlusState state;
-    xorshift128plus_init(&state, seed, idx);
-
-    // Get pointer to this distribution's probabilities
-    const T* prob_row = probs + dist * num_categories;
-
-    // Compute sum of probabilities for normalization
-    double sum = 0.0;
-    for (unsigned int i = 0; i < num_categories; i++) {
-        sum += (double)prob_row[i];
-    }
-
-    // Generate uniform random value
-    double u = xorshift128plus_uniform(&state);
-
-    // Binary search using CDF (on-the-fly computation)
-    // Find smallest index where cumsum/sum >= u
-    double cumsum = 0.0;
-    unsigned int result = num_categories - 1;  // Default to last category
-    for (unsigned int i = 0; i < num_categories; i++) {
-        cumsum += (double)prob_row[i];
-        if (cumsum / sum >= u) {
-            result = i;
-            break;
-        }
-    }
-
-    out[dist * num_samples + sample] = (long long)result;
-}
-
-// Multinomial without replacement: requires sequential sampling within each distribution
-// Each thread block handles one distribution
-// Note: This is a device function that contains the kernel logic, called from typed __global__ wrappers
-template<typename T>
-__device__ void multinomial_without_replacement_impl(
-    const T* probs,           // [num_distributions, num_categories]
-    long long* out,           // [num_distributions, num_samples]
-    unsigned long long seed,
-    unsigned int num_distributions,
-    unsigned int num_categories,
-    unsigned int num_samples,
-    double* shared_probs      // Shared memory passed from kernel
-) {
-    unsigned int dist = blockIdx.x;
-    if (dist >= num_distributions) return;
-
-    // Only thread 0 does the work (sequential sampling requirement)
-    if (threadIdx.x != 0) return;
-
-    // Initialize RNG
-    XorShift128PlusState state;
-    xorshift128plus_init(&state, seed, dist);
-
-    // Get pointers
-    const T* prob_row = probs + dist * num_categories;
-    long long* out_row = out + dist * num_samples;
-
-    // Copy probabilities to shared memory (so we can zero them out)
-    for (unsigned int i = 0; i < num_categories; i++) {
-        shared_probs[i] = (double)prob_row[i];
-    }
-
-    // Sample without replacement
-    for (unsigned int s = 0; s < num_samples; s++) {
-        // Compute sum of remaining probabilities
-        double sum = 0.0;
-        for (unsigned int i = 0; i < num_categories; i++) {
-            sum += shared_probs[i];
-        }
-
-        // Generate uniform random value
-        double u = xorshift128plus_uniform(&state);
-
-        // Binary search using CDF
-        double cumsum = 0.0;
-        unsigned int result = num_categories - 1;
-        for (unsigned int i = 0; i < num_categories; i++) {
-            cumsum += shared_probs[i];
-            if (cumsum / sum >= u) {
-                result = i;
-                break;
-            }
-        }
-
-        out_row[s] = (long long)result;
-
-        // Zero out selected category
-        shared_probs[result] = 0.0;
-    }
-}
-
-// ============================================================================
-// Multinomial Sampling - Typed kernel wrappers (inside extern "C")
-// ============================================================================
-
-extern "C" {
-
-// Instantiate for F32
-__global__ void multinomial_with_replacement_f32(
-    const float* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    multinomial_with_replacement_impl<float>(probs, out, seed, num_distributions, num_categories, num_samples);
-}
-
-__global__ void multinomial_without_replacement_f32(
-    const float* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    extern __shared__ double shared_probs[];
-    multinomial_without_replacement_impl<float>(probs, out, seed, num_distributions, num_categories, num_samples, shared_probs);
-}
-
-// Instantiate for F64
-__global__ void multinomial_with_replacement_f64(
-    const double* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    multinomial_with_replacement_impl<double>(probs, out, seed, num_distributions, num_categories, num_samples);
-}
-
-__global__ void multinomial_without_replacement_f64(
-    const double* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    extern __shared__ double shared_probs[];
-    multinomial_without_replacement_impl<double>(probs, out, seed, num_distributions, num_categories, num_samples, shared_probs);
-}
-
-// Instantiate for F16
-__global__ void multinomial_with_replacement_f16(
-    const __half* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    multinomial_with_replacement_impl<__half>(probs, out, seed, num_distributions, num_categories, num_samples);
-}
-
-__global__ void multinomial_without_replacement_f16(
-    const __half* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    extern __shared__ double shared_probs[];
-    multinomial_without_replacement_impl<__half>(probs, out, seed, num_distributions, num_categories, num_samples, shared_probs);
-}
-
-// Instantiate for BF16
-__global__ void multinomial_with_replacement_bf16(
-    const __nv_bfloat16* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    multinomial_with_replacement_impl<__nv_bfloat16>(probs, out, seed, num_distributions, num_categories, num_samples);
-}
-
-__global__ void multinomial_without_replacement_bf16(
-    const __nv_bfloat16* probs, long long* out, unsigned long long seed,
-    unsigned int num_distributions, unsigned int num_categories, unsigned int num_samples
-) {
-    extern __shared__ double shared_probs[];
-    multinomial_without_replacement_impl<__nv_bfloat16>(probs, out, seed, num_distributions, num_categories, num_samples, shared_probs);
 }
 
 } // extern "C"

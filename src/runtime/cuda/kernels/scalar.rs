@@ -116,6 +116,65 @@ define_scalar_launcher!(
     pub fn launch_scalar_op_i64, i64, DType::I64, "i64"
 );
 
+// The narrow integer dtypes. Each pushes the scalar in its own element type,
+// which is what `scalar.cu`'s NUMR_SCALAR_ROW_INT kernels take: the host `as`
+// cast that produced it saturates exactly like `Element::from_f64` on CPU, so
+// a scalar outside the dtype's range lands on the same bound on both backends.
+
+define_scalar_launcher!(
+    /// Launch a scalar operation kernel for i16.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as `launch_scalar_op_f32`.
+    pub fn launch_scalar_op_i16, i16, DType::I16, "i16"
+);
+
+define_scalar_launcher!(
+    /// Launch a scalar operation kernel for i8.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as `launch_scalar_op_f32`.
+    pub fn launch_scalar_op_i8, i8, DType::I8, "i8"
+);
+
+define_scalar_launcher!(
+    /// Launch a scalar operation kernel for u64.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as `launch_scalar_op_f32`.
+    pub fn launch_scalar_op_u64, u64, DType::U64, "u64"
+);
+
+define_scalar_launcher!(
+    /// Launch a scalar operation kernel for u32.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as `launch_scalar_op_f32`.
+    pub fn launch_scalar_op_u32, u32, DType::U32, "u32"
+);
+
+define_scalar_launcher!(
+    /// Launch a scalar operation kernel for u16.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as `launch_scalar_op_f32`.
+    pub fn launch_scalar_op_u16, u16, DType::U16, "u16"
+);
+
+define_scalar_launcher!(
+    /// Launch a scalar operation kernel for u8.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as `launch_scalar_op_f32`.
+    pub fn launch_scalar_op_u8, u8, DType::U8, "u8"
+);
+
 /// Launch a scalar operation kernel for f16/bf16/fp8 (uses f32 scalar value).
 ///
 /// This launcher handles multiple half-precision types that all use f32 scalars:
@@ -191,7 +250,64 @@ define_scalar_launcher!(
     pub fn launch_scalar_op_c128, f64, DType::Complex128, "c128"
 );
 
-/// Launch `pow_scalar` for I32 or I64.
+/// Launch a scalar operation for any integer dtype.
+///
+/// The scalar reaches the kernel in the element type, so this fans out to the
+/// per-dtype launcher rather than pushing one width for all eight: a `u64`
+/// kernel parameter is not an `i8` one. Each `as` cast saturates, matching
+/// `Element::from_f64` on the CPU reference.
+///
+/// `pow_scalar` does NOT come through here — its exponent stays an `f64`. See
+/// [`launch_pow_scalar_int`].
+///
+/// # Safety
+///
+/// Same requirements as `launch_scalar_op_f32`.
+pub unsafe fn launch_scalar_op_int(
+    context: &Arc<CudaContext>,
+    stream: &CudaStream,
+    device_index: usize,
+    op: &str,
+    dtype: DType,
+    a_ptr: u64,
+    scalar: f64,
+    out_ptr: u64,
+    numel: usize,
+) -> Result<()> {
+    macro_rules! dispatch {
+        ($launcher:ident, $ty:ty) => {
+            unsafe {
+                $launcher(
+                    context,
+                    stream,
+                    device_index,
+                    op,
+                    a_ptr,
+                    scalar as $ty,
+                    out_ptr,
+                    numel,
+                )
+            }
+        };
+    }
+
+    match dtype {
+        DType::I64 => dispatch!(launch_scalar_op_i64, i64),
+        DType::I32 => dispatch!(launch_scalar_op_i32, i32),
+        DType::I16 => dispatch!(launch_scalar_op_i16, i16),
+        DType::I8 => dispatch!(launch_scalar_op_i8, i8),
+        DType::U64 => dispatch!(launch_scalar_op_u64, u64),
+        DType::U32 => dispatch!(launch_scalar_op_u32, u32),
+        DType::U16 => dispatch!(launch_scalar_op_u16, u16),
+        DType::U8 => dispatch!(launch_scalar_op_u8, u8),
+        _ => Err(Error::UnsupportedDType {
+            dtype,
+            op: "scalar op (integer dispatch)",
+        }),
+    }
+}
+
+/// Launch `pow_scalar` for any integer dtype.
 ///
 /// Separate from [`launch_scalar_op_i32`] because the integer `pow_scalar`
 /// kernels take the exponent as `f64`, not as the element type: a fractional or

@@ -1,4 +1,4 @@
-// Compile-Time-Tiled Integer GEMM (I32, I64)
+// Compile-Time-Tiled Integer GEMM (I16, I32, I64, U8, U16, U32, U64)
 //
 // Integer matmul accumulates in `Numr128`, never in the element type. This is
 // what CPU does (`matmul_scalar_acc::<T, i128>` in
@@ -21,8 +21,15 @@
 // registers on `reg_c`. An 8x8 tile would need 256, past the 255-register
 // per-thread limit, and would spill exactly what compile-time tiling exists to
 // prevent. 64x64x8 is therefore the widest shape that keeps the accumulator in
-// registers. Shared memory is a static 8 KB for I64 (2 x 64 x 8 x 8 bytes) and
-// 4 KB for I32, well inside the 48 KB per-block default.
+// registers. Shared memory is a static 8 KB at the widest element, I64
+// (2 x 64 x 8 x 8 bytes), and less for every narrower one - well inside the
+// 48 KB per-block default.
+//
+// The fused-bias variants seed the accumulator with the bias instead of adding
+// it afterwards, which is what CPU does (`matmul_bias_scalar_acc` in
+// `runtime/cpu/kernels/matmul/kernel.rs`). Composing a plain matmul with an
+// elementwise add would narrow and saturate the product first and then wrap the
+// bias into the element type, reporting a different number at the boundary.
 //
 // Single-buffered, not double-buffered: a double-buffered variant was
 // implemented and benchmarked on an RTX 3060 and lost - I32 1024x1024 was 26%
@@ -41,6 +48,7 @@ template<typename T, int BM, int BN, int BK, int TM, int TN>
 __device__ __forceinline__ void matmul_int_tiled_impl(
     const T* __restrict__ A,
     const T* __restrict__ B,
+    const T* __restrict__ bias,
     T* __restrict__ C,
     unsigned int M,
     unsigned int N,
@@ -58,12 +66,19 @@ __device__ __forceinline__ void matmul_int_tiled_impl(
     const unsigned int thread_row = ty * TM;
     const unsigned int thread_col = tx * TN;
 
+    // `bias` is null for the plain kernels. Where it is given it seeds the
+    // accumulator, so the bias is part of the wide sum rather than a narrowed
+    // value added to a narrowed product. `Numr128From` picks the widening by
+    // element type, so an unsigned bias zero-extends.
     Numr128 reg_c[TM][TN];
     #pragma unroll
     for (int i = 0; i < TM; i++) {
         #pragma unroll
         for (int j = 0; j < TN; j++) {
-            reg_c[i][j] = numr128_from_i64(0);
+            const unsigned int bias_col = block_col + thread_col + j;
+            reg_c[i][j] = (bias != nullptr && bias_col < N)
+                ? Numr128From<T>::apply(bias[bias_col])
+                : numr128_from_i64(0);
         }
     }
 
@@ -121,10 +136,11 @@ __device__ __forceinline__ void matmul_int_tiled_impl(
             for (int i = 0; i < TM; i++) {
                 #pragma unroll
                 for (int j = 0; j < TN; j++) {
-                    // Widen both operands before multiplying: the product of two
-                    // I32 or I64 elements does not fit the element type.
-                    Numr128 prod = numr128_mul_i64((long long)reg_a[i], (long long)reg_b[j]);
-                    reg_c[i][j] = numr128_add(reg_c[i][j], prod);
+                    // Widen both operands before multiplying: the product of
+                    // two elements does not fit the element type. The widening
+                    // is type-directed, so an unsigned element zero-extends
+                    // instead of entering the accumulator negative.
+                    reg_c[i][j] = Numr128MulAdd<T>::apply(reg_c[i][j], reg_a[i], reg_b[j]);
                 }
             }
         }
@@ -153,6 +169,7 @@ template<typename T, int BM, int BN, int BK, int TM, int TN>
 __device__ __forceinline__ void matmul_batched_int_tiled_impl(
     const T* __restrict__ A,
     const T* __restrict__ B,
+    const T* __restrict__ bias,
     T* __restrict__ C,
     unsigned int batch,
     unsigned int M,
@@ -164,71 +181,90 @@ __device__ __forceinline__ void matmul_batched_int_tiled_impl(
     const unsigned int b = blockIdx.z;
     if (b >= batch) return;
 
+    // The bias is [N], so every batch slice reads the same vector.
     matmul_int_tiled_impl<T, BM, BN, BK, TM, TN>(
         A + (b % a_batch_count) * M * K,
         B + (b % b_batch_count) * K * N,
+        bias,
         C + b * M * N,
         M, N, K
     );
 }
 
 // ---------------------------------------------------------------------------
-// Extern "C" entry points (one per instantiation)
+// Extern "C" entry points (four per dtype)
 //
 // Grid: (ceil(N/64), ceil(M/64), batch)   Block: (16, 16, 1)
 // Shared memory is static, so these launch with zero dynamic shared memory.
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_i32_tiled_64x64x8_4x4(
-    const int* __restrict__ A,
-    const int* __restrict__ B,
-    int* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    matmul_int_tiled_impl<int, 64, 64, 8, 4, 4>(A, B, C, M, N, K);
+// One macro per dtype emits all four entry points - plain and fused-bias, each
+// batched and not - so a new element type is one row rather than four
+// hand-copied bodies.
+//
+// I8 is deliberately absent: CPU `matmul` on I8 returns an I32 tensor
+// (quantized accumulation, see `ops/cpu/matmul.rs`), so an I8-in/I8-out kernel
+// here would disagree with the reference on both dtype and value.
+#define NUMR_MATMUL_INT_ENTRIES(SUFFIX, TYPE) \
+extern "C" __global__ void matmul_##SUFFIX##_tiled_64x64x8_4x4( \
+    const TYPE* __restrict__ A, \
+    const TYPE* __restrict__ B, \
+    TYPE* __restrict__ C, \
+    unsigned int M, \
+    unsigned int N, \
+    unsigned int K \
+) { \
+    matmul_int_tiled_impl<TYPE, 64, 64, 8, 4, 4>(A, B, nullptr, C, M, N, K); \
+} \
+extern "C" __global__ void matmul_batched_##SUFFIX##_tiled_64x64x8_4x4( \
+    const TYPE* __restrict__ A, \
+    const TYPE* __restrict__ B, \
+    TYPE* __restrict__ C, \
+    unsigned int batch, \
+    unsigned int M, \
+    unsigned int N, \
+    unsigned int K, \
+    unsigned int a_batch_count, \
+    unsigned int b_batch_count \
+) { \
+    matmul_batched_int_tiled_impl<TYPE, 64, 64, 8, 4, 4>( \
+        A, B, nullptr, C, batch, M, N, K, a_batch_count, b_batch_count \
+    ); \
+} \
+extern "C" __global__ void matmul_bias_##SUFFIX##_tiled_64x64x8_4x4( \
+    const TYPE* __restrict__ A, \
+    const TYPE* __restrict__ B, \
+    const TYPE* __restrict__ bias, \
+    TYPE* __restrict__ C, \
+    unsigned int M, \
+    unsigned int N, \
+    unsigned int K \
+) { \
+    matmul_int_tiled_impl<TYPE, 64, 64, 8, 4, 4>(A, B, bias, C, M, N, K); \
+} \
+extern "C" __global__ void matmul_bias_batched_##SUFFIX##_tiled_64x64x8_4x4( \
+    const TYPE* __restrict__ A, \
+    const TYPE* __restrict__ B, \
+    const TYPE* __restrict__ bias, \
+    TYPE* __restrict__ C, \
+    unsigned int batch, \
+    unsigned int M, \
+    unsigned int N, \
+    unsigned int K, \
+    unsigned int a_batch_count, \
+    unsigned int b_batch_count \
+) { \
+    matmul_batched_int_tiled_impl<TYPE, 64, 64, 8, 4, 4>( \
+        A, B, bias, C, batch, M, N, K, a_batch_count, b_batch_count \
+    ); \
 }
 
-extern "C" __global__ void matmul_i64_tiled_64x64x8_4x4(
-    const long long* __restrict__ A,
-    const long long* __restrict__ B,
-    long long* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    matmul_int_tiled_impl<long long, 64, 64, 8, 4, 4>(A, B, C, M, N, K);
-}
+NUMR_MATMUL_INT_ENTRIES(i16, short)
+NUMR_MATMUL_INT_ENTRIES(i32, int)
+NUMR_MATMUL_INT_ENTRIES(i64, long long)
+NUMR_MATMUL_INT_ENTRIES(u8, unsigned char)
+NUMR_MATMUL_INT_ENTRIES(u16, unsigned short)
+NUMR_MATMUL_INT_ENTRIES(u32, unsigned int)
+NUMR_MATMUL_INT_ENTRIES(u64, unsigned long long)
 
-extern "C" __global__ void matmul_batched_i32_tiled_64x64x8_4x4(
-    const int* __restrict__ A,
-    const int* __restrict__ B,
-    int* __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    matmul_batched_int_tiled_impl<int, 64, 64, 8, 4, 4>(
-        A, B, C, batch, M, N, K, a_batch_count, b_batch_count
-    );
-}
-
-extern "C" __global__ void matmul_batched_i64_tiled_64x64x8_4x4(
-    const long long* __restrict__ A,
-    const long long* __restrict__ B,
-    long long* __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    matmul_batched_int_tiled_impl<long long, 64, 64, 8, 4, 4>(
-        A, B, C, batch, M, N, K, a_batch_count, b_batch_count
-    );
-}
+#undef NUMR_MATMUL_INT_ENTRIES

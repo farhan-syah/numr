@@ -1,4 +1,8 @@
-// Backend parity tests for I32 / I64 `matmul` - CUDA vs CPU.
+// Backend parity tests for the signed integer `matmul` on CUDA vs CPU.
+//
+// I32 and I64 are the two widths the CUDA kernels started with and carry the
+// depth here; I16 is checked at the end for kernel resolution and saturation.
+// The unsigned widths live in `integer_dtypes_cuda.rs`.
 //
 // The CPU backend scope in `../../common/mod.rs` stops at 32-bit integers, so the
 // macro-driven tests in `float.rs` never reach I64 matmul. CUDA used to answer
@@ -413,31 +417,101 @@ fn test_matmul_i64_non_square_cuda_matches_cpu() {
 }
 
 // ============================================================================
-// The dtypes with no CUDA integer arithmetic stay unsupported
+// I16 - the narrow signed width, on both the GEMV and the tiled path
 // ============================================================================
 //
-// I32 and I64 are the only integers with a CUDA arithmetic pipeline, so matmul
-// is deliberately not extended to the others. This pins that boundary so a
-// future dtype addition is a deliberate change, not a silent one.
+// A missing instantiation fails at kernel lookup, so one small case (m <= 16,
+// GEMV) and one m > 16 case (tiled) is what proves both modules were built for
+// this dtype.
 
 #[cfg(feature = "cuda")]
 #[test]
-fn test_matmul_u32_stays_unsupported_on_cuda() {
+fn test_matmul_i16_cuda_matches_cpu() {
+    assert_int_matmul_parity(
+        "i16 2x2 @ 2x2",
+        &[1i16, 2, 3, 4],
+        &[2, 2],
+        &[5i16, 6, 7, 8],
+        &[2, 2],
+        Some(&[19i16, 22, 43, 50]),
+    );
+    // Negatives, so the signed widening is exercised and not only the magnitude.
+    assert_int_matmul_parity(
+        "i16 negatives with exact zero",
+        &[1i16, -1, -3, 4],
+        &[2, 2],
+        &[7i16, -2, 7, 5],
+        &[2, 2],
+        Some(&[0i16, -7, 7, 26]),
+    );
+    // 300 * 300 = 90_000, past i16::MAX, so the narrow-back clamps.
+    assert_int_matmul_parity(
+        "i16 single product saturates",
+        &[300i16],
+        &[1, 1],
+        &[300i16],
+        &[1, 1],
+        Some(&[i16::MAX]),
+    );
+    // m > 16 leaves the small-M shortcut behind, and K = 9 is not a multiple of
+    // the tiled kernel's BK = 8.
+    assert_int_matmul_parity(
+        "i16 20x9 @ 9x5",
+        &(0..20 * 9).map(|i| (i % 11) as i16 - 5).collect::<Vec<_>>(),
+        &[20, 9],
+        &(0..9 * 5).map(|i| (i % 7) as i16 - 3).collect::<Vec<_>>(),
+        &[9, 5],
+        None,
+    );
+}
+
+// ============================================================================
+// The dtypes with no CUDA integer matmul kernel stay unsupported
+// ============================================================================
+//
+// `integer_dtypes_cuda.rs` covers the widths that were added after I32/I64.
+// I8 and Bool are what is left out, and for a reason worth pinning: CPU
+// `matmul` on I8 returns an I32 tensor (quantized accumulation), so an
+// I8-in/I8-out CUDA kernel would disagree with the reference on the output
+// dtype itself. Bool has no arithmetic pipeline at all.
+
+#[cfg(feature = "cuda")]
+#[test]
+fn test_matmul_i8_and_bool_stay_unsupported_on_cuda() {
     with_cuda_backend(|client, device| {
-        let a = Tensor::<CudaRuntime>::from_slice(&[1u32, 2, 3, 4], &[2, 2], &device).expect("A");
-        let b = Tensor::<CudaRuntime>::from_slice(&[1u32, 0, 0, 1], &[2, 2], &device).expect("B");
+        let a_i8 = Tensor::<CudaRuntime>::from_slice(&[1i8, 2, 3, 4], &[2, 2], &device).expect("A");
+        let b_i8 = Tensor::<CudaRuntime>::from_slice(&[1i8, 0, 0, 1], &[2, 2], &device).expect("B");
         let err = client
-            .matmul(&a, &b)
-            .expect_err("U32 matmul has no CUDA kernel and must not fall back to the host");
+            .matmul(&a_i8, &b_i8)
+            .expect_err("I8 matmul would change the output dtype, so it must not run");
         assert!(
             matches!(
                 err,
                 numr::error::Error::UnsupportedDType {
-                    dtype: DType::U32,
+                    dtype: DType::I8,
                     ..
                 }
             ),
-            "expected UnsupportedDType, got {err:?}"
+            "expected UnsupportedDType for I8, got {err:?}"
+        );
+
+        // `bool` has no `Element` impl, so a Bool tensor is allocated by dtype
+        // rather than built from a slice. The contents are never read: the call
+        // has to be refused before any kernel runs.
+        let a_bool = Tensor::<CudaRuntime>::empty(&[2, 2], DType::Bool, &device).expect("A bool");
+        let b_bool = Tensor::<CudaRuntime>::empty(&[2, 2], DType::Bool, &device).expect("B bool");
+        let err = client
+            .matmul(&a_bool, &b_bool)
+            .expect_err("Bool matmul has no CUDA kernel and must not fall back to the host");
+        assert!(
+            matches!(
+                err,
+                numr::error::Error::UnsupportedDType {
+                    dtype: DType::Bool,
+                    ..
+                }
+            ),
+            "expected UnsupportedDType for Bool, got {err:?}"
         );
     });
 }

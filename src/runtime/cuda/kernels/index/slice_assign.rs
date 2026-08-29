@@ -5,10 +5,10 @@ use cudarc::driver::safe::{CudaContext, CudaStream};
 use std::sync::Arc;
 
 use super::super::loader::{
-    BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module, kernel_name,
-    launch_config,
+    BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module,
+    kernel_names::INDEX_ND_MODULE, launch_config,
 };
-use super::gather::INDEX_MODULE;
+use super::dtype_gate::index_dtype_suffix;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
@@ -40,8 +40,11 @@ pub unsafe fn launch_slice_assign(
     }
 
     unsafe {
-        let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
-        let func_name = kernel_name("slice_assign", dtype);
+        let module = get_or_load_module(context, device_index, INDEX_ND_MODULE)?;
+        let func_name = format!(
+            "slice_assign_{}",
+            index_dtype_suffix(dtype, "slice_assign")?
+        );
         let func = get_kernel_function(&module, &func_name)?;
 
         let grid = elementwise_launch_config(total);

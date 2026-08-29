@@ -255,8 +255,14 @@ pub mod kernel_names {
     pub const FUSED_ADD_NORM_MODULE: &str = "fused_add_norm";
     /// Type casting operations (cast between dtypes)
     pub const CAST_MODULE: &str = "cast";
-    /// Utility operations (fill)
+    /// Utility operations (fill, arange, linspace, eye)
     pub const UTILITY_MODULE: &str = "utility";
+    /// Random sampling operations (rand, randn, randint, multinomial)
+    pub const UTILITY_RANDOM_MODULE: &str = "utility_random";
+    /// Coordinate-addressed indexing (gather_nd, gather_2d, slice_assign)
+    pub const INDEX_ND_MODULE: &str = "index_nd";
+    /// Scatter with reduction (sum, prod, max, min, mean)
+    pub const SCATTER_REDUCE_MODULE: &str = "scatter_reduce";
     /// Ternary operations (where)
     pub const TERNARY_MODULE: &str = "ternary";
     /// Prefix sum operations (exclusive scan)
@@ -305,9 +311,9 @@ pub mod kernel_names {
     pub const MATMUL_WMMA_MODULE: &str = "matmul_wmma";
     /// GEMV operations (matrix-vector multiply for small M)
     pub const GEMV_MODULE: &str = "gemv";
-    /// Integer GEMV operations (I32, I64), which accumulate in `Numr128`
+    /// Integer GEMV operations, which accumulate in `Numr128`
     pub const GEMV_INT_MODULE: &str = "gemv_int";
-    /// Compile-time-tiled integer GEMM (I32, I64)
+    /// Compile-time-tiled integer GEMM
     pub const MATMUL_INT_MODULE: &str = "matmul_int";
     /// Compile-time-tiled FP8 GEMM (FP8E4M3, FP8E5M2), F32 accumulation
     pub const MATMUL_FP8_MODULE: &str = "matmul_fp8";
@@ -377,13 +383,28 @@ pub fn kernel_name(base: &str, dtype: DType) -> String {
 /// Integer GEMV lives in its own translation unit: it accumulates in `Numr128`
 /// instead of a float register, and `gemv.cu` is already at its size limit.
 /// Every dtype that reaches a GEMV launcher has kernels in one module or the
-/// other, so there is no dtype gate on the small-M fast path.
+/// other, so there is no dtype gate on the small-M fast path: `matmul` admits
+/// only dtypes that `int_matmul_has_kernel` or `gemv.cu` covers.
 #[inline]
 fn gemv_module(dtype: DType) -> &'static str {
-    match dtype {
-        DType::I32 | DType::I64 => kernel_names::GEMV_INT_MODULE,
-        _ => kernel_names::GEMV_MODULE,
+    if dtype.is_int() {
+        kernel_names::GEMV_INT_MODULE
+    } else {
+        kernel_names::GEMV_MODULE
     }
+}
+
+/// Whether `matmul_int.cu` and `gemv_int.cu` instantiate this dtype.
+///
+/// Both files instantiate the same list, so one predicate gates the tiled GEMM
+/// and the GEMV fast paths together, and `ops/cuda/matmul.rs` gates the public
+/// entry point on it. Every integer dtype is covered except I8: CPU `matmul` on
+/// I8 returns an I32 tensor (quantized accumulation, see `ops/cpu/matmul.rs`),
+/// so an I8-in/I8-out CUDA kernel would disagree with the reference on both the
+/// output dtype and the value.
+#[inline]
+pub fn int_matmul_has_kernel(dtype: DType) -> bool {
+    dtype.is_int() && dtype != DType::I8
 }
 
 /// The PTX module holding this dtype's reduction kernels.
@@ -727,7 +748,7 @@ pub unsafe fn launch_matmul_kernel(
     }
     // Integers: same reason as F32 below. Their accumulator is a 16-byte
     // `Numr128`, so a runtime-sized `reg_c` spills four registers per slot.
-    if matches!(dtype, DType::I32 | DType::I64) {
+    if int_matmul_has_kernel(dtype) {
         unsafe {
             return launch_matmul_int_tiled(
                 context,
@@ -736,6 +757,7 @@ pub unsafe fn launch_matmul_kernel(
                 dtype,
                 a_ptr,
                 b_ptr,
+                None,
                 c_ptr,
                 1,
                 m,
@@ -1185,11 +1207,15 @@ const INT_TILE: TileConfig = TileConfig {
     thread_n: 4,
 };
 
-/// Launch the compile-time-tiled integer GEMM, batched or not.
+/// Launch the compile-time-tiled integer GEMM, batched or not, with or without
+/// a fused bias.
+///
+/// `bias_ptr` selects the fused entry point, which seeds the 128-bit
+/// accumulator with the bias instead of adding it after the narrow-back store.
 ///
 /// The tile dimensions are template parameters in `matmul_int.cu` rather than
 /// kernel arguments, so `reg_c` is sized exactly and stays in registers. That
-/// fixes the shape of the launch here: one kernel name per dtype, and a grid
+/// fixes the shape of the launch here: four kernel names per dtype, and a grid
 /// derived from `INT_TILE`.
 ///
 /// Shared memory in those kernels is static, so the dynamic shared-memory
@@ -1206,6 +1232,7 @@ unsafe fn launch_matmul_int_tiled(
     dtype: DType,
     a_ptr: u64,
     b_ptr: u64,
+    bias_ptr: Option<u64>,
     c_ptr: u64,
     batch: usize,
     m: usize,
@@ -1217,21 +1244,24 @@ unsafe fn launch_matmul_int_tiled(
     // A single batch with no broadcasting takes the 2-D entry point, which skips
     // the per-block batch offset arithmetic.
     let plain = batch == 1 && a_batch == 1 && b_batch == 1;
-    let kernel_fn_name = match (dtype, plain) {
-        (DType::I32, true) => "matmul_i32_tiled_64x64x8_4x4",
-        (DType::I64, true) => "matmul_i64_tiled_64x64x8_4x4",
-        (DType::I32, false) => "matmul_batched_i32_tiled_64x64x8_4x4",
-        (DType::I64, false) => "matmul_batched_i64_tiled_64x64x8_4x4",
-        _ => {
-            return Err(Error::UnsupportedDType {
-                dtype,
-                op: "matmul_int_tiled",
-            });
-        }
+    if !int_matmul_has_kernel(dtype) {
+        return Err(Error::UnsupportedDType {
+            dtype,
+            op: "matmul_int_tiled",
+        });
+    }
+    // `matmul_int.cu` builds all four names from the same dtype suffix and tile
+    // shape, so they are composed here rather than listed per dtype.
+    let base = match (bias_ptr.is_some(), plain) {
+        (false, true) => "matmul",
+        (false, false) => "matmul_batched",
+        (true, true) => "matmul_bias",
+        (true, false) => "matmul_bias_batched",
     };
+    let kernel_fn_name = format!("{}_{}_tiled_64x64x8_4x4", base, dtype_suffix(dtype));
 
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_INT_MODULE)?;
-    let func = get_kernel_function(&module, kernel_fn_name)?;
+    let func = get_kernel_function(&module, &kernel_fn_name)?;
 
     let bm = INT_TILE.block_m as u32;
     let bn = INT_TILE.block_n as u32;
@@ -1258,6 +1288,11 @@ unsafe fn launch_matmul_int_tiled(
         let mut builder = stream.launch_builder(&func);
         builder.arg(&a_ptr);
         builder.arg(&b_ptr);
+        // The bias parameter sits between B and C in the fused kernels, so it is
+        // bound before C rather than appended.
+        if let Some(bias) = bias_ptr.as_ref() {
+            builder.arg(bias);
+        }
         builder.arg(&c_ptr);
         if !plain {
             builder.arg(&batch_u32);
@@ -1481,7 +1516,7 @@ pub unsafe fn launch_matmul_batched_kernel(
         }
     }
     // Integers use the compile-time-tiled kernels at every batch size.
-    if matches!(dtype, DType::I32 | DType::I64) {
+    if int_matmul_has_kernel(dtype) {
         unsafe {
             return launch_matmul_int_tiled(
                 context,
@@ -1490,6 +1525,7 @@ pub unsafe fn launch_matmul_batched_kernel(
                 dtype,
                 a_ptr,
                 b_ptr,
+                None,
                 c_ptr,
                 batch,
                 m,
@@ -1821,6 +1857,30 @@ pub unsafe fn launch_matmul_bias_kernel(
             );
         }
     }
+    // Integers likewise: `matmul.cu` has no integer kernels at all, and the
+    // fused form is required rather than merely faster - the bias has to join
+    // the 128-bit accumulator before it saturates, which a separate add cannot
+    // do. There is no small-M shortcut here because `gemv_int.cu` takes no bias.
+    if int_matmul_has_kernel(dtype) {
+        unsafe {
+            return launch_matmul_int_tiled(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                Some(bias_ptr),
+                c_ptr,
+                1,
+                m,
+                n,
+                k,
+                1,
+                1,
+            );
+        }
+    }
     unsafe {
         launch_matmul_bias_kernel_with_config(
             context,
@@ -1932,6 +1992,27 @@ pub unsafe fn launch_matmul_bias_batched_kernel(
     if matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2) {
         unsafe {
             return launch_matmul_fp8_tiled(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                Some(bias_ptr),
+                c_ptr,
+                batch,
+                m,
+                n,
+                k,
+                a_batch,
+                b_batch,
+            );
+        }
+    }
+    // Integers: same reason as the non-batched entry point above.
+    if int_matmul_has_kernel(dtype) {
+        unsafe {
+            return launch_matmul_int_tiled(
                 context,
                 stream,
                 device_index,

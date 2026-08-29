@@ -1,573 +1,263 @@
 // Type casting CUDA kernels
-// Supports: cast between f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, i32, i64
+// Covers every ordered pair of: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2,
+// i64, i32, i16, i8, u64, u32, u16, u8, bool
 //
 // Kernel naming: cast_{src_dtype}_{dst_dtype}
 // Example: cast_f32_f16 converts from f32 to f16
+//
+// Identity pairs (cast_f32_f32 and friends) are NOT emitted: launch_cast()
+// returns early when src_dtype == dst_dtype.
+//
+// Numerical semantics mirror the CPU reference in
+// src/runtime/cpu/kernels/memory.rs, which funnels EVERY conversion through
+// f64 and then applies a Rust `as` cast. Rust's `as` to an integer saturates:
+// NaN becomes 0, out-of-range clamps to the nearest bound. Because the CPU path
+// goes through f64, integer -> integer saturates as well (it does NOT wrap).
 
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
+#include <stdint.h>
 #include "dtype_traits.cuh"
+
+// Bool is stored as one byte, exactly like U8. A distinct C++ type keeps the two
+// apart in the templates below: U8 converts numerically, Bool collapses to 0/1.
+struct numr_bool {
+    unsigned char data;
+};
+
+// ============================================================================
+// Source -> f64 (mirrors Element::to_f64 in src/dtype/element.rs)
+// ============================================================================
+
+__device__ __forceinline__ double cast_to_f64(float v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(double v) { return v; }
+__device__ __forceinline__ double cast_to_f64(__half v) { return (double)__half2float(v); }
+__device__ __forceinline__ double cast_to_f64(__nv_bfloat16 v) { return (double)__bfloat162float(v); }
+__device__ __forceinline__ double cast_to_f64(numr_fp8_e4m3 v) { return (double)fp8_e4m3_to_f32(v.data); }
+__device__ __forceinline__ double cast_to_f64(numr_fp8_e5m2 v) { return (double)fp8_e5m2_to_f32(v.data); }
+__device__ __forceinline__ double cast_to_f64(signed char v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(short v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(int v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(long long v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(unsigned char v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(unsigned short v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(unsigned int v) { return (double)v; }
+__device__ __forceinline__ double cast_to_f64(unsigned long long v) { return (double)v; }
+// A Bool source reads the raw byte: the CPU path dispatches Bool through u8.
+__device__ __forceinline__ double cast_to_f64(numr_bool v) { return (double)v.data; }
+
+// ============================================================================
+// Saturating f64 -> integer (mirrors Rust's `as` cast)
+// ============================================================================
+// hi_excl() is the smallest double strictly above every representable value, so
+// the comparison is exact even where the maximum itself is not representable
+// (i64, u64).
+
+template <typename T> struct numr_int_range;
+
+#define NUMR_INT_RANGE(T, LO_BOUND, HI_EXCL, LO_VALUE, HI_VALUE)               \
+    template <> struct numr_int_range<T> {                                     \
+        __device__ __forceinline__ static double lo_bound() { return LO_BOUND; } \
+        __device__ __forceinline__ static double hi_excl() { return HI_EXCL; } \
+        __device__ __forceinline__ static T lo_value() { return LO_VALUE; }    \
+        __device__ __forceinline__ static T hi_value() { return HI_VALUE; }    \
+    };
+
+NUMR_INT_RANGE(signed char, -128.0, 128.0, (signed char)(-128), (signed char)127)
+NUMR_INT_RANGE(short, -32768.0, 32768.0, (short)(-32768), (short)32767)
+NUMR_INT_RANGE(int, -2147483648.0, 2147483648.0, (-2147483647 - 1), 2147483647)
+NUMR_INT_RANGE(long long, -9223372036854775808.0, 9223372036854775808.0,
+               (-9223372036854775807LL - 1), 9223372036854775807LL)
+NUMR_INT_RANGE(unsigned char, 0.0, 256.0, (unsigned char)0, (unsigned char)255)
+NUMR_INT_RANGE(unsigned short, 0.0, 65536.0, (unsigned short)0, (unsigned short)65535)
+NUMR_INT_RANGE(unsigned int, 0.0, 4294967296.0, 0u, 4294967295u)
+NUMR_INT_RANGE(unsigned long long, 0.0, 18446744073709551616.0, 0ull, 18446744073709551615ull)
+
+#undef NUMR_INT_RANGE
+
+template <typename T>
+__device__ __forceinline__ T numr_sat_f64(double d) {
+    if (d != d) return (T)0;                                    // Rust `as`: NaN -> 0
+    if (d <= numr_int_range<T>::lo_bound()) return numr_int_range<T>::lo_value();
+    if (d >= numr_int_range<T>::hi_excl()) return numr_int_range<T>::hi_value();
+    return (T)d;                                                // in range: truncates toward zero
+}
+
+// ============================================================================
+// f64 -> destination (mirrors the cast_from! macro in cpu/kernels/memory.rs)
+// ============================================================================
+
+template <typename Dst> __device__ __forceinline__ Dst cast_from_f64(double d);
+
+template <> __device__ __forceinline__ double cast_from_f64<double>(double d) { return d; }
+template <> __device__ __forceinline__ float cast_from_f64<float>(double d) { return (float)d; }
+// f16/bf16 round once from f64, matching half::f16::from_f64 / half::bf16::from_f64.
+template <> __device__ __forceinline__ __half cast_from_f64<__half>(double d) { return __double2half(d); }
+template <> __device__ __forceinline__ __nv_bfloat16 cast_from_f64<__nv_bfloat16>(double d) { return __double2bfloat16(d); }
+// FP8 rounds via f32, matching FP8E4M3::from_f64 / FP8E5M2::from_f64.
+template <> __device__ __forceinline__ numr_fp8_e4m3 cast_from_f64<numr_fp8_e4m3>(double d) {
+    return numr_fp8_e4m3(f32_to_fp8_e4m3((float)d));
+}
+template <> __device__ __forceinline__ numr_fp8_e5m2 cast_from_f64<numr_fp8_e5m2>(double d) {
+    return numr_fp8_e5m2(f32_to_fp8_e5m2((float)d));
+}
+template <> __device__ __forceinline__ signed char cast_from_f64<signed char>(double d) { return numr_sat_f64<signed char>(d); }
+template <> __device__ __forceinline__ short cast_from_f64<short>(double d) { return numr_sat_f64<short>(d); }
+template <> __device__ __forceinline__ int cast_from_f64<int>(double d) { return numr_sat_f64<int>(d); }
+template <> __device__ __forceinline__ long long cast_from_f64<long long>(double d) { return numr_sat_f64<long long>(d); }
+template <> __device__ __forceinline__ unsigned char cast_from_f64<unsigned char>(double d) { return numr_sat_f64<unsigned char>(d); }
+template <> __device__ __forceinline__ unsigned short cast_from_f64<unsigned short>(double d) { return numr_sat_f64<unsigned short>(d); }
+template <> __device__ __forceinline__ unsigned int cast_from_f64<unsigned int>(double d) { return numr_sat_f64<unsigned int>(d); }
+template <> __device__ __forceinline__ unsigned long long cast_from_f64<unsigned long long>(double d) { return numr_sat_f64<unsigned long long>(d); }
+// Bool destination: nonzero (NaN included) is true, matching `to_f64() != 0.0`.
+template <> __device__ __forceinline__ numr_bool cast_from_f64<numr_bool>(double d) {
+    numr_bool out;
+    out.data = (d != 0.0) ? 1 : 0;
+    return out;
+}
+
+// ============================================================================
+// Kernel template
+// ============================================================================
+
+template <typename Src, typename Dst>
+__device__ __forceinline__ Dst cast_one(Src v) {
+    return cast_from_f64<Dst>(cast_to_f64(v));
+}
+
+template <typename Src, typename Dst>
+__device__ __forceinline__ void cast_impl(const Src* a, Dst* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = cast_one<Src, Dst>(a[idx]);
+    }
+}
+
+// ============================================================================
+// Instantiation matrix
+// ============================================================================
+// One cell macro per destination dtype, one row macro invocation per source
+// dtype. Each row temporarily blanks its own cell so the identity pair is not
+// emitted.
+
+#define NUMR_CAST_DEF(SRC_T, S, DST_T, D)                                       \
+__global__ void cast_##S##_##D(const SRC_T* a, DST_T* out, unsigned int n) {    \
+    cast_impl<SRC_T, DST_T>(a, out, n);                                         \
+}
+
+#define NUMR_CELL_f32(ST, S) NUMR_CAST_DEF(ST, S, float, f32)
+#define NUMR_CELL_f64(ST, S) NUMR_CAST_DEF(ST, S, double, f64)
+#define NUMR_CELL_f16(ST, S) NUMR_CAST_DEF(ST, S, __half, f16)
+#define NUMR_CELL_bf16(ST, S) NUMR_CAST_DEF(ST, S, __nv_bfloat16, bf16)
+#define NUMR_CELL_fp8_e4m3(ST, S) NUMR_CAST_DEF(ST, S, numr_fp8_e4m3, fp8_e4m3)
+#define NUMR_CELL_fp8_e5m2(ST, S) NUMR_CAST_DEF(ST, S, numr_fp8_e5m2, fp8_e5m2)
+#define NUMR_CELL_i64(ST, S) NUMR_CAST_DEF(ST, S, long long, i64)
+#define NUMR_CELL_i32(ST, S) NUMR_CAST_DEF(ST, S, int, i32)
+#define NUMR_CELL_i16(ST, S) NUMR_CAST_DEF(ST, S, short, i16)
+#define NUMR_CELL_i8(ST, S) NUMR_CAST_DEF(ST, S, signed char, i8)
+#define NUMR_CELL_u64(ST, S) NUMR_CAST_DEF(ST, S, unsigned long long, u64)
+#define NUMR_CELL_u32(ST, S) NUMR_CAST_DEF(ST, S, unsigned int, u32)
+#define NUMR_CELL_u16(ST, S) NUMR_CAST_DEF(ST, S, unsigned short, u16)
+#define NUMR_CELL_u8(ST, S) NUMR_CAST_DEF(ST, S, unsigned char, u8)
+#define NUMR_CELL_bool(ST, S) NUMR_CAST_DEF(ST, S, numr_bool, bool)
+
+#define NUMR_CAST_ROW(ST, S)                                                    \
+    NUMR_CELL_f32(ST, S) NUMR_CELL_f64(ST, S) NUMR_CELL_f16(ST, S)              \
+    NUMR_CELL_bf16(ST, S) NUMR_CELL_fp8_e4m3(ST, S) NUMR_CELL_fp8_e5m2(ST, S)   \
+    NUMR_CELL_i64(ST, S) NUMR_CELL_i32(ST, S) NUMR_CELL_i16(ST, S)              \
+    NUMR_CELL_i8(ST, S) NUMR_CELL_u64(ST, S) NUMR_CELL_u32(ST, S)               \
+    NUMR_CELL_u16(ST, S) NUMR_CELL_u8(ST, S) NUMR_CELL_bool(ST, S)
 
 extern "C" {
 
-// ============================================================================
-// F32 -> Other Types
-// ============================================================================
-
-__global__ void cast_f32_f64(const float* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)a[idx];
-    }
-}
-
-__global__ void cast_f32_f16(const float* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half(a[idx]);
-    }
-}
-
-__global__ void cast_f32_bf16(const float* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16(a[idx]);
-    }
-}
-
-__global__ void cast_f32_fp8_e4m3(const float* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(a[idx]));
-    }
-}
-
-__global__ void cast_f32_fp8_e5m2(const float* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(a[idx]));
-    }
-}
-
-__global__ void cast_f32_i32(const float* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)a[idx];
-    }
-}
-
-__global__ void cast_f32_i64(const float* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)a[idx];
-    }
-}
-
-// ============================================================================
-// F64 -> Other Types
-// ============================================================================
-
-__global__ void cast_f64_f32(const double* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (float)a[idx];
-    }
-}
-
-__global__ void cast_f64_f16(const double* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half((float)a[idx]);
-    }
-}
-
-__global__ void cast_f64_bf16(const double* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16((float)a[idx]);
-    }
-}
-
-__global__ void cast_f64_fp8_e4m3(const double* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3((float)a[idx]));
-    }
-}
-
-__global__ void cast_f64_fp8_e5m2(const double* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2((float)a[idx]));
-    }
-}
-
-__global__ void cast_f64_i32(const double* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)a[idx];
-    }
-}
-
-__global__ void cast_f64_i64(const double* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)a[idx];
-    }
-}
-
-// ============================================================================
-// F16 -> Other Types
-// ============================================================================
-
-__global__ void cast_f16_f32(const __half* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __half2float(a[idx]);
-    }
-}
-
-__global__ void cast_f16_f64(const __half* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)__half2float(a[idx]);
-    }
-}
-
-__global__ void cast_f16_bf16(const __half* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16(__half2float(a[idx]));
-    }
-}
-
-__global__ void cast_f16_fp8_e4m3(const __half* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(__half2float(a[idx])));
-    }
-}
-
-__global__ void cast_f16_fp8_e5m2(const __half* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(__half2float(a[idx])));
-    }
-}
-
-__global__ void cast_f16_i32(const __half* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)__half2float(a[idx]);
-    }
-}
-
-__global__ void cast_f16_i64(const __half* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)__half2float(a[idx]);
-    }
-}
-
-// ============================================================================
-// BF16 -> Other Types
-// ============================================================================
-
-__global__ void cast_bf16_f32(const __nv_bfloat16* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __bfloat162float(a[idx]);
-    }
-}
-
-__global__ void cast_bf16_f64(const __nv_bfloat16* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)__bfloat162float(a[idx]);
-    }
-}
-
-__global__ void cast_bf16_f16(const __nv_bfloat16* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half(__bfloat162float(a[idx]));
-    }
-}
-
-__global__ void cast_bf16_fp8_e4m3(const __nv_bfloat16* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(__bfloat162float(a[idx])));
-    }
-}
-
-__global__ void cast_bf16_fp8_e5m2(const __nv_bfloat16* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(__bfloat162float(a[idx])));
-    }
-}
-
-__global__ void cast_bf16_i32(const __nv_bfloat16* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)__bfloat162float(a[idx]);
-    }
-}
-
-__global__ void cast_bf16_i64(const __nv_bfloat16* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)__bfloat162float(a[idx]);
-    }
-}
-
-// ============================================================================
-// FP8 E4M3 -> Other Types
-// ============================================================================
-
-__global__ void cast_fp8_e4m3_f32(const numr_fp8_e4m3* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = fp8_e4m3_to_f32(a[idx].data);
-    }
-}
-
-__global__ void cast_fp8_e4m3_f64(const numr_fp8_e4m3* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)fp8_e4m3_to_f32(a[idx].data);
-    }
-}
-
-__global__ void cast_fp8_e4m3_f16(const numr_fp8_e4m3* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half(fp8_e4m3_to_f32(a[idx].data));
-    }
-}
-
-__global__ void cast_fp8_e4m3_bf16(const numr_fp8_e4m3* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16(fp8_e4m3_to_f32(a[idx].data));
-    }
-}
-
-__global__ void cast_fp8_e4m3_fp8_e5m2(const numr_fp8_e4m3* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float f = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(f));
-    }
-}
-
-__global__ void cast_fp8_e4m3_i32(const numr_fp8_e4m3* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)fp8_e4m3_to_f32(a[idx].data);
-    }
-}
-
-__global__ void cast_fp8_e4m3_i64(const numr_fp8_e4m3* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)fp8_e4m3_to_f32(a[idx].data);
-    }
-}
-
-// ============================================================================
-// FP8 E5M2 -> Other Types
-// ============================================================================
-
-__global__ void cast_fp8_e5m2_f32(const numr_fp8_e5m2* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = fp8_e5m2_to_f32(a[idx].data);
-    }
-}
-
-__global__ void cast_fp8_e5m2_f64(const numr_fp8_e5m2* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)fp8_e5m2_to_f32(a[idx].data);
-    }
-}
-
-__global__ void cast_fp8_e5m2_f16(const numr_fp8_e5m2* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half(fp8_e5m2_to_f32(a[idx].data));
-    }
-}
-
-__global__ void cast_fp8_e5m2_bf16(const numr_fp8_e5m2* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16(fp8_e5m2_to_f32(a[idx].data));
-    }
-}
-
-__global__ void cast_fp8_e5m2_fp8_e4m3(const numr_fp8_e5m2* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float f = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(f));
-    }
-}
-
-__global__ void cast_fp8_e5m2_i32(const numr_fp8_e5m2* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)fp8_e5m2_to_f32(a[idx].data);
-    }
-}
-
-__global__ void cast_fp8_e5m2_i64(const numr_fp8_e5m2* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)fp8_e5m2_to_f32(a[idx].data);
-    }
-}
-
-// ============================================================================
-// I32 -> Other Types
-// ============================================================================
-
-__global__ void cast_i32_f32(const int* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (float)a[idx];
-    }
-}
-
-__global__ void cast_i32_f64(const int* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)a[idx];
-    }
-}
-
-__global__ void cast_i32_f16(const int* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half((float)a[idx]);
-    }
-}
-
-__global__ void cast_i32_bf16(const int* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16((float)a[idx]);
-    }
-}
-
-__global__ void cast_i32_fp8_e4m3(const int* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3((float)a[idx]));
-    }
-}
-
-__global__ void cast_i32_fp8_e5m2(const int* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2((float)a[idx]));
-    }
-}
-
-__global__ void cast_i32_i64(const int* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)a[idx];
-    }
-}
-
-// ============================================================================
-// I64 -> Other Types
-// ============================================================================
-
-__global__ void cast_i64_f32(const long long* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (float)a[idx];
-    }
-}
-
-__global__ void cast_i64_f64(const long long* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)a[idx];
-    }
-}
-
-__global__ void cast_i64_f16(const long long* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half((float)a[idx]);
-    }
-}
-
-__global__ void cast_i64_bf16(const long long* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16((float)a[idx]);
-    }
-}
-
-__global__ void cast_i64_fp8_e4m3(const long long* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3((float)a[idx]));
-    }
-}
-
-__global__ void cast_i64_fp8_e5m2(const long long* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2((float)a[idx]));
-    }
-}
-
-__global__ void cast_i64_i32(const long long* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)a[idx];
-    }
-}
-
-// ============================================================================
-// Bool (u8) -> Other Types
-// ============================================================================
-
-__global__ void cast_bool_f32(const unsigned char* a, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (float)(a[idx] != 0);
-    }
-}
-
-__global__ void cast_bool_f64(const unsigned char* a, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (double)(a[idx] != 0);
-    }
-}
-
-__global__ void cast_bool_f16(const unsigned char* a, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2half((float)(a[idx] != 0));
-    }
-}
-
-__global__ void cast_bool_bf16(const unsigned char* a, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __float2bfloat16((float)(a[idx] != 0));
-    }
-}
-
-__global__ void cast_bool_i32(const unsigned char* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (int)(a[idx] != 0);
-    }
-}
-
-__global__ void cast_bool_i64(const unsigned char* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (long long)(a[idx] != 0);
-    }
-}
-
-__global__ void cast_bool_u32(const unsigned char* a, unsigned int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (unsigned int)(a[idx] != 0);
-    }
-}
-
-__global__ void cast_bool_fp8_e4m3(const unsigned char* a, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3((float)(a[idx] != 0)));
-    }
-}
-
-__global__ void cast_bool_fp8_e5m2(const unsigned char* a, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2((float)(a[idx] != 0)));
-    }
-}
-
-// ============================================================================
-// Other Types -> Bool (u8): nonzero = 1, zero = 0
-// ============================================================================
-
-__global__ void cast_f32_bool(const float* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != 0.0f) ? 1 : 0;
-    }
-}
-
-__global__ void cast_f64_bool(const double* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != 0.0) ? 1 : 0;
-    }
-}
-
-__global__ void cast_f16_bool(const __half* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (__half2float(a[idx]) != 0.0f) ? 1 : 0;
-    }
-}
-
-__global__ void cast_bf16_bool(const __nv_bfloat16* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (__bfloat162float(a[idx]) != 0.0f) ? 1 : 0;
-    }
-}
-
-__global__ void cast_fp8_e4m3_bool(const numr_fp8_e4m3* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx].data != 0) ? 1 : 0;
-    }
-}
-
-__global__ void cast_fp8_e5m2_bool(const numr_fp8_e5m2* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx].data != 0) ? 1 : 0;
-    }
-}
-
-__global__ void cast_i32_bool(const int* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != 0) ? 1 : 0;
-    }
-}
-
-__global__ void cast_i64_bool(const long long* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != 0) ? 1 : 0;
-    }
-}
-
-__global__ void cast_u32_bool(const unsigned int* a, unsigned char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != 0) ? 1 : 0;
-    }
-}
+#undef NUMR_CELL_f32
+#define NUMR_CELL_f32(ST, S)
+NUMR_CAST_ROW(float, f32)
+#undef NUMR_CELL_f32
+#define NUMR_CELL_f32(ST, S) NUMR_CAST_DEF(ST, S, float, f32)
+
+#undef NUMR_CELL_f64
+#define NUMR_CELL_f64(ST, S)
+NUMR_CAST_ROW(double, f64)
+#undef NUMR_CELL_f64
+#define NUMR_CELL_f64(ST, S) NUMR_CAST_DEF(ST, S, double, f64)
+
+#undef NUMR_CELL_f16
+#define NUMR_CELL_f16(ST, S)
+NUMR_CAST_ROW(__half, f16)
+#undef NUMR_CELL_f16
+#define NUMR_CELL_f16(ST, S) NUMR_CAST_DEF(ST, S, __half, f16)
+
+#undef NUMR_CELL_bf16
+#define NUMR_CELL_bf16(ST, S)
+NUMR_CAST_ROW(__nv_bfloat16, bf16)
+#undef NUMR_CELL_bf16
+#define NUMR_CELL_bf16(ST, S) NUMR_CAST_DEF(ST, S, __nv_bfloat16, bf16)
+
+#undef NUMR_CELL_fp8_e4m3
+#define NUMR_CELL_fp8_e4m3(ST, S)
+NUMR_CAST_ROW(numr_fp8_e4m3, fp8_e4m3)
+#undef NUMR_CELL_fp8_e4m3
+#define NUMR_CELL_fp8_e4m3(ST, S) NUMR_CAST_DEF(ST, S, numr_fp8_e4m3, fp8_e4m3)
+
+#undef NUMR_CELL_fp8_e5m2
+#define NUMR_CELL_fp8_e5m2(ST, S)
+NUMR_CAST_ROW(numr_fp8_e5m2, fp8_e5m2)
+#undef NUMR_CELL_fp8_e5m2
+#define NUMR_CELL_fp8_e5m2(ST, S) NUMR_CAST_DEF(ST, S, numr_fp8_e5m2, fp8_e5m2)
+
+#undef NUMR_CELL_i64
+#define NUMR_CELL_i64(ST, S)
+NUMR_CAST_ROW(long long, i64)
+#undef NUMR_CELL_i64
+#define NUMR_CELL_i64(ST, S) NUMR_CAST_DEF(ST, S, long long, i64)
+
+#undef NUMR_CELL_i32
+#define NUMR_CELL_i32(ST, S)
+NUMR_CAST_ROW(int, i32)
+#undef NUMR_CELL_i32
+#define NUMR_CELL_i32(ST, S) NUMR_CAST_DEF(ST, S, int, i32)
+
+#undef NUMR_CELL_i16
+#define NUMR_CELL_i16(ST, S)
+NUMR_CAST_ROW(short, i16)
+#undef NUMR_CELL_i16
+#define NUMR_CELL_i16(ST, S) NUMR_CAST_DEF(ST, S, short, i16)
+
+#undef NUMR_CELL_i8
+#define NUMR_CELL_i8(ST, S)
+NUMR_CAST_ROW(signed char, i8)
+#undef NUMR_CELL_i8
+#define NUMR_CELL_i8(ST, S) NUMR_CAST_DEF(ST, S, signed char, i8)
+
+#undef NUMR_CELL_u64
+#define NUMR_CELL_u64(ST, S)
+NUMR_CAST_ROW(unsigned long long, u64)
+#undef NUMR_CELL_u64
+#define NUMR_CELL_u64(ST, S) NUMR_CAST_DEF(ST, S, unsigned long long, u64)
+
+#undef NUMR_CELL_u32
+#define NUMR_CELL_u32(ST, S)
+NUMR_CAST_ROW(unsigned int, u32)
+#undef NUMR_CELL_u32
+#define NUMR_CELL_u32(ST, S) NUMR_CAST_DEF(ST, S, unsigned int, u32)
+
+#undef NUMR_CELL_u16
+#define NUMR_CELL_u16(ST, S)
+NUMR_CAST_ROW(unsigned short, u16)
+#undef NUMR_CELL_u16
+#define NUMR_CELL_u16(ST, S) NUMR_CAST_DEF(ST, S, unsigned short, u16)
+
+#undef NUMR_CELL_u8
+#define NUMR_CELL_u8(ST, S)
+NUMR_CAST_ROW(unsigned char, u8)
+#undef NUMR_CELL_u8
+#define NUMR_CELL_u8(ST, S) NUMR_CAST_DEF(ST, S, unsigned char, u8)
+
+#undef NUMR_CELL_bool
+#define NUMR_CELL_bool(ST, S)
+NUMR_CAST_ROW(numr_bool, bool)
+#undef NUMR_CELL_bool
+#define NUMR_CELL_bool(ST, S) NUMR_CAST_DEF(ST, S, numr_bool, bool)
 
 } // extern "C"

@@ -5,9 +5,9 @@ use cudarc::driver::safe::{CudaContext, CudaStream};
 use std::sync::Arc;
 
 use super::super::loader::{
-    BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module, kernel_name,
-    launch_config,
+    BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module, launch_config,
 };
+use super::dtype_gate::index_dtype_suffix;
 use super::gather::INDEX_MODULE;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -41,7 +41,10 @@ pub unsafe fn launch_index_select(
 
     unsafe {
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
-        let func_name = kernel_name("index_select", dtype);
+        let func_name = format!(
+            "index_select_{}",
+            index_dtype_suffix(dtype, "index_select")?
+        );
         let func = get_kernel_function(&module, &func_name)?;
 
         let grid = elementwise_launch_config(total);
@@ -98,7 +101,7 @@ pub unsafe fn launch_index_put(
 
     unsafe {
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
-        let func_name = kernel_name("index_put", dtype);
+        let func_name = format!("index_put_{}", index_dtype_suffix(dtype, "index_put")?);
         let func = get_kernel_function(&module, &func_name)?;
 
         let grid = elementwise_launch_config(total);

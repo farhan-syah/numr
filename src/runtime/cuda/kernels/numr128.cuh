@@ -382,6 +382,61 @@ NUMR128_FROM_UNSIGNED(unsigned char)
 #undef NUMR128_FROM_SIGNED
 #undef NUMR128_FROM_UNSIGNED
 
+// Type-directed widening multiply-accumulate: `acc + a * b` for one pair of
+// elements, with the widening rule the element type needs.
+//
+// This is the inner step of every integer matmul and GEMV, and it is where the
+// sign-extension trap lives: an unsigned element routed through the signed
+// widening would enter the accumulator negative once it passes LLONG_MAX. Each
+// group below picks the multiply whose operand widening matches
+// `Numr128From<T>`, so no kernel has to choose.
+template<typename T> struct Numr128MulAdd;
+
+// Signed elements: |a| * |b| <= 2^126, and reaching the 128-bit bound from
+// there takes about 2^64 accumulated terms, which no allocation can hold. The
+// plain add is therefore exact, and matches the CPU's i128 accumulator.
+#define NUMR128_MULADD_SIGNED(T) \
+template<> struct Numr128MulAdd<T> { \
+    static __device__ __forceinline__ Numr128 apply(Numr128 acc, T a, T b) { \
+        return numr128_add(acc, numr128_mul_i64((long long)a, (long long)b)); \
+    } \
+};
+
+// Unsigned elements narrower than 64 bits: zero-extended, their product is at
+// most (2^32 - 1)^2 < 2^64, so the unsigned 64x64 -> 128 multiply is exact and
+// positive and the same 2^64-term argument covers the sum.
+#define NUMR128_MULADD_UNSIGNED_NARROW(T) \
+template<> struct Numr128MulAdd<T> { \
+    static __device__ __forceinline__ Numr128 apply(Numr128 acc, T a, T b) { \
+        return numr128_add(acc, numr128_umul64((unsigned long long)a, (unsigned long long)b)); \
+    } \
+};
+
+NUMR128_MULADD_SIGNED(long long)
+NUMR128_MULADD_SIGNED(int)
+NUMR128_MULADD_SIGNED(short)
+NUMR128_MULADD_SIGNED(signed char)
+NUMR128_MULADD_UNSIGNED_NARROW(unsigned int)
+NUMR128_MULADD_UNSIGNED_NARROW(unsigned short)
+NUMR128_MULADD_UNSIGNED_NARROW(unsigned char)
+
+#undef NUMR128_MULADD_SIGNED
+#undef NUMR128_MULADD_UNSIGNED_NARROW
+
+// U64 is the one element type whose single product can leave the signed 128-bit
+// accumulator: two operands near 2^64 give nearly 2^128. The CPU widens u64
+// into i128 and combines with `saturating_mul` / `saturating_add`, so the
+// saturating 128-bit multiply and add are what agree with it.
+template<> struct Numr128MulAdd<unsigned long long> {
+    static __device__ __forceinline__ Numr128 apply(
+        Numr128 acc,
+        unsigned long long a,
+        unsigned long long b
+    ) {
+        return numr128_add_sat(acc, numr128_mul_sat(numr128_from_u64(a), numr128_from_u64(b)));
+    }
+};
+
 // Move a whole accumulator down the warp. The two halves shuffle independently
 // because they are plain 64-bit values; the receiving lane reassembles the
 // sender's exact accumulator, so a warp reduction built on this stays exact.

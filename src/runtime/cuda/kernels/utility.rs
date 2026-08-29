@@ -30,6 +30,16 @@ pub enum FillValue {
     I32(i32),
     /// 64-bit signed integer fill value.
     I64(i64),
+    /// 16-bit signed integer fill value.
+    I16(i16),
+    /// 8-bit signed integer fill value.
+    I8(i8),
+    /// 64-bit unsigned integer fill value.
+    U64(u64),
+    /// 32-bit unsigned integer fill value.
+    U32(u32),
+    /// 16-bit unsigned integer fill value.
+    U16(u16),
     /// 8-bit unsigned integer fill value (also used for Bool).
     U8(u8),
     /// 16-bit float fill value (raw bits for __half).
@@ -52,6 +62,11 @@ impl FillValue {
             DType::F64 => FillValue::F64(value),
             DType::I32 => FillValue::I32(value as i32),
             DType::I64 => FillValue::I64(value as i64),
+            DType::I16 => FillValue::I16(value as i16),
+            DType::I8 => FillValue::I8(value as i8),
+            DType::U64 => FillValue::U64(value as u64),
+            DType::U32 => FillValue::U32(value as u32),
+            DType::U16 => FillValue::U16(value as u16),
             DType::U8 | DType::Bool => FillValue::U8(value as u8),
             #[cfg(feature = "f16")]
             DType::F16 => FillValue::F16(half::f16::from_f64(value).to_bits()),
@@ -63,6 +78,9 @@ impl FillValue {
             DType::FP8E5M2 => {
                 FillValue::FP8E5M2(crate::dtype::fp8::FP8E5M2::from_f64(value).to_bits())
             }
+            // Complex is the only remaining case, and it has no fill kernel.
+            // F64 is the widest scalar available, and launch_fill reports the
+            // missing kernel by name rather than writing the wrong width.
             _ => FillValue::F64(value),
         }
     }
@@ -74,6 +92,11 @@ impl FillValue {
             FillValue::F64(_) => DType::F64,
             FillValue::I32(_) => DType::I32,
             FillValue::I64(_) => DType::I64,
+            FillValue::I16(_) => DType::I16,
+            FillValue::I8(_) => DType::I8,
+            FillValue::U64(_) => DType::U64,
+            FillValue::U32(_) => DType::U32,
+            FillValue::U16(_) => DType::U16,
             FillValue::U8(_) => DType::U8,
             #[cfg(feature = "f16")]
             FillValue::F16(_) => DType::F16,
@@ -161,6 +184,41 @@ pub unsafe fn launch_fill(
             unsafe { builder.launch(cfg) }
         }
         FillValue::I64(v) => {
+            let mut builder = stream.launch_builder(&func);
+            builder.arg(&out_ptr);
+            builder.arg(&v);
+            builder.arg(&n);
+            unsafe { builder.launch(cfg) }
+        }
+        FillValue::I16(v) => {
+            let mut builder = stream.launch_builder(&func);
+            builder.arg(&out_ptr);
+            builder.arg(&v);
+            builder.arg(&n);
+            unsafe { builder.launch(cfg) }
+        }
+        FillValue::I8(v) => {
+            let mut builder = stream.launch_builder(&func);
+            builder.arg(&out_ptr);
+            builder.arg(&v);
+            builder.arg(&n);
+            unsafe { builder.launch(cfg) }
+        }
+        FillValue::U64(v) => {
+            let mut builder = stream.launch_builder(&func);
+            builder.arg(&out_ptr);
+            builder.arg(&v);
+            builder.arg(&n);
+            unsafe { builder.launch(cfg) }
+        }
+        FillValue::U32(v) => {
+            let mut builder = stream.launch_builder(&func);
+            builder.arg(&out_ptr);
+            builder.arg(&v);
+            builder.arg(&n);
+            unsafe { builder.launch(cfg) }
+        }
+        FillValue::U16(v) => {
             let mut builder = stream.launch_builder(&func);
             builder.arg(&out_ptr);
             builder.arg(&v);
@@ -278,7 +336,7 @@ pub unsafe fn launch_rand(
     out_ptr: u64,
     numel: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_MODULE)?;
+    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_RANDOM_MODULE)?;
     let func_name = kernel_name("rand", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -332,7 +390,7 @@ pub unsafe fn launch_randn(
     out_ptr: u64,
     numel: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_MODULE)?;
+    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_RANDOM_MODULE)?;
     let func_name = kernel_name("randn", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -392,7 +450,7 @@ pub unsafe fn launch_randint(
     out_ptr: u64,
     numel: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_MODULE)?;
+    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_RANDOM_MODULE)?;
     let func_name = kernel_name("randint", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -822,7 +880,7 @@ pub unsafe fn launch_multinomial_with_replacement(
     num_categories: usize,
     num_samples: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_MODULE)?;
+    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_RANDOM_MODULE)?;
     let func_name = format!("multinomial_with_replacement_{}", dtype_suffix(dtype)?);
     let func = get_kernel_function(&module, &func_name)?;
 
@@ -891,7 +949,7 @@ pub unsafe fn launch_multinomial_without_replacement(
     num_categories: usize,
     num_samples: usize,
 ) -> Result<()> {
-    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_MODULE)?;
+    let module = get_or_load_module(context, device_index, kernel_names::UTILITY_RANDOM_MODULE)?;
     let func_name = format!("multinomial_without_replacement_{}", dtype_suffix(dtype)?);
     let func = get_kernel_function(&module, &func_name)?;
 

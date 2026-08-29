@@ -1,237 +1,104 @@
 // Comparison CUDA kernels
-// Supports: eq, ne, lt, le, gt, ge
-// Types: f32, f64, f16, bf16, i32, i64
-// Output: same type as input (1 for true, 0 for false)
 //
-// NOTE: Same-dtype output is intentional - it allows using comparison results
-// directly in arithmetic operations (e.g., mask * tensor) without dtype conversion.
-// Includes broadcast variants for all types
+// Operations: eq, ne, lt, le, gt, ge
+// Dtypes: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2,
+//         i64, i32, i16, i8, u64, u32, u16, u8
+//
+// Output is the SAME dtype as the input (1 for true, 0 for false), not a bool
+// tensor. That is intentional and matches the CPU reference: a mask can be fed
+// straight into arithmetic (mask * tensor) without a dtype conversion.
+//
+// Kernel naming, matching the names the Rust launchers build in
+// src/runtime/cuda/kernels/compare.rs from dtype_suffix() in loader.rs:
+//   {op}_{suffix}            element-wise, same-shape operands
+//   {op}_broadcast_{suffix}  broadcast, strides in device memory
+//
+// Comparison never overflows, so unlike the arithmetic kernels in binary.cu the
+// integer dtypes need no wrapping treatment: one template covers all eight.
 
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
+#include <stdint.h>
 #include "dtype_traits.cuh"
 
 // ============================================================================
-// Broadcast Helper Device Functions (Templated)
+// Per-operation device functions
 // ============================================================================
 
-template<typename T>
-__device__ __forceinline__ T compare_eq(T a, T b) { return (a == b) ? (T)1 : (T)0; }
+#define NUMR_CMP_PRIMARY(NAME, OP)                                              \
+    template<typename T>                                                        \
+    __device__ __forceinline__ T compare_##NAME(T a, T b) {                     \
+        return (a OP b) ? (T)1 : (T)0;                                          \
+    }
 
-template<typename T>
-__device__ __forceinline__ T compare_ne(T a, T b) { return (a != b) ? (T)1 : (T)0; }
+NUMR_CMP_PRIMARY(eq, ==)
+NUMR_CMP_PRIMARY(ne, !=)
+NUMR_CMP_PRIMARY(lt, <)
+NUMR_CMP_PRIMARY(le, <=)
+NUMR_CMP_PRIMARY(gt, >)
+NUMR_CMP_PRIMARY(ge, >=)
 
-template<typename T>
-__device__ __forceinline__ T compare_lt(T a, T b) { return (a < b) ? (T)1 : (T)0; }
+// F16 and BF16 have no integer conversion, so 1/0 is built from a float. BF16
+// comparison intrinsics need SM 8.0+; below that the operands round-trip
+// through F32, which is what the pre-Ampere path has always done.
+#if __CUDA_ARCH__ >= 800
+#define NUMR_BF16_CMP(INTRIN, OP, a, b) INTRIN(a, b)
+#else
+#define NUMR_BF16_CMP(INTRIN, OP, a, b) (__bfloat162float(a) OP __bfloat162float(b))
+#endif
 
-template<typename T>
-__device__ __forceinline__ T compare_le(T a, T b) { return (a <= b) ? (T)1 : (T)0; }
+#define NUMR_CMP_HALF_SPEC(NAME, INTRIN, OP)                                    \
+    template<>                                                                  \
+    __device__ __forceinline__ __half compare_##NAME(__half a, __half b) {      \
+        return INTRIN(a, b) ? __float2half(1.0f) : __float2half(0.0f);          \
+    }                                                                           \
+    template<>                                                                  \
+    __device__ __forceinline__ __nv_bfloat16                                    \
+    compare_##NAME(__nv_bfloat16 a, __nv_bfloat16 b) {                          \
+        return NUMR_BF16_CMP(INTRIN, OP, a, b) ? __float2bfloat16(1.0f)         \
+                                               : __float2bfloat16(0.0f);        \
+    }
 
-template<typename T>
-__device__ __forceinline__ T compare_gt(T a, T b) { return (a > b) ? (T)1 : (T)0; }
+NUMR_CMP_HALF_SPEC(eq, __heq, ==)
+NUMR_CMP_HALF_SPEC(ne, __hne, !=)
+NUMR_CMP_HALF_SPEC(lt, __hlt, <)
+NUMR_CMP_HALF_SPEC(le, __hle, <=)
+NUMR_CMP_HALF_SPEC(gt, __hgt, >)
+NUMR_CMP_HALF_SPEC(ge, __hge, >=)
 
-template<typename T>
-__device__ __forceinline__ T compare_ge(T a, T b) { return (a >= b) ? (T)1 : (T)0; }
+// FP8 compares the decoded F32 values: the raw byte order is not the value
+// order. The 1/0 result is re-encoded, both of which are exact in FP8.
+#define NUMR_CMP_FP8_SPEC(T, TO_F32, FROM_F32, NAME, OP)                        \
+    template<>                                                                  \
+    __device__ __forceinline__ T compare_##NAME(T a, T b) {                     \
+        return T(FROM_F32((TO_F32(a.data) OP TO_F32(b.data)) ? 1.0f : 0.0f));   \
+    }
 
-// Specializations for float
-template<>
-__device__ __forceinline__ float compare_eq(float a, float b) { return (a == b) ? 1.0f : 0.0f; }
+#define NUMR_CMP_FP8_ALL(T, TO_F32, FROM_F32)                                   \
+    NUMR_CMP_FP8_SPEC(T, TO_F32, FROM_F32, eq, ==)                              \
+    NUMR_CMP_FP8_SPEC(T, TO_F32, FROM_F32, ne, !=)                              \
+    NUMR_CMP_FP8_SPEC(T, TO_F32, FROM_F32, lt, <)                               \
+    NUMR_CMP_FP8_SPEC(T, TO_F32, FROM_F32, le, <=)                              \
+    NUMR_CMP_FP8_SPEC(T, TO_F32, FROM_F32, gt, >)                               \
+    NUMR_CMP_FP8_SPEC(T, TO_F32, FROM_F32, ge, >=)
 
-template<>
-__device__ __forceinline__ float compare_ne(float a, float b) { return (a != b) ? 1.0f : 0.0f; }
+NUMR_CMP_FP8_ALL(numr_fp8_e4m3, fp8_e4m3_to_f32, f32_to_fp8_e4m3)
+NUMR_CMP_FP8_ALL(numr_fp8_e5m2, fp8_e5m2_to_f32, f32_to_fp8_e5m2)
 
-template<>
-__device__ __forceinline__ float compare_lt(float a, float b) { return (a < b) ? 1.0f : 0.0f; }
+// ============================================================================
+// Kernel body templates
+// ============================================================================
 
-template<>
-__device__ __forceinline__ float compare_le(float a, float b) { return (a <= b) ? 1.0f : 0.0f; }
-
-template<>
-__device__ __forceinline__ float compare_gt(float a, float b) { return (a > b) ? 1.0f : 0.0f; }
-
-template<>
-__device__ __forceinline__ float compare_ge(float a, float b) { return (a >= b) ? 1.0f : 0.0f; }
-
-// Specializations for double
-template<>
-__device__ __forceinline__ double compare_eq(double a, double b) { return (a == b) ? 1.0 : 0.0; }
-
-template<>
-__device__ __forceinline__ double compare_ne(double a, double b) { return (a != b) ? 1.0 : 0.0; }
-
-template<>
-__device__ __forceinline__ double compare_lt(double a, double b) { return (a < b) ? 1.0 : 0.0; }
-
-template<>
-__device__ __forceinline__ double compare_le(double a, double b) { return (a <= b) ? 1.0 : 0.0; }
-
-template<>
-__device__ __forceinline__ double compare_gt(double a, double b) { return (a > b) ? 1.0 : 0.0; }
-
-template<>
-__device__ __forceinline__ double compare_ge(double a, double b) { return (a >= b) ? 1.0 : 0.0; }
-
-// Specializations for half
-template<>
-__device__ __forceinline__ __half compare_eq(__half a, __half b) { return __heq(a, b) ? __float2half(1.0f) : __float2half(0.0f); }
-
-template<>
-__device__ __forceinline__ __half compare_ne(__half a, __half b) { return __hne(a, b) ? __float2half(1.0f) : __float2half(0.0f); }
-
-template<>
-__device__ __forceinline__ __half compare_lt(__half a, __half b) { return __hlt(a, b) ? __float2half(1.0f) : __float2half(0.0f); }
-
-template<>
-__device__ __forceinline__ __half compare_le(__half a, __half b) { return __hle(a, b) ? __float2half(1.0f) : __float2half(0.0f); }
-
-template<>
-__device__ __forceinline__ __half compare_gt(__half a, __half b) { return __hgt(a, b) ? __float2half(1.0f) : __float2half(0.0f); }
-
-template<>
-__device__ __forceinline__ __half compare_ge(__half a, __half b) { return __hge(a, b) ? __float2half(1.0f) : __float2half(0.0f); }
-
-// Specializations for bfloat16
-template<>
-__device__ __forceinline__ __nv_bfloat16 compare_eq(__nv_bfloat16 a, __nv_bfloat16 b) {
-    #if __CUDA_ARCH__ >= 800
-    return __heq(a, b) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #else
-    return (__bfloat162float(a) == __bfloat162float(b)) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #endif
+template<typename T, typename CompFunc>
+__device__ __forceinline__ void compare_elementwise_impl(
+    const T* a, const T* b, T* out, unsigned int n, CompFunc op
+) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = op(a[idx], b[idx]);
+    }
 }
 
-template<>
-__device__ __forceinline__ __nv_bfloat16 compare_ne(__nv_bfloat16 a, __nv_bfloat16 b) {
-    #if __CUDA_ARCH__ >= 800
-    return __hne(a, b) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #else
-    return (__bfloat162float(a) != __bfloat162float(b)) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #endif
-}
-
-template<>
-__device__ __forceinline__ __nv_bfloat16 compare_lt(__nv_bfloat16 a, __nv_bfloat16 b) {
-    #if __CUDA_ARCH__ >= 800
-    return __hlt(a, b) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #else
-    return (__bfloat162float(a) < __bfloat162float(b)) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #endif
-}
-
-template<>
-__device__ __forceinline__ __nv_bfloat16 compare_le(__nv_bfloat16 a, __nv_bfloat16 b) {
-    #if __CUDA_ARCH__ >= 800
-    return __hle(a, b) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #else
-    return (__bfloat162float(a) <= __bfloat162float(b)) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #endif
-}
-
-template<>
-__device__ __forceinline__ __nv_bfloat16 compare_gt(__nv_bfloat16 a, __nv_bfloat16 b) {
-    #if __CUDA_ARCH__ >= 800
-    return __hgt(a, b) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #else
-    return (__bfloat162float(a) > __bfloat162float(b)) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #endif
-}
-
-template<>
-__device__ __forceinline__ __nv_bfloat16 compare_ge(__nv_bfloat16 a, __nv_bfloat16 b) {
-    #if __CUDA_ARCH__ >= 800
-    return __hge(a, b) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #else
-    return (__bfloat162float(a) >= __bfloat162float(b)) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-    #endif
-}
-
-// Specializations for FP8E4M3 (compare in F32)
-template<>
-__device__ __forceinline__ numr_fp8_e4m3 compare_eq(numr_fp8_e4m3 a, numr_fp8_e4m3 b) {
-    float fa = fp8_e4m3_to_f32(a.data);
-    float fb = fp8_e4m3_to_f32(b.data);
-    return numr_fp8_e4m3(f32_to_fp8_e4m3((fa == fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e4m3 compare_ne(numr_fp8_e4m3 a, numr_fp8_e4m3 b) {
-    float fa = fp8_e4m3_to_f32(a.data);
-    float fb = fp8_e4m3_to_f32(b.data);
-    return numr_fp8_e4m3(f32_to_fp8_e4m3((fa != fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e4m3 compare_lt(numr_fp8_e4m3 a, numr_fp8_e4m3 b) {
-    float fa = fp8_e4m3_to_f32(a.data);
-    float fb = fp8_e4m3_to_f32(b.data);
-    return numr_fp8_e4m3(f32_to_fp8_e4m3((fa < fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e4m3 compare_le(numr_fp8_e4m3 a, numr_fp8_e4m3 b) {
-    float fa = fp8_e4m3_to_f32(a.data);
-    float fb = fp8_e4m3_to_f32(b.data);
-    return numr_fp8_e4m3(f32_to_fp8_e4m3((fa <= fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e4m3 compare_gt(numr_fp8_e4m3 a, numr_fp8_e4m3 b) {
-    float fa = fp8_e4m3_to_f32(a.data);
-    float fb = fp8_e4m3_to_f32(b.data);
-    return numr_fp8_e4m3(f32_to_fp8_e4m3((fa > fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e4m3 compare_ge(numr_fp8_e4m3 a, numr_fp8_e4m3 b) {
-    float fa = fp8_e4m3_to_f32(a.data);
-    float fb = fp8_e4m3_to_f32(b.data);
-    return numr_fp8_e4m3(f32_to_fp8_e4m3((fa >= fb) ? 1.0f : 0.0f));
-}
-
-// Specializations for FP8E5M2 (compare in F32)
-template<>
-__device__ __forceinline__ numr_fp8_e5m2 compare_eq(numr_fp8_e5m2 a, numr_fp8_e5m2 b) {
-    float fa = fp8_e5m2_to_f32(a.data);
-    float fb = fp8_e5m2_to_f32(b.data);
-    return numr_fp8_e5m2(f32_to_fp8_e5m2((fa == fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e5m2 compare_ne(numr_fp8_e5m2 a, numr_fp8_e5m2 b) {
-    float fa = fp8_e5m2_to_f32(a.data);
-    float fb = fp8_e5m2_to_f32(b.data);
-    return numr_fp8_e5m2(f32_to_fp8_e5m2((fa != fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e5m2 compare_lt(numr_fp8_e5m2 a, numr_fp8_e5m2 b) {
-    float fa = fp8_e5m2_to_f32(a.data);
-    float fb = fp8_e5m2_to_f32(b.data);
-    return numr_fp8_e5m2(f32_to_fp8_e5m2((fa < fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e5m2 compare_le(numr_fp8_e5m2 a, numr_fp8_e5m2 b) {
-    float fa = fp8_e5m2_to_f32(a.data);
-    float fb = fp8_e5m2_to_f32(b.data);
-    return numr_fp8_e5m2(f32_to_fp8_e5m2((fa <= fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e5m2 compare_gt(numr_fp8_e5m2 a, numr_fp8_e5m2 b) {
-    float fa = fp8_e5m2_to_f32(a.data);
-    float fb = fp8_e5m2_to_f32(b.data);
-    return numr_fp8_e5m2(f32_to_fp8_e5m2((fa > fb) ? 1.0f : 0.0f));
-}
-
-template<>
-__device__ __forceinline__ numr_fp8_e5m2 compare_ge(numr_fp8_e5m2 a, numr_fp8_e5m2 b) {
-    float fa = fp8_e5m2_to_f32(a.data);
-    float fb = fp8_e5m2_to_f32(b.data);
-    return numr_fp8_e5m2(f32_to_fp8_e5m2((fa >= fb) ? 1.0f : 0.0f));
-}
-
-// Generic broadcast comparison kernel template
 template<typename T, typename CompFunc>
 __device__ void compare_broadcast_kernel_impl(
     const T* a, const T* b, T* out,
@@ -255,814 +122,45 @@ __device__ void compare_broadcast_kernel_impl(
     out[idx] = op(a[a_offset], b[b_offset]);
 }
 
+// ============================================================================
+// Instantiation macros
+// ============================================================================
+// One (operation, dtype) pair emits the element-wise kernel and the broadcast
+// kernel. out_strides is unused by the broadcast body but stays in the
+// signature: the host passes it.
+
+#define NUMR_COMPARE_OP(T, S, OP)                                               \
+    __global__ void OP##_##S(const T* a, const T* b, T* out, unsigned int n) {  \
+        compare_elementwise_impl<T>(a, b, out, n, compare_##OP<T>);             \
+    }                                                                           \
+    __global__ void OP##_broadcast_##S(                                         \
+        const T* a, const T* b, T* out,                                         \
+        const unsigned int* a_strides, const unsigned int* b_strides,           \
+        const unsigned int* shape, unsigned int ndim, unsigned int n) {         \
+        compare_broadcast_kernel_impl<T>(a, b, out, a_strides, b_strides,       \
+                                         shape, ndim, n, compare_##OP<T>);      \
+    }
+
+#define NUMR_COMPARE_ROW(T, S)                                                  \
+    NUMR_COMPARE_OP(T, S, eq) NUMR_COMPARE_OP(T, S, ne)                         \
+    NUMR_COMPARE_OP(T, S, lt) NUMR_COMPARE_OP(T, S, le)                         \
+    NUMR_COMPARE_OP(T, S, gt) NUMR_COMPARE_OP(T, S, ge)
+
 extern "C" {
 
-// ============================================================================
-// F32 Comparison Operations
-// ============================================================================
-
-__global__ void eq_f32(const float* a, const float* b, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] == b[idx]) ? 1.0f : 0.0f;
-    }
-}
-
-__global__ void ne_f32(const float* a, const float* b, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != b[idx]) ? 1.0f : 0.0f;
-    }
-}
-
-__global__ void lt_f32(const float* a, const float* b, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] < b[idx]) ? 1.0f : 0.0f;
-    }
-}
-
-__global__ void le_f32(const float* a, const float* b, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] <= b[idx]) ? 1.0f : 0.0f;
-    }
-}
-
-__global__ void gt_f32(const float* a, const float* b, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] > b[idx]) ? 1.0f : 0.0f;
-    }
-}
-
-__global__ void ge_f32(const float* a, const float* b, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] >= b[idx]) ? 1.0f : 0.0f;
-    }
-}
-
-// ============================================================================
-// F64 Comparison Operations
-// ============================================================================
-
-__global__ void eq_f64(const double* a, const double* b, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] == b[idx]) ? 1.0 : 0.0;
-    }
-}
-
-__global__ void ne_f64(const double* a, const double* b, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != b[idx]) ? 1.0 : 0.0;
-    }
-}
-
-__global__ void lt_f64(const double* a, const double* b, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] < b[idx]) ? 1.0 : 0.0;
-    }
-}
-
-__global__ void le_f64(const double* a, const double* b, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] <= b[idx]) ? 1.0 : 0.0;
-    }
-}
-
-__global__ void gt_f64(const double* a, const double* b, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] > b[idx]) ? 1.0 : 0.0;
-    }
-}
-
-__global__ void ge_f64(const double* a, const double* b, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] >= b[idx]) ? 1.0 : 0.0;
-    }
-}
-
-// ============================================================================
-// I32 Comparison Operations
-// ============================================================================
-
-__global__ void eq_i32(const int* a, const int* b, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] == b[idx]) ? 1 : 0;
-    }
-}
-
-__global__ void ne_i32(const int* a, const int* b, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != b[idx]) ? 1 : 0;
-    }
-}
-
-__global__ void lt_i32(const int* a, const int* b, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] < b[idx]) ? 1 : 0;
-    }
-}
-
-__global__ void le_i32(const int* a, const int* b, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] <= b[idx]) ? 1 : 0;
-    }
-}
-
-__global__ void gt_i32(const int* a, const int* b, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] > b[idx]) ? 1 : 0;
-    }
-}
-
-__global__ void ge_i32(const int* a, const int* b, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] >= b[idx]) ? 1 : 0;
-    }
-}
-
-// ============================================================================
-// I64 Comparison Operations
-// ============================================================================
-
-__global__ void eq_i64(const long long* a, const long long* b, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] == b[idx]) ? 1LL : 0LL;
-    }
-}
-
-__global__ void ne_i64(const long long* a, const long long* b, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] != b[idx]) ? 1LL : 0LL;
-    }
-}
-
-__global__ void lt_i64(const long long* a, const long long* b, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] < b[idx]) ? 1LL : 0LL;
-    }
-}
-
-__global__ void le_i64(const long long* a, const long long* b, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] <= b[idx]) ? 1LL : 0LL;
-    }
-}
-
-__global__ void gt_i64(const long long* a, const long long* b, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] > b[idx]) ? 1LL : 0LL;
-    }
-}
-
-__global__ void ge_i64(const long long* a, const long long* b, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = (a[idx] >= b[idx]) ? 1LL : 0LL;
-    }
-}
-
-// ============================================================================
-// F16 Comparison Operations
-// ============================================================================
-
-__global__ void eq_f16(const __half* a, const __half* b, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __heq(a[idx], b[idx]) ? __float2half(1.0f) : __float2half(0.0f);
-    }
-}
-
-__global__ void ne_f16(const __half* a, const __half* b, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __hne(a[idx], b[idx]) ? __float2half(1.0f) : __float2half(0.0f);
-    }
-}
-
-__global__ void lt_f16(const __half* a, const __half* b, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __hlt(a[idx], b[idx]) ? __float2half(1.0f) : __float2half(0.0f);
-    }
-}
-
-__global__ void le_f16(const __half* a, const __half* b, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __hle(a[idx], b[idx]) ? __float2half(1.0f) : __float2half(0.0f);
-    }
-}
-
-__global__ void gt_f16(const __half* a, const __half* b, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __hgt(a[idx], b[idx]) ? __float2half(1.0f) : __float2half(0.0f);
-    }
-}
-
-__global__ void ge_f16(const __half* a, const __half* b, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = __hge(a[idx], b[idx]) ? __float2half(1.0f) : __float2half(0.0f);
-    }
-}
-
-// ============================================================================
-// BF16 Comparison Operations
-// ============================================================================
-
-__global__ void eq_bf16(const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        out[idx] = __heq(a[idx], b[idx]) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #else
-        out[idx] = (__bfloat162float(a[idx]) == __bfloat162float(b[idx])) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #endif
-    }
-}
-
-__global__ void ne_bf16(const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        out[idx] = __hne(a[idx], b[idx]) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #else
-        out[idx] = (__bfloat162float(a[idx]) != __bfloat162float(b[idx])) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #endif
-    }
-}
-
-__global__ void lt_bf16(const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        out[idx] = __hlt(a[idx], b[idx]) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #else
-        out[idx] = (__bfloat162float(a[idx]) < __bfloat162float(b[idx])) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #endif
-    }
-}
-
-__global__ void le_bf16(const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        out[idx] = __hle(a[idx], b[idx]) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #else
-        out[idx] = (__bfloat162float(a[idx]) <= __bfloat162float(b[idx])) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #endif
-    }
-}
-
-__global__ void gt_bf16(const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        out[idx] = __hgt(a[idx], b[idx]) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #else
-        out[idx] = (__bfloat162float(a[idx]) > __bfloat162float(b[idx])) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #endif
-    }
-}
-
-__global__ void ge_bf16(const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        out[idx] = __hge(a[idx], b[idx]) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #else
-        out[idx] = (__bfloat162float(a[idx]) >= __bfloat162float(b[idx])) ? __float2bfloat16(1.0f) : __float2bfloat16(0.0f);
-        #endif
-    }
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (F32)
-// ============================================================================
-
-__global__ void eq_broadcast_f32(
-    const float* a, const float* b, float* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<float>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<float>);
-}
-
-__global__ void ne_broadcast_f32(
-    const float* a, const float* b, float* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<float>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<float>);
-}
-
-__global__ void lt_broadcast_f32(
-    const float* a, const float* b, float* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<float>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<float>);
-}
-
-__global__ void le_broadcast_f32(
-    const float* a, const float* b, float* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<float>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<float>);
-}
-
-__global__ void gt_broadcast_f32(
-    const float* a, const float* b, float* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<float>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<float>);
-}
-
-__global__ void ge_broadcast_f32(
-    const float* a, const float* b, float* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<float>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<float>);
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (F64)
-// ============================================================================
-
-__global__ void eq_broadcast_f64(
-    const double* a, const double* b, double* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<double>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<double>);
-}
-
-__global__ void ne_broadcast_f64(
-    const double* a, const double* b, double* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<double>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<double>);
-}
-
-__global__ void lt_broadcast_f64(
-    const double* a, const double* b, double* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<double>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<double>);
-}
-
-__global__ void le_broadcast_f64(
-    const double* a, const double* b, double* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<double>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<double>);
-}
-
-__global__ void gt_broadcast_f64(
-    const double* a, const double* b, double* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<double>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<double>);
-}
-
-__global__ void ge_broadcast_f64(
-    const double* a, const double* b, double* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<double>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<double>);
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (F16)
-// ============================================================================
-
-__global__ void eq_broadcast_f16(
-    const __half* a, const __half* b, __half* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__half>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<__half>);
-}
-
-__global__ void ne_broadcast_f16(
-    const __half* a, const __half* b, __half* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__half>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<__half>);
-}
-
-__global__ void lt_broadcast_f16(
-    const __half* a, const __half* b, __half* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__half>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<__half>);
-}
-
-__global__ void le_broadcast_f16(
-    const __half* a, const __half* b, __half* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__half>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<__half>);
-}
-
-__global__ void gt_broadcast_f16(
-    const __half* a, const __half* b, __half* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__half>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<__half>);
-}
-
-__global__ void ge_broadcast_f16(
-    const __half* a, const __half* b, __half* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__half>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<__half>);
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (BF16)
-// ============================================================================
-
-__global__ void eq_broadcast_bf16(
-    const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__nv_bfloat16>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<__nv_bfloat16>);
-}
-
-__global__ void ne_broadcast_bf16(
-    const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__nv_bfloat16>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<__nv_bfloat16>);
-}
-
-__global__ void lt_broadcast_bf16(
-    const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__nv_bfloat16>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<__nv_bfloat16>);
-}
-
-__global__ void le_broadcast_bf16(
-    const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__nv_bfloat16>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<__nv_bfloat16>);
-}
-
-__global__ void gt_broadcast_bf16(
-    const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__nv_bfloat16>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<__nv_bfloat16>);
-}
-
-__global__ void ge_broadcast_bf16(
-    const __nv_bfloat16* a, const __nv_bfloat16* b, __nv_bfloat16* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<__nv_bfloat16>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<__nv_bfloat16>);
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (I32)
-// ============================================================================
-
-__global__ void eq_broadcast_i32(
-    const int* a, const int* b, int* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<int>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<int>);
-}
-
-__global__ void ne_broadcast_i32(
-    const int* a, const int* b, int* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<int>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<int>);
-}
-
-__global__ void lt_broadcast_i32(
-    const int* a, const int* b, int* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<int>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<int>);
-}
-
-__global__ void le_broadcast_i32(
-    const int* a, const int* b, int* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<int>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<int>);
-}
-
-__global__ void gt_broadcast_i32(
-    const int* a, const int* b, int* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<int>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<int>);
-}
-
-__global__ void ge_broadcast_i32(
-    const int* a, const int* b, int* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<int>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<int>);
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (I64)
-// ============================================================================
-
-__global__ void eq_broadcast_i64(
-    const long long* a, const long long* b, long long* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<long long>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<long long>);
-}
-
-__global__ void ne_broadcast_i64(
-    const long long* a, const long long* b, long long* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<long long>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<long long>);
-}
-
-__global__ void lt_broadcast_i64(
-    const long long* a, const long long* b, long long* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<long long>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<long long>);
-}
-
-__global__ void le_broadcast_i64(
-    const long long* a, const long long* b, long long* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<long long>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<long long>);
-}
-
-__global__ void gt_broadcast_i64(
-    const long long* a, const long long* b, long long* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<long long>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<long long>);
-}
-
-__global__ void ge_broadcast_i64(
-    const long long* a, const long long* b, long long* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<long long>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<long long>);
-}
-
-// ============================================================================
-// FP8E4M3 Comparison Operations
-// ============================================================================
-
-__global__ void eq_fp8_e4m3(const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_eq(a[idx], b[idx]);
-    }
-}
-
-__global__ void ne_fp8_e4m3(const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_ne(a[idx], b[idx]);
-    }
-}
-
-__global__ void lt_fp8_e4m3(const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_lt(a[idx], b[idx]);
-    }
-}
-
-__global__ void le_fp8_e4m3(const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_le(a[idx], b[idx]);
-    }
-}
-
-__global__ void gt_fp8_e4m3(const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_gt(a[idx], b[idx]);
-    }
-}
-
-__global__ void ge_fp8_e4m3(const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_ge(a[idx], b[idx]);
-    }
-}
-
-// ============================================================================
-// FP8E5M2 Comparison Operations
-// ============================================================================
-
-__global__ void eq_fp8_e5m2(const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_eq(a[idx], b[idx]);
-    }
-}
-
-__global__ void ne_fp8_e5m2(const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_ne(a[idx], b[idx]);
-    }
-}
-
-__global__ void lt_fp8_e5m2(const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_lt(a[idx], b[idx]);
-    }
-}
-
-__global__ void le_fp8_e5m2(const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_le(a[idx], b[idx]);
-    }
-}
-
-__global__ void gt_fp8_e5m2(const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_gt(a[idx], b[idx]);
-    }
-}
-
-__global__ void ge_fp8_e5m2(const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = compare_ge(a[idx], b[idx]);
-    }
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (FP8E4M3)
-// ============================================================================
-
-__global__ void eq_broadcast_fp8_e4m3(
-    const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e4m3>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<numr_fp8_e4m3>);
-}
-
-__global__ void ne_broadcast_fp8_e4m3(
-    const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e4m3>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<numr_fp8_e4m3>);
-}
-
-__global__ void lt_broadcast_fp8_e4m3(
-    const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e4m3>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<numr_fp8_e4m3>);
-}
-
-__global__ void le_broadcast_fp8_e4m3(
-    const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e4m3>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<numr_fp8_e4m3>);
-}
-
-__global__ void gt_broadcast_fp8_e4m3(
-    const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e4m3>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<numr_fp8_e4m3>);
-}
-
-__global__ void ge_broadcast_fp8_e4m3(
-    const numr_fp8_e4m3* a, const numr_fp8_e4m3* b, numr_fp8_e4m3* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e4m3>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<numr_fp8_e4m3>);
-}
-
-// ============================================================================
-// Broadcasting Comparison Operations (FP8E5M2)
-// ============================================================================
-
-__global__ void eq_broadcast_fp8_e5m2(
-    const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e5m2>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_eq<numr_fp8_e5m2>);
-}
-
-__global__ void ne_broadcast_fp8_e5m2(
-    const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e5m2>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ne<numr_fp8_e5m2>);
-}
-
-__global__ void lt_broadcast_fp8_e5m2(
-    const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e5m2>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_lt<numr_fp8_e5m2>);
-}
-
-__global__ void le_broadcast_fp8_e5m2(
-    const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e5m2>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_le<numr_fp8_e5m2>);
-}
-
-__global__ void gt_broadcast_fp8_e5m2(
-    const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e5m2>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_gt<numr_fp8_e5m2>);
-}
-
-__global__ void ge_broadcast_fp8_e5m2(
-    const numr_fp8_e5m2* a, const numr_fp8_e5m2* b, numr_fp8_e5m2* out,
-    const unsigned int* a_strides, const unsigned int* b_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    compare_broadcast_kernel_impl<numr_fp8_e5m2>(a, b, out, a_strides, b_strides, shape, ndim, n, compare_ge<numr_fp8_e5m2>);
-}
+NUMR_COMPARE_ROW(float, f32)
+NUMR_COMPARE_ROW(double, f64)
+NUMR_COMPARE_ROW(__half, f16)
+NUMR_COMPARE_ROW(__nv_bfloat16, bf16)
+NUMR_COMPARE_ROW(numr_fp8_e4m3, fp8_e4m3)
+NUMR_COMPARE_ROW(numr_fp8_e5m2, fp8_e5m2)
+NUMR_COMPARE_ROW(int64_t, i64)
+NUMR_COMPARE_ROW(int32_t, i32)
+NUMR_COMPARE_ROW(int16_t, i16)
+NUMR_COMPARE_ROW(int8_t, i8)
+NUMR_COMPARE_ROW(uint64_t, u64)
+NUMR_COMPARE_ROW(uint32_t, u32)
+NUMR_COMPARE_ROW(uint16_t, u16)
+NUMR_COMPARE_ROW(uint8_t, u8)
 
 } // extern "C"

@@ -1,24 +1,56 @@
 // Ternary CUDA kernels
-// Supports: where (conditional select)
-// where(cond, x, y) = cond ? x : y
-// Types: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, i32, i64
-// Condition types: u8 (optimized), f32, f64, i32, i64 (generic non-zero check)
+//
+// Operation: where (conditional select) — where(cond, x, y) = cond ? x : y
+//
+// Value dtypes: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2,
+//               i64, i32, i16, i8, u64, u32, u16, u8
+//
+// Kernel naming, matching the names the Rust launchers build in
+// src/runtime/cuda/kernels/ternary.rs from dtype_suffix() in loader.rs:
+//   where_{suffix}                          U8 condition, same-shape operands
+//   where_broadcast_{suffix}                U8 condition, strides in device memory
+//   where_cond_{cond}_{out}                 non-U8 condition, same shape
+//   where_broadcast_cond_{cond}_{out}       non-U8 condition, broadcast
+//
+// A U8 condition tests the byte directly; every other condition dtype tests
+// "not zero", which for a float means the numeric value and not the bit
+// pattern (-0.0 is false). Selection copies an operand through unchanged, so
+// unlike the arithmetic kernels there is nothing here that can overflow: one
+// template covers every dtype, integers included.
+//
+// The non-U8 condition pairs are an explicit list, not a cross product. A pair
+// with no instantiation is reported as an unsupported CONDITION dtype by
+// launch_where_generic_op, which is why the list is spelled out rather than
+// generated.
 
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
+#include <stdint.h>
 #include "dtype_traits.cuh"
 
 // ============================================================================
-// Non-zero check for different condition types
+// Non-zero check per condition dtype
 // ============================================================================
+// Declared without a body: a condition dtype with no specialization fails to
+// link rather than falling back to a wrong comparison.
 
 template<typename C>
 __device__ __forceinline__ bool is_nonzero(C val);
 
-template<>
-__device__ __forceinline__ bool is_nonzero<unsigned char>(unsigned char val) {
-    return val != 0;
-}
+#define NUMR_IS_NONZERO_INT(C)                                                  \
+    template<>                                                                  \
+    __device__ __forceinline__ bool is_nonzero<C>(C val) { return val != (C)0; }
+
+NUMR_IS_NONZERO_INT(int8_t)
+NUMR_IS_NONZERO_INT(int16_t)
+NUMR_IS_NONZERO_INT(int32_t)
+NUMR_IS_NONZERO_INT(int64_t)
+NUMR_IS_NONZERO_INT(uint8_t)
+NUMR_IS_NONZERO_INT(uint16_t)
+NUMR_IS_NONZERO_INT(uint32_t)
+NUMR_IS_NONZERO_INT(uint64_t)
+
+#undef NUMR_IS_NONZERO_INT
 
 template<>
 __device__ __forceinline__ bool is_nonzero<float>(float val) {
@@ -30,21 +62,8 @@ __device__ __forceinline__ bool is_nonzero<double>(double val) {
     return val != 0.0;
 }
 
-template<>
-__device__ __forceinline__ bool is_nonzero<int>(int val) {
-    return val != 0;
-}
-
-template<>
-__device__ __forceinline__ bool is_nonzero<long long>(long long val) {
-    return val != 0;
-}
-
-template<>
-__device__ __forceinline__ bool is_nonzero<unsigned int>(unsigned int val) {
-    return val != 0;
-}
-
+// F16, BF16 and FP8 decode to F32 first: the raw bits of -0.0 are non-zero, but
+// the value is not.
 template<>
 __device__ __forceinline__ bool is_nonzero<__half>(__half val) {
     return __half2float(val) != 0.0f;
@@ -66,7 +85,7 @@ __device__ __forceinline__ bool is_nonzero<numr_fp8_e5m2>(numr_fp8_e5m2 val) {
 }
 
 // ============================================================================
-// Where Template (must be outside extern "C")
+// Kernel body templates
 // ============================================================================
 
 // Generic where with any condition type
@@ -81,40 +100,14 @@ __device__ __forceinline__ T where_impl(unsigned char cond, T x, T y) {
     return cond ? x : y;
 }
 
-// ============================================================================
-// Where Broadcast Template
-// Handles broadcasting for cond, x, and y tensors
-// ============================================================================
-
-template<typename T>
-__device__ void where_broadcast_impl(
-    const unsigned char* cond, const T* x, const T* y, T* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int idx
-) {
-    // Compute offsets for each input based on strides
-    unsigned int remaining = idx;
-    unsigned int cond_offset = 0;
-    unsigned int x_offset = 0;
-    unsigned int y_offset = 0;
-
-    for (int d = ndim - 1; d >= 0; d--) {
-        unsigned int coord = remaining % shape[d];
-        remaining /= shape[d];
-        cond_offset += coord * cond_strides[d];
-        x_offset += coord * x_strides[d];
-        y_offset += coord * y_strides[d];
-    }
-
-    out[idx] = where_impl<T>(cond[cond_offset], x[x_offset], y[y_offset]);
-}
-
-// Generic broadcast template for any condition type
-template<typename C, typename T>
-__device__ void where_broadcast_impl_generic(
+// Broadcasting walk shared by both condition forms: strides and shape live in
+// device memory, one linear index becomes three operand offsets.
+template<typename C, typename T, typename SelFunc>
+__device__ void where_broadcast_walk(
     const C* cond, const T* x, const T* y, T* out,
     const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int idx
+    const unsigned int* shape, unsigned int ndim, unsigned int idx,
+    SelFunc sel
 ) {
     unsigned int remaining = idx;
     unsigned int cond_offset = 0;
@@ -129,516 +122,124 @@ __device__ void where_broadcast_impl_generic(
         y_offset += coord * y_strides[d];
     }
 
-    out[idx] = where_impl_generic<C, T>(cond[cond_offset], x[x_offset], y[y_offset]);
+    out[idx] = sel(cond[cond_offset], x[x_offset], y[y_offset]);
 }
+
+// ============================================================================
+// Kernel-parameter macros
+// ============================================================================
+
+#define WHERE_BROADCAST_ARGS(C, T)                                              \
+    const C* cond, const T* x, const T* y, T* out,                              \
+    const unsigned int* cond_strides, const unsigned int* x_strides,            \
+    const unsigned int* y_strides,                                              \
+    const unsigned int* shape, unsigned int ndim, unsigned int n
+
+#define WHERE_BROADCAST_CALL                                                    \
+    cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx
+
+// ============================================================================
+// Instantiation macros
+// ============================================================================
+
+// One value dtype with a U8 condition: the element-wise kernel and the
+// broadcast kernel.
+#define NUMR_WHERE_ROW(T, SUF)                                                  \
+    __global__ void where_##SUF(                                                \
+        const unsigned char* cond, const T* x, const T* y,                      \
+        T* out, unsigned int n) {                                               \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) {                                                          \
+            out[idx] = where_impl<T>(cond[idx], x[idx], y[idx]);                \
+        }                                                                       \
+    }                                                                           \
+    __global__ void where_broadcast_##SUF(                                      \
+        WHERE_BROADCAST_ARGS(unsigned char, T)) {                               \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) {                                                          \
+            where_broadcast_walk<unsigned char, T>(                             \
+                WHERE_BROADCAST_CALL, where_impl<T>);                           \
+        }                                                                       \
+    }
+
+// One (condition dtype, value dtype) pair, element-wise.
+#define NUMR_WHERE_COND(C, T, CSUF, TSUF)                                       \
+    __global__ void where_cond_##CSUF##_##TSUF(                                 \
+        const C* cond, const T* x, const T* y, T* out, unsigned int n) {        \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) {                                                          \
+            out[idx] = where_impl_generic<C, T>(cond[idx], x[idx], y[idx]);     \
+        }                                                                       \
+    }
+
+// One (condition dtype, value dtype) pair, broadcast.
+#define NUMR_WHERE_COND_BROADCAST(C, T, CSUF, TSUF)                             \
+    __global__ void where_broadcast_cond_##CSUF##_##TSUF(                       \
+        WHERE_BROADCAST_ARGS(C, T)) {                                           \
+        unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;               \
+        if (idx < n) {                                                          \
+            where_broadcast_walk<C, T>(                                         \
+                WHERE_BROADCAST_CALL, where_impl_generic<C, T>);                \
+        }                                                                       \
+    }
 
 extern "C" {
 
 // ============================================================================
-// Where Operations (element-wise, same shape)
+// U8 condition: one row per value dtype
 // ============================================================================
 
-__global__ void where_f32(
-    const unsigned char* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_f64(
-    const unsigned char* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<double>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_f16(
-    const unsigned char* cond, const __half* x, const __half* y,
-    __half* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<__half>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_bf16(
-    const unsigned char* cond, const __nv_bfloat16* x, const __nv_bfloat16* y,
-    __nv_bfloat16* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<__nv_bfloat16>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_i32(
-    const unsigned char* cond, const int* x, const int* y,
-    int* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<int>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_i64(
-    const unsigned char* cond, const long long* x, const long long* y,
-    long long* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<long long>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_fp8_e4m3(
-    const unsigned char* cond, const numr_fp8_e4m3* x, const numr_fp8_e4m3* y,
-    numr_fp8_e4m3* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<numr_fp8_e4m3>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_fp8_e5m2(
-    const unsigned char* cond, const numr_fp8_e5m2* x, const numr_fp8_e5m2* y,
-    numr_fp8_e5m2* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl<numr_fp8_e5m2>(cond[idx], x[idx], y[idx]);
-    }
-}
+NUMR_WHERE_ROW(float, f32)
+NUMR_WHERE_ROW(double, f64)
+NUMR_WHERE_ROW(__half, f16)
+NUMR_WHERE_ROW(__nv_bfloat16, bf16)
+NUMR_WHERE_ROW(numr_fp8_e4m3, fp8_e4m3)
+NUMR_WHERE_ROW(numr_fp8_e5m2, fp8_e5m2)
+NUMR_WHERE_ROW(int64_t, i64)
+NUMR_WHERE_ROW(int32_t, i32)
+NUMR_WHERE_ROW(int16_t, i16)
+NUMR_WHERE_ROW(int8_t, i8)
+NUMR_WHERE_ROW(uint64_t, u64)
+NUMR_WHERE_ROW(uint32_t, u32)
+NUMR_WHERE_ROW(uint16_t, u16)
+NUMR_WHERE_ROW(uint8_t, u8)
 
 // ============================================================================
-// Where with Generic Condition Types (F32/F64/I32/I64 condition)
-// Non-zero = true, zero = false
+// Non-U8 condition, element-wise
 // ============================================================================
 
-// F32 condition -> F32 output
-__global__ void where_cond_f32_f32(
-    const float* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<float, float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// F64 condition -> F64 output
-__global__ void where_cond_f64_f64(
-    const double* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<double, double>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// F32 condition -> F64 output
-__global__ void where_cond_f32_f64(
-    const float* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<float, double>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// F64 condition -> F32 output
-__global__ void where_cond_f64_f32(
-    const double* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<double, float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// I32 condition -> F32 output
-__global__ void where_cond_i32_f32(
-    const int* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<int, float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// I32 condition -> F64 output
-__global__ void where_cond_i32_f64(
-    const int* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<int, double>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// I64 condition -> F32 output
-__global__ void where_cond_i64_f32(
-    const long long* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<long long, float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// I64 condition -> F64 output
-__global__ void where_cond_i64_f64(
-    const long long* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<long long, double>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// U32 condition -> F32 output
-__global__ void where_cond_u32_f32(
-    const unsigned int* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<unsigned int, float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// U32 condition -> F64 output
-__global__ void where_cond_u32_f64(
-    const unsigned int* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<unsigned int, double>(cond[idx], x[idx], y[idx]);
-    }
-}
+NUMR_WHERE_COND(float, float, f32, f32)
+NUMR_WHERE_COND(double, double, f64, f64)
+NUMR_WHERE_COND(float, double, f32, f64)
+NUMR_WHERE_COND(double, float, f64, f32)
+NUMR_WHERE_COND(int32_t, float, i32, f32)
+NUMR_WHERE_COND(int32_t, double, i32, f64)
+NUMR_WHERE_COND(int64_t, float, i64, f32)
+NUMR_WHERE_COND(int64_t, double, i64, f64)
+NUMR_WHERE_COND(uint32_t, float, u32, f32)
+NUMR_WHERE_COND(uint32_t, double, u32, f64)
+NUMR_WHERE_COND(__half, __half, f16, f16)
+NUMR_WHERE_COND(__half, float, f16, f32)
+NUMR_WHERE_COND(__half, double, f16, f64)
+NUMR_WHERE_COND(__nv_bfloat16, __nv_bfloat16, bf16, bf16)
+NUMR_WHERE_COND(__nv_bfloat16, float, bf16, f32)
+NUMR_WHERE_COND(__nv_bfloat16, double, bf16, f64)
+NUMR_WHERE_COND(numr_fp8_e4m3, numr_fp8_e4m3, fp8_e4m3, fp8_e4m3)
+NUMR_WHERE_COND(numr_fp8_e5m2, numr_fp8_e5m2, fp8_e5m2, fp8_e5m2)
 
 // ============================================================================
-// F16 condition type
+// Non-U8 condition, broadcast
 // ============================================================================
 
-__global__ void where_cond_f16_f16(
-    const __half* cond, const __half* x, const __half* y,
-    __half* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<__half, __half>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_cond_f16_f32(
-    const __half* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<__half, float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_cond_f16_f64(
-    const __half* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<__half, double>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// ============================================================================
-// BF16 condition type
-// ============================================================================
-
-__global__ void where_cond_bf16_bf16(
-    const __nv_bfloat16* cond, const __nv_bfloat16* x, const __nv_bfloat16* y,
-    __nv_bfloat16* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<__nv_bfloat16, __nv_bfloat16>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_cond_bf16_f32(
-    const __nv_bfloat16* cond, const float* x, const float* y,
-    float* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<__nv_bfloat16, float>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_cond_bf16_f64(
-    const __nv_bfloat16* cond, const double* x, const double* y,
-    double* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<__nv_bfloat16, double>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// ============================================================================
-// FP8 condition types
-// ============================================================================
-
-__global__ void where_cond_fp8_e4m3_fp8_e4m3(
-    const numr_fp8_e4m3* cond, const numr_fp8_e4m3* x, const numr_fp8_e4m3* y,
-    numr_fp8_e4m3* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<numr_fp8_e4m3, numr_fp8_e4m3>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-__global__ void where_cond_fp8_e5m2_fp8_e5m2(
-    const numr_fp8_e5m2* cond, const numr_fp8_e5m2* x, const numr_fp8_e5m2* y,
-    numr_fp8_e5m2* out, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = where_impl_generic<numr_fp8_e5m2, numr_fp8_e5m2>(cond[idx], x[idx], y[idx]);
-    }
-}
-
-// ============================================================================
-// Where Broadcast Operations (different shapes with broadcasting)
-// ============================================================================
-
-__global__ void where_broadcast_f32(
-    const unsigned char* cond, const float* x, const float* y, float* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<float>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-__global__ void where_broadcast_f64(
-    const unsigned char* cond, const double* x, const double* y, double* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<double>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-__global__ void where_broadcast_f16(
-    const unsigned char* cond, const __half* x, const __half* y, __half* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<__half>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-__global__ void where_broadcast_bf16(
-    const unsigned char* cond, const __nv_bfloat16* x, const __nv_bfloat16* y, __nv_bfloat16* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<__nv_bfloat16>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-__global__ void where_broadcast_i32(
-    const unsigned char* cond, const int* x, const int* y, int* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<int>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-__global__ void where_broadcast_i64(
-    const unsigned char* cond, const long long* x, const long long* y, long long* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<long long>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-__global__ void where_broadcast_fp8_e4m3(
-    const unsigned char* cond, const numr_fp8_e4m3* x, const numr_fp8_e4m3* y, numr_fp8_e4m3* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<numr_fp8_e4m3>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-__global__ void where_broadcast_fp8_e5m2(
-    const unsigned char* cond, const numr_fp8_e5m2* x, const numr_fp8_e5m2* y, numr_fp8_e5m2* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl<numr_fp8_e5m2>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// ============================================================================
-// Where Broadcast with Generic Condition Types
-// ============================================================================
-
-// F32 condition -> F32 output (broadcast)
-__global__ void where_broadcast_cond_f32_f32(
-    const float* cond, const float* x, const float* y, float* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<float, float>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// F64 condition -> F64 output (broadcast)
-__global__ void where_broadcast_cond_f64_f64(
-    const double* cond, const double* x, const double* y, double* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<double, double>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// F32 condition -> F64 output (broadcast)
-__global__ void where_broadcast_cond_f32_f64(
-    const float* cond, const double* x, const double* y, double* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<float, double>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// F64 condition -> F32 output (broadcast)
-__global__ void where_broadcast_cond_f64_f32(
-    const double* cond, const float* x, const float* y, float* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<double, float>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// I32 condition -> F32 output (broadcast)
-__global__ void where_broadcast_cond_i32_f32(
-    const int* cond, const float* x, const float* y, float* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<int, float>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// I32 condition -> F64 output (broadcast)
-__global__ void where_broadcast_cond_i32_f64(
-    const int* cond, const double* x, const double* y, double* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<int, double>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// I64 condition -> F32 output (broadcast)
-__global__ void where_broadcast_cond_i64_f32(
-    const long long* cond, const float* x, const float* y, float* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<long long, float>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// I64 condition -> F64 output (broadcast)
-__global__ void where_broadcast_cond_i64_f64(
-    const long long* cond, const double* x, const double* y, double* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<long long, double>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// U32 condition -> F32 output (broadcast)
-__global__ void where_broadcast_cond_u32_f32(
-    const unsigned int* cond, const float* x, const float* y, float* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<unsigned int, float>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
-
-// U32 condition -> F64 output (broadcast)
-__global__ void where_broadcast_cond_u32_f64(
-    const unsigned int* cond, const double* x, const double* y, double* out,
-    const unsigned int* cond_strides, const unsigned int* x_strides, const unsigned int* y_strides,
-    const unsigned int* shape, unsigned int ndim, unsigned int n
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        where_broadcast_impl_generic<unsigned int, double>(cond, x, y, out, cond_strides, x_strides, y_strides, shape, ndim, idx);
-    }
-}
+NUMR_WHERE_COND_BROADCAST(float, float, f32, f32)
+NUMR_WHERE_COND_BROADCAST(double, double, f64, f64)
+NUMR_WHERE_COND_BROADCAST(float, double, f32, f64)
+NUMR_WHERE_COND_BROADCAST(double, float, f64, f32)
+NUMR_WHERE_COND_BROADCAST(int32_t, float, i32, f32)
+NUMR_WHERE_COND_BROADCAST(int32_t, double, i32, f64)
+NUMR_WHERE_COND_BROADCAST(int64_t, float, i64, f32)
+NUMR_WHERE_COND_BROADCAST(int64_t, double, i64, f64)
+NUMR_WHERE_COND_BROADCAST(uint32_t, float, u32, f32)
+NUMR_WHERE_COND_BROADCAST(uint32_t, double, u32, f64)
 
 } // extern "C"

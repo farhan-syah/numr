@@ -1,438 +1,61 @@
 // Scalar CUDA kernels (tensor-scalar operations)
-// Supports: add_scalar, sub_scalar, mul_scalar, div_scalar, pow_scalar
-// Types: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, i32, i64
 //
-// FP8 operations compute in FP32 and convert back to FP8 for storage.
-// Hopper (SM 8.9+) uses native PTX intrinsics for FP8 conversion.
+// Operations: add_scalar, sub_scalar, rsub_scalar, mul_scalar, div_scalar,
+// pow_scalar — every dtype below gets all six.
+//
+// Dtypes: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2,
+//         i64, i32, i16, i8, u64, u32, u16, u8,
+//         c64, c128
+//
+// Kernel naming, matching the names `kernel_name(op, dtype)` builds in
+// src/runtime/cuda/kernels/loader.rs from dtype_suffix():
+//   {op}_scalar_{suffix}
+//
+// The scalar's wire type per row, matching what the Rust launchers in
+// scalar.rs push:
+//   f32/f64/c64/c128   the row's own float width
+//   f16/bf16/fp8       float (no host-side counterpart to push)
+//   integers           the element type, except pow_scalar, which takes double
+//                      so a fractional exponent arrives unrounded
+//
+// The operation bodies, the kernel-body template and the row macros live in
+// scalar_ops.cuh, which also documents the integer wrapping, division-by-zero
+// and pow semantics. Complex stays here: complex pow is a polar-form
+// computation and a real scalar touches only some of a complex value's
+// components, so neither fits the row macro.
 
-#include <cuda_fp16.h>
-#include <cuda_bf16.h>
-#include "dtype_traits.cuh"
-#include "ipow.cuh"
+#include "scalar_ops.cuh"
 
 extern "C" {
 
 // ============================================================================
-// F32 Scalar Operations
+// Float dtypes: 6 operations per row
 // ============================================================================
 
-__global__ void add_scalar_f32(const float* a, float scalar, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] + scalar;
-    }
-}
-
-__global__ void sub_scalar_f32(const float* a, float scalar, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] - scalar;
-    }
-}
-
-__global__ void mul_scalar_f32(const float* a, float scalar, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] * scalar;
-    }
-}
-
-__global__ void div_scalar_f32(const float* a, float scalar, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] / scalar;
-    }
-}
-
-__global__ void pow_scalar_f32(const float* a, float scalar, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_pow_safe(a[idx], scalar);
-    }
-}
-
-__global__ void rsub_scalar_f32(const float* a, float scalar, float* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = scalar - a[idx];
-    }
-}
+NUMR_SCALAR_ROW_FLOAT(float, float, f32)
+NUMR_SCALAR_ROW_FLOAT(double, double, f64)
+NUMR_SCALAR_ROW_FLOAT(__half, float, f16)
+NUMR_SCALAR_ROW_FLOAT(__nv_bfloat16, float, bf16)
 
 // ============================================================================
-// F64 Scalar Operations
+// FP8 dtypes: computed in F32 against the unrounded scalar
 // ============================================================================
 
-__global__ void add_scalar_f64(const double* a, double scalar, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] + scalar;
-    }
-}
-
-__global__ void sub_scalar_f64(const double* a, double scalar, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] - scalar;
-    }
-}
-
-__global__ void mul_scalar_f64(const double* a, double scalar, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] * scalar;
-    }
-}
-
-__global__ void div_scalar_f64(const double* a, double scalar, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] / scalar;
-    }
-}
-
-__global__ void pow_scalar_f64(const double* a, double scalar, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_pow_safe(a[idx], scalar);
-    }
-}
-
-__global__ void rsub_scalar_f64(const double* a, double scalar, double* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = scalar - a[idx];
-    }
-}
+NUMR_SCALAR_ROW_FP8(numr_fp8_e4m3, fp8_e4m3, fp8_e4m3_to_f32, f32_to_fp8_e4m3)
+NUMR_SCALAR_ROW_FP8(numr_fp8_e5m2, fp8_e5m2, fp8_e5m2_to_f32, f32_to_fp8_e5m2)
 
 // ============================================================================
-// F16 Scalar Operations (half precision)
-// Note: Scalar is passed as float and converted to half for compatibility
+// Integer dtypes: add/sub/mul WRAP, div by zero yields 0, pow saturates
 // ============================================================================
 
-__global__ void add_scalar_f16(const __half* a, float scalar, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        __half s = __float2half(scalar);
-        out[idx] = __hadd(a[idx], s);
-    }
-}
-
-__global__ void sub_scalar_f16(const __half* a, float scalar, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        __half s = __float2half(scalar);
-        out[idx] = __hsub(a[idx], s);
-    }
-}
-
-__global__ void mul_scalar_f16(const __half* a, float scalar, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        __half s = __float2half(scalar);
-        out[idx] = __hmul(a[idx], s);
-    }
-}
-
-__global__ void div_scalar_f16(const __half* a, float scalar, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        __half s = __float2half(scalar);
-        out[idx] = __hdiv(a[idx], s);
-    }
-}
-
-__global__ void pow_scalar_f16(const __half* a, float scalar, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        // Use FP32 for pow computation (more accurate)
-        float af = __half2float(a[idx]);
-        out[idx] = __float2half(numr_pow_safe(af, scalar));
-    }
-}
-
-__global__ void rsub_scalar_f16(const __half* a, float scalar, __half* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        __half s = __float2half(scalar);
-        out[idx] = __hsub(s, a[idx]);
-    }
-}
-
-// ============================================================================
-// BF16 Scalar Operations (bfloat16)
-// Note: Scalar is passed as float and converted to bfloat16
-// ============================================================================
-
-__global__ void add_scalar_bf16(const __nv_bfloat16* a, float scalar, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        __nv_bfloat16 s = __float2bfloat16(scalar);
-        out[idx] = __hadd(a[idx], s);
-        #else
-        out[idx] = __float2bfloat16(__bfloat162float(a[idx]) + scalar);
-        #endif
-    }
-}
-
-__global__ void sub_scalar_bf16(const __nv_bfloat16* a, float scalar, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        __nv_bfloat16 s = __float2bfloat16(scalar);
-        out[idx] = __hsub(a[idx], s);
-        #else
-        out[idx] = __float2bfloat16(__bfloat162float(a[idx]) - scalar);
-        #endif
-    }
-}
-
-__global__ void mul_scalar_bf16(const __nv_bfloat16* a, float scalar, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        __nv_bfloat16 s = __float2bfloat16(scalar);
-        out[idx] = __hmul(a[idx], s);
-        #else
-        out[idx] = __float2bfloat16(__bfloat162float(a[idx]) * scalar);
-        #endif
-    }
-}
-
-__global__ void div_scalar_bf16(const __nv_bfloat16* a, float scalar, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        __nv_bfloat16 s = __float2bfloat16(scalar);
-        out[idx] = __hdiv(a[idx], s);
-        #else
-        out[idx] = __float2bfloat16(__bfloat162float(a[idx]) / scalar);
-        #endif
-    }
-}
-
-__global__ void pow_scalar_bf16(const __nv_bfloat16* a, float scalar, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        // Use FP32 for pow computation (more accurate)
-        float af = __bfloat162float(a[idx]);
-        out[idx] = __float2bfloat16(numr_pow_safe(af, scalar));
-    }
-}
-
-__global__ void rsub_scalar_bf16(const __nv_bfloat16* a, float scalar, __nv_bfloat16* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        #if __CUDA_ARCH__ >= 800
-        __nv_bfloat16 s = __float2bfloat16(scalar);
-        out[idx] = __hsub(s, a[idx]);
-        #else
-        out[idx] = __float2bfloat16(scalar - __bfloat162float(a[idx]));
-        #endif
-    }
-}
-
-// ============================================================================
-// I32 Scalar Operations
-// ============================================================================
-
-__global__ void add_scalar_i32(const int* a, int scalar, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] + scalar;
-    }
-}
-
-__global__ void sub_scalar_i32(const int* a, int scalar, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] - scalar;
-    }
-}
-
-__global__ void mul_scalar_i32(const int* a, int scalar, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] * scalar;
-    }
-}
-
-__global__ void div_scalar_i32(const int* a, int scalar, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] / scalar;
-    }
-}
-
-// The exponent arrives as a double, not an int: a fractional or negative
-// exponent has to reach the double path unrounded so CPU and CUDA agree.
-__global__ void pow_scalar_i32(const int* a, double scalar, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_ipow_scalar<int32_t>(a[idx], scalar);
-    }
-}
-
-__global__ void rsub_scalar_i32(const int* a, int scalar, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = scalar - a[idx];
-    }
-}
-
-// ============================================================================
-// I64 Scalar Operations
-// ============================================================================
-
-__global__ void add_scalar_i64(const long long* a, long long scalar, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] + scalar;
-    }
-}
-
-__global__ void sub_scalar_i64(const long long* a, long long scalar, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] - scalar;
-    }
-}
-
-__global__ void mul_scalar_i64(const long long* a, long long scalar, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] * scalar;
-    }
-}
-
-__global__ void div_scalar_i64(const long long* a, long long scalar, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = a[idx] / scalar;
-    }
-}
-
-// See pow_scalar_i32 for why the exponent is a double.
-__global__ void pow_scalar_i64(const long long* a, double scalar, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_ipow_scalar<int64_t>(a[idx], scalar);
-    }
-}
-
-__global__ void rsub_scalar_i64(const long long* a, long long scalar, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = scalar - a[idx];
-    }
-}
-
-// ============================================================================
-// FP8 E4M3 Scalar Operations
-// Scalar is passed as float, operations compute in FP32
-// Hopper (SM 8.9+) uses native PTX intrinsics for conversion
-// ============================================================================
-
-__global__ void add_scalar_fp8_e4m3(const numr_fp8_e4m3* a, float scalar, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(af + scalar));
-    }
-}
-
-__global__ void sub_scalar_fp8_e4m3(const numr_fp8_e4m3* a, float scalar, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(af - scalar));
-    }
-}
-
-__global__ void mul_scalar_fp8_e4m3(const numr_fp8_e4m3* a, float scalar, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(af * scalar));
-    }
-}
-
-__global__ void div_scalar_fp8_e4m3(const numr_fp8_e4m3* a, float scalar, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(af / scalar));
-    }
-}
-
-__global__ void pow_scalar_fp8_e4m3(const numr_fp8_e4m3* a, float scalar, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(numr_pow_safe(af, scalar)));
-    }
-}
-
-__global__ void rsub_scalar_fp8_e4m3(const numr_fp8_e4m3* a, float scalar, numr_fp8_e4m3* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e4m3_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e4m3(f32_to_fp8_e4m3(scalar - af));
-    }
-}
-
-// ============================================================================
-// FP8 E5M2 Scalar Operations
-// Same pattern as E4M3 but with E5M2 conversion functions
-// ============================================================================
-
-__global__ void add_scalar_fp8_e5m2(const numr_fp8_e5m2* a, float scalar, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(af + scalar));
-    }
-}
-
-__global__ void sub_scalar_fp8_e5m2(const numr_fp8_e5m2* a, float scalar, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(af - scalar));
-    }
-}
-
-__global__ void mul_scalar_fp8_e5m2(const numr_fp8_e5m2* a, float scalar, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(af * scalar));
-    }
-}
-
-__global__ void div_scalar_fp8_e5m2(const numr_fp8_e5m2* a, float scalar, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(af / scalar));
-    }
-}
-
-__global__ void pow_scalar_fp8_e5m2(const numr_fp8_e5m2* a, float scalar, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(numr_pow_safe(af, scalar)));
-    }
-}
-
-__global__ void rsub_scalar_fp8_e5m2(const numr_fp8_e5m2* a, float scalar, numr_fp8_e5m2* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        float af = fp8_e5m2_to_f32(a[idx].data);
-        out[idx] = numr_fp8_e5m2(f32_to_fp8_e5m2(scalar - af));
-    }
-}
+NUMR_SCALAR_ROW_INT(int64_t, i64)
+NUMR_SCALAR_ROW_INT(int32_t, i32)
+NUMR_SCALAR_ROW_INT(int16_t, i16)
+NUMR_SCALAR_ROW_INT(int8_t, i8)
+NUMR_SCALAR_ROW_INT(uint64_t, u64)
+NUMR_SCALAR_ROW_INT(uint32_t, u32)
+NUMR_SCALAR_ROW_INT(uint16_t, u16)
+NUMR_SCALAR_ROW_INT(uint8_t, u8)
 
 // ============================================================================
 // Complex64 (float2) Scalar Operations

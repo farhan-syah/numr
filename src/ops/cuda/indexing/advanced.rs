@@ -7,7 +7,7 @@ use crate::ops::{ReduceOps, ScatterReduceOp, TypeConversionOps};
 use crate::runtime::cuda::kernels::{
     ScatterReduceOpCuda, launch_bincount_weighted, launch_copy, launch_embedding_lookup,
     launch_fill_with_f64, launch_gather_nd, launch_scatter_reduce, launch_scatter_reduce_count,
-    launch_scatter_reduce_mean_div,
+    launch_scatter_reduce_int, launch_scatter_reduce_mean_div,
 };
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::runtime::{compute_contiguous_strides, ensure_contiguous};
@@ -76,8 +76,10 @@ pub fn scatter_reduce(
 ) -> Result<Tensor<CudaRuntime>> {
     let dtype = dst.dtype();
 
-    // Scatter_reduce kernels use atomicAdd which only supports F32/F64/I32.
-    // For other float types (F16, BF16, FP8), promote to F32, compute, and demote back.
+    // The float scatter_reduce kernels use atomics, which CUDA provides for
+    // F32 and F64 only. Narrower floats (F16, BF16, FP8) promote to F32,
+    // compute, and demote back. Integers take their own kernel instead, which
+    // needs no atomic at all — see launch_scatter_reduce_int.
     if dtype.is_float() && !matches!(dtype, DType::F32 | DType::F64) {
         let (dst_promoted, orig_dtype) = linalg_promote(client, dst)?;
         let (src_promoted, _) = linalg_promote(client, src)?;
@@ -129,12 +131,15 @@ pub fn scatter_reduce(
     }
 
     // Map ScatterReduceOp to ScatterReduceOpCuda
-    let cuda_op = match op {
-        ScatterReduceOp::Sum => ScatterReduceOpCuda::Sum,
-        ScatterReduceOp::Max => ScatterReduceOpCuda::Max,
-        ScatterReduceOp::Min => ScatterReduceOpCuda::Min,
-        ScatterReduceOp::Prod => ScatterReduceOpCuda::Prod,
-        ScatterReduceOp::Mean => ScatterReduceOpCuda::Sum, // Mean uses sum kernel + count + div
+    // The integer kernel reduces `mean` itself; the float path reaches it as a
+    // Sum pass followed by count and divide passes.
+    let cuda_op = match (op, dtype.is_int()) {
+        (ScatterReduceOp::Sum, _) => ScatterReduceOpCuda::Sum,
+        (ScatterReduceOp::Max, _) => ScatterReduceOpCuda::Max,
+        (ScatterReduceOp::Min, _) => ScatterReduceOpCuda::Min,
+        (ScatterReduceOp::Prod, _) => ScatterReduceOpCuda::Prod,
+        (ScatterReduceOp::Mean, true) => ScatterReduceOpCuda::Mean,
+        (ScatterReduceOp::Mean, false) => ScatterReduceOpCuda::Sum,
     };
 
     let dst_contig = ensure_contiguous(dst)?;
@@ -184,6 +189,30 @@ pub fn scatter_reduce(
     let inner_size: usize = shape[dim + 1..].iter().product();
     let src_dim_size = src.shape()[dim];
 
+    if dtype.is_int() {
+        // One launch covers every integer reduction, mean included: the kernel
+        // owns each destination element, so it keeps a 128-bit accumulator and
+        // divides once at the end instead of scattering with atomics.
+        unsafe {
+            launch_scatter_reduce_int(
+                &client.context,
+                &client.stream,
+                client.device.index,
+                dtype,
+                src_contig.ptr(),
+                index_contig.ptr(),
+                out.ptr(),
+                outer_size,
+                dim_size,
+                inner_size,
+                src_dim_size,
+                cuda_op,
+                include_self,
+            )?;
+        }
+        return Ok(out);
+    }
+
     unsafe {
         launch_scatter_reduce(
             &client.context,
@@ -202,16 +231,8 @@ pub fn scatter_reduce(
         )?;
     }
 
-    // For mean: divide sum by count
+    // Float mean: divide the scattered sum by the scattered count.
     if matches!(op, ScatterReduceOp::Mean) {
-        // Only float types support mean
-        if !matches!(dtype, DType::F32 | DType::F64) {
-            return Err(Error::UnsupportedDType {
-                dtype,
-                op: "scatter_reduce_mean",
-            });
-        }
-
         // Allocate count buffer (same shape as output, zero-initialized)
         let count = Tensor::<CudaRuntime>::empty(shape, dtype, &client.device)?;
         unsafe {

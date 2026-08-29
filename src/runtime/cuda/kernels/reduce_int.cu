@@ -12,8 +12,10 @@
 // Accumulator per op, matching `runtime/cpu/kernels/reduce/int_acc.rs`:
 //
 //   sum, prod   Numr128, saturating, narrowed and saturated once at the store.
-//   mean        Numr128 sum, then a truncating divide by the reduce count,
-//               then the same single narrow.
+//   mean        Numr128 sum, then a truncating divide by an explicit divisor
+//               (usually the reduce count, but not always - the CUDA epilogue
+//               also routes an unbiased variance's `n - correction` through
+//               this same kernel), then the same single narrow.
 //   min, max    the element type itself - a comparison never leaves the range.
 //   any, all    an int bitmask, exactly as the float path does.
 //
@@ -126,12 +128,16 @@ __device__ void reduce_cmp_int_impl(const T* input, T* output, unsigned int n) {
 // ============================================================================
 
 // Sum, product, or mean along a dimension. `IsProd` selects the operation and
-// `IsMean` divides the finished sum by `reduce_size`; the two are never both
-// set.
+// `IsMean` divides the finished sum by `divisor`; the two are never both set.
+// `divisor` is a parameter rather than always `reduce_size` because the CUDA
+// epilogue also needs to divide by a count that is NOT the reduced axis
+// length - an unbiased variance's `n - correction`. Callers that do want the
+// reduced axis length (a plain mean) pass `reduce_size` itself as `divisor`.
 template<typename T, bool IsProd, bool IsMean>
 __device__ void reduce_acc_dim_int_impl(
     const T* input, T* output,
-    unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size
+    unsigned int outer_size, unsigned int reduce_size, unsigned int inner_size,
+    unsigned long long divisor
 ) {
     __shared__ Numr128 shared[REDUCE_INT_BLOCK];
     const unsigned int tid = threadIdx.x;
@@ -160,8 +166,10 @@ __device__ void reduce_acc_dim_int_impl(
             if (tid == 0) {
                 // The divide happens inside the wide accumulator, before the
                 // single narrow: a sum that overflows the element type but whose
-                // mean does not still reports the true mean.
-                Numr128 total = IsMean ? numr128_div_u64_trunc(shared[0], reduce_size)
+                // quotient does not still reports the true quotient.
+                // `numr128_div_u64_trunc` forces a zero `divisor` to 1, mirroring
+                // the CPU epilogue's `count.max(1)`.
+                Numr128 total = IsMean ? numr128_div_u64_trunc(shared[0], divisor)
                                        : shared[0];
                 output[outer_idx * inner_size + inner_idx] = Numr128Narrow<T>::apply(total);
             }
@@ -332,13 +340,14 @@ extern "C" __global__ void reduce_min_##SUFFIX(const T* input, T* output, unsign
 } \
 extern "C" __global__ void reduce_sum_dim_##SUFFIX( \
     const T* input, T* output, unsigned int o, unsigned int r, unsigned int i \
-) { reduce_acc_dim_int_impl<T, false, false>(input, output, o, r, i); } \
+) { reduce_acc_dim_int_impl<T, false, false>(input, output, o, r, i, r); } \
 extern "C" __global__ void reduce_prod_dim_##SUFFIX( \
     const T* input, T* output, unsigned int o, unsigned int r, unsigned int i \
-) { reduce_acc_dim_int_impl<T, true, false>(input, output, o, r, i); } \
+) { reduce_acc_dim_int_impl<T, true, false>(input, output, o, r, i, r); } \
 extern "C" __global__ void reduce_mean_dim_##SUFFIX( \
-    const T* input, T* output, unsigned int o, unsigned int r, unsigned int i \
-) { reduce_acc_dim_int_impl<T, false, true>(input, output, o, r, i); } \
+    const T* input, T* output, unsigned int o, unsigned int r, unsigned int i, \
+    unsigned long long divisor \
+) { reduce_acc_dim_int_impl<T, false, true>(input, output, o, r, i, divisor); } \
 extern "C" __global__ void reduce_max_dim_##SUFFIX( \
     const T* input, T* output, unsigned int o, unsigned int r, unsigned int i \
 ) { reduce_cmp_dim_int_impl<T, true>(input, output, o, r, i); } \

@@ -1,4 +1,4 @@
-// Integer GEMV (I32, I64) CUDA Kernels
+// Integer GEMV (I16, I32, I64, U8, U16, U32, U64) CUDA Kernels
 // C[M,N] = A[M,K] @ B[K,N] for small M (M <= 16, typically M=1 for LLM decode)
 //
 // These are the integer counterparts of the float kernels in `gemv.cu`, split
@@ -16,6 +16,9 @@
 // once at the store. Integer addition in 128 bits is exact and associative, so
 // the warp-reduction order here reaches the same total as the tiled kernel's
 // sequential order - GEMV and tiled matmul agree bit for bit on any operands.
+// U64 is the one width whose accumulator can itself saturate, and it still
+// agrees: its terms are all non-negative, so a sum clamped at the positive
+// bound is `min(true sum, bound)` whatever order the terms arrive in.
 //
 // The constants below must stay equal to `gemv.cu`'s, because the Rust launcher
 // (`launch_gemv_kernel*` in `kernels/loader.rs`) computes one grid for both.
@@ -56,36 +59,10 @@ __device__ __forceinline__ void gemv_int_impl(
 
     Numr128 acc = numr128_from_i64(0);
     for (unsigned int k = 0; k < K; k++) {
-        acc = numr128_add(acc, numr128_mul_i64((long long)a_row[k], (long long)b_base[k * N + col]));
+        acc = Numr128MulAdd<T>::apply(acc, a_row[k], b_base[k * N + col]);
     }
 
     C[batch * M * N + m * N + col] = Numr128Narrow<T>::apply(acc);
-}
-
-extern "C" __global__ void gemv_i32(
-    const int* __restrict__ A,
-    const int* __restrict__ B,
-    int* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    gemv_int_impl<int>(A, B, C, M, N, K, a_batch_count, b_batch_count);
-}
-
-extern "C" __global__ void gemv_i64(
-    const long long* __restrict__ A,
-    const long long* __restrict__ B,
-    long long* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    gemv_int_impl<long long>(A, B, C, M, N, K, a_batch_count, b_batch_count);
 }
 
 // ============================================================================
@@ -118,7 +95,7 @@ __device__ __forceinline__ void gemv_bt_int_impl(
 
     Numr128 acc = numr128_from_i64(0);
     for (unsigned int k = lane_id; k < K; k += WARP_SIZE) {
-        acc = numr128_add(acc, numr128_mul_i64((long long)a_row[k], (long long)b_row[k]));
+        acc = Numr128MulAdd<T>::apply(acc, a_row[k], b_row[k]);
     }
 
     #pragma unroll
@@ -131,32 +108,6 @@ __device__ __forceinline__ void gemv_bt_int_impl(
     }
 }
 
-extern "C" __global__ void gemv_bt_i32(
-    const int* __restrict__ A,
-    const int* __restrict__ B,
-    int* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    gemv_bt_int_impl<int>(A, B, C, M, N, K, a_batch_count, b_batch_count);
-}
-
-extern "C" __global__ void gemv_bt_i64(
-    const long long* __restrict__ A,
-    const long long* __restrict__ B,
-    long long* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    gemv_bt_int_impl<long long>(A, B, C, M, N, K, a_batch_count, b_batch_count);
-}
-
 // ============================================================================
 // Multi-Row Transposed B with Vectorized Loads
 //
@@ -166,15 +117,29 @@ extern "C" __global__ void gemv_bt_i64(
 // ============================================================================
 
 // 16-byte vector type per element type, and how many elements it carries.
-template<typename T> struct gemv_int_vec;
-
-template<> struct gemv_int_vec<int> {
+//
+// CUDA has no 16-byte vector type for the sub-32-bit widths, so the primary
+// template uses `int4` purely as a 16-byte load container and the elements are
+// read back through a `T*`. The lane count follows from the element size, so a
+// vector load always moves exactly 16 bytes whatever the dtype. The 4- and
+// 8-byte widths take the vector type that already matches their element type.
+template<typename T> struct gemv_int_vec {
     typedef int4 vec_t;
+    static const unsigned int LANES = 16u / sizeof(T);
+};
+
+template<> struct gemv_int_vec<unsigned int> {
+    typedef uint4 vec_t;
     static const unsigned int LANES = 4;
 };
 
 template<> struct gemv_int_vec<long long> {
     typedef longlong2 vec_t;
+    static const unsigned int LANES = 2;
+};
+
+template<> struct gemv_int_vec<unsigned long long> {
+    typedef ulonglong2 vec_t;
     static const unsigned int LANES = 2;
 };
 
@@ -208,9 +173,14 @@ __device__ __forceinline__ void gemv_bt_mr_int_impl(
         acc[r] = numr128_from_i64(0);
     }
 
+    const T* b_base = B + b_batch * N * K;
+
     // A K that is a multiple of VEC keeps every B row start 16-byte aligned too,
-    // because the rows are VEC-element multiples apart from an aligned base.
-    const bool can_vec = (K % VEC == 0) && IS_ALIGNED(a_row, 16);
+    // because the rows are VEC-element multiples apart from an aligned base. The
+    // batch base itself still has to be checked: `b_batch * N * K` elements is a
+    // 16-byte multiple only for some N, K and element sizes, and a misaligned
+    // vector load faults rather than reading slowly.
+    const bool can_vec = (K % VEC == 0) && IS_ALIGNED(a_row, 16) && IS_ALIGNED(b_base, 16);
 
     if (can_vec) {
         const unsigned int K_vec = K / VEC;
@@ -224,30 +194,25 @@ __device__ __forceinline__ void gemv_bt_mr_int_impl(
             for (int r = 0; r < ROWS_PER_WARP; r++) {
                 if (col_base + r < N) {
                     const vec_t* b_vec = reinterpret_cast<const vec_t*>(
-                        B + b_batch * N * K + (col_base + r) * K);
+                        b_base + (col_base + r) * K);
                     vec_t bv = b_vec[vi];
                     const T* b_elems = reinterpret_cast<const T*>(&bv);
 
                     #pragma unroll
                     for (unsigned int j = 0; j < VEC; j++) {
-                        acc[r] = numr128_add(
-                            acc[r],
-                            numr128_mul_i64((long long)a_elems[j], (long long)b_elems[j]));
+                        acc[r] = Numr128MulAdd<T>::apply(acc[r], a_elems[j], b_elems[j]);
                     }
                 }
             }
         }
     } else {
         for (unsigned int k = lane_id; k < K; k += WARP_SIZE) {
-            const long long a_val = (long long)a_row[k];
+            const T a_val = a_row[k];
             #pragma unroll
             for (int r = 0; r < ROWS_PER_WARP; r++) {
                 if (col_base + r < N) {
-                    acc[r] = numr128_add(
-                        acc[r],
-                        numr128_mul_i64(
-                            a_val,
-                            (long long)B[b_batch * N * K + (col_base + r) * K + k]));
+                    acc[r] = Numr128MulAdd<T>::apply(
+                        acc[r], a_val, b_base[(col_base + r) * K + k]);
                 }
             }
         }
@@ -264,28 +229,62 @@ __device__ __forceinline__ void gemv_bt_mr_int_impl(
     }
 }
 
-extern "C" __global__ void gemv_bt_mr_i32(
-    const int* __restrict__ A,
-    const int* __restrict__ B,
-    int* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    gemv_bt_mr_int_impl<int>(A, B, C, M, N, K, a_batch_count, b_batch_count);
+// ============================================================================
+// Extern "C" entry points
+//
+// One macro row per dtype emits all three families, so a new element type never
+// means three hand-copied bodies. The names are `{family}_{dtype suffix}` and
+// must match `kernel_name("gemv", dtype)` in `kernels/loader.rs`.
+//
+// I8 is deliberately absent: CPU `matmul` on I8 returns an I32 tensor
+// (quantized accumulation, see `ops/cpu/matmul.rs`), so an I8-in/I8-out kernel
+// here would disagree with the reference on both dtype and value.
+// ============================================================================
+
+#define NUMR_GEMV_INT_ENTRIES(SUFFIX, TYPE) \
+extern "C" __global__ void gemv_##SUFFIX( \
+    const TYPE* __restrict__ A, \
+    const TYPE* __restrict__ B, \
+    TYPE* __restrict__ C, \
+    unsigned int M, \
+    unsigned int N, \
+    unsigned int K, \
+    unsigned int a_batch_count, \
+    unsigned int b_batch_count \
+) { \
+    gemv_int_impl<TYPE>(A, B, C, M, N, K, a_batch_count, b_batch_count); \
+} \
+extern "C" __global__ void gemv_bt_##SUFFIX( \
+    const TYPE* __restrict__ A, \
+    const TYPE* __restrict__ B, \
+    TYPE* __restrict__ C, \
+    unsigned int M, \
+    unsigned int N, \
+    unsigned int K, \
+    unsigned int a_batch_count, \
+    unsigned int b_batch_count \
+) { \
+    gemv_bt_int_impl<TYPE>(A, B, C, M, N, K, a_batch_count, b_batch_count); \
+} \
+extern "C" __global__ void gemv_bt_mr_##SUFFIX( \
+    const TYPE* __restrict__ A, \
+    const TYPE* __restrict__ B, \
+    TYPE* __restrict__ C, \
+    unsigned int M, \
+    unsigned int N, \
+    unsigned int K, \
+    unsigned int a_batch_count, \
+    unsigned int b_batch_count \
+) { \
+    gemv_bt_mr_int_impl<TYPE>(A, B, C, M, N, K, a_batch_count, b_batch_count); \
 }
 
-extern "C" __global__ void gemv_bt_mr_i64(
-    const long long* __restrict__ A,
-    const long long* __restrict__ B,
-    long long* __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    gemv_bt_mr_int_impl<long long>(A, B, C, M, N, K, a_batch_count, b_batch_count);
-}
+NUMR_GEMV_INT_ENTRIES(i16, short)
+NUMR_GEMV_INT_ENTRIES(i32, int)
+NUMR_GEMV_INT_ENTRIES(i64, long long)
+NUMR_GEMV_INT_ENTRIES(u8, unsigned char)
+NUMR_GEMV_INT_ENTRIES(u16, unsigned short)
+NUMR_GEMV_INT_ENTRIES(u32, unsigned int)
+NUMR_GEMV_INT_ENTRIES(u64, unsigned long long)
+
+#undef NUMR_GEMV_INT_ENTRIES
