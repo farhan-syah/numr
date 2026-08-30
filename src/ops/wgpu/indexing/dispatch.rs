@@ -126,6 +126,15 @@ impl IndexingOps<WgpuRuntime> for WgpuClient {
         super::bincount::bincount(self, input, weights, minlength)
     }
 
+    fn bincount_with_len(
+        &self,
+        input: &Tensor<WgpuRuntime>,
+        weights: Option<&Tensor<WgpuRuntime>>,
+        len: usize,
+    ) -> Result<Tensor<WgpuRuntime>> {
+        super::bincount::bincount_with_len(self, input, weights, len)
+    }
+
     fn gather_2d(
         &self,
         input: &Tensor<WgpuRuntime>,

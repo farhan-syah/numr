@@ -2,6 +2,7 @@
 
 mod advanced;
 mod argmax;
+mod bincount;
 mod gather_scatter;
 mod helpers;
 mod masked;
@@ -119,7 +120,16 @@ impl IndexingOps<CudaRuntime> for CudaClient {
         weights: Option<&Tensor<CudaRuntime>>,
         minlength: usize,
     ) -> Result<Tensor<CudaRuntime>> {
-        advanced::bincount(self, input, weights, minlength)
+        bincount::bincount(self, input, weights, minlength)
+    }
+
+    fn bincount_with_len(
+        &self,
+        input: &Tensor<CudaRuntime>,
+        weights: Option<&Tensor<CudaRuntime>>,
+        len: usize,
+    ) -> Result<Tensor<CudaRuntime>> {
+        bincount::bincount_with_len(self, input, weights, len)
     }
 
     fn gather_2d(

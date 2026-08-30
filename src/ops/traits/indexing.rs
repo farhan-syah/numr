@@ -509,6 +509,66 @@ pub trait IndexingOps<R: Runtime> {
         })
     }
 
+    /// Count occurrences of each value into a histogram of exactly `len` bins.
+    ///
+    /// Same operation as [`IndexingOps::bincount`], except the caller supplies
+    /// the output length instead of it being derived from `max(input) + 1`.
+    /// Callers that already know the bin count — a vocabulary size, a class
+    /// count, a bucket count — should prefer this method: on a GPU backend the
+    /// derived length lives on the device, so `bincount` must read one scalar
+    /// back to the host and synchronise before it can allocate. This method
+    /// skips both the max reduction and the readback.
+    ///
+    /// # Out-of-range contract
+    ///
+    /// Values outside `` `[0, len)` `` — negative or too large — are **ignored**,
+    /// not rejected. Detecting them would require the very device
+    /// synchronisation this method exists to avoid. A caller that needs
+    /// out-of-range values reported must use [`IndexingOps::bincount`].
+    ///
+    /// Note this differs from [`IndexingOps::bincount`], which rejects a
+    /// negative input with `InvalidArgument`.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - 1D integer tensor (I32 or I64)
+    /// * `weights` - Optional weights tensor, same shape as input. If provided,
+    ///   the output is the sum of weights for each bin instead of counts.
+    /// * `len` - Exact length of the output tensor. `0` yields an empty tensor.
+    ///
+    /// # Returns
+    ///
+    /// 1D tensor of length `len`, with the same dtype [`IndexingOps::bincount`]
+    /// produces for the same inputs: the weights dtype when weighted, I64 counts
+    /// otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// input = [0, 1, 1, 3, 2, 1, 3]
+    /// bincount_with_len(input, None, 6)
+    /// # Result: [1, 3, 1, 2, 0, 0]  // trailing bins stay zero
+    ///
+    /// bincount_with_len(input, None, 2)
+    /// # Result: [1, 3]  // values 2 and 3 fall outside [0, 2) and are ignored
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// * `ShapeMismatch` - if input is not 1D or weights shape doesn't match input
+    /// * `DTypeMismatch` - if input is not an integer type
+    fn bincount_with_len(
+        &self,
+        input: &Tensor<R>,
+        weights: Option<&Tensor<R>>,
+        len: usize,
+    ) -> Result<Tensor<R>> {
+        let _ = (input, weights, len);
+        Err(Error::NotImplemented {
+            feature: "IndexingOps::bincount_with_len",
+        })
+    }
+
     /// Gather elements from a 2D matrix using row and column index vectors.
     ///
     /// For each index i, extracts `` `input[rows[i], cols[i]]` ``.

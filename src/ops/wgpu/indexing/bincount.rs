@@ -16,15 +16,26 @@ use crate::runtime::wgpu::ops::helpers::{
 use crate::runtime::wgpu::shaders::launch_bincount;
 use crate::tensor::Tensor;
 
-pub(super) fn bincount(
+/// Validated, I32-normalized form of a bincount call.
+struct BincountPlan {
+    /// Input narrowed to contiguous I32: WebGPU shaders index in i32.
+    input: Tensor<WgpuRuntime>,
+    weights: Option<Tensor<WgpuRuntime>>,
+    /// U32 counts when unweighted, else the weights dtype.
+    output_dtype: DType,
+}
+
+/// Validate rank, input dtype, weights shape and weights dtype, then narrow the
+/// input to contiguous I32.
+///
+/// CPU is the reference backend, so each rejection uses the variant and payload
+/// it uses: a caller matching on the error must not have to special-case which
+/// backend produced it.
+fn plan_bincount(
     client: &WgpuClient,
     input: &Tensor<WgpuRuntime>,
     weights: Option<&Tensor<WgpuRuntime>>,
-    minlength: usize,
-) -> Result<Tensor<WgpuRuntime>> {
-    // Validate input is 1D integer. CPU is the reference backend, so both
-    // rejections use the variant and payload it uses: a caller matching on the
-    // error must not have to special-case which backend produced it.
+) -> Result<BincountPlan> {
     if input.ndim() != 1 {
         return Err(Error::ShapeMismatch {
             expected: vec![input.numel()],
@@ -47,7 +58,11 @@ pub(super) fn bincount(
                 got: w.shape().to_vec(),
             });
         }
-        if !matches!(w.dtype(), DType::F32 | DType::I32 | DType::U32) {
+        // F32 only: the weighted shader accumulates through a compare-and-swap
+        // loop over `atomic<u32>`, reading each slot back as an f32. Accepting
+        // I32 or U32 here would pass validation and then fail inside
+        // `launch_bincount`, which is F32-only, so the two must agree.
+        if w.dtype() != DType::F32 {
             return Err(Error::UnsupportedDType {
                 dtype: w.dtype(),
                 op: "bincount weights",
@@ -63,43 +78,50 @@ pub(super) fn bincount(
     let input = ensure_contiguous(&input_i32)?;
     let weights = weights.map(ensure_contiguous).transpose()?;
 
-    let n = input.numel();
+    Ok(BincountPlan {
+        input,
+        weights,
+        output_dtype,
+    })
+}
 
-    // Determine output size: max reduction on GPU, read single scalar back.
-    // This is a necessary system boundary (same as CPU/CUDA computing max first).
-    //
-    // The max is taken in I32, not a float dtype. CUDA casts to F64 because its
-    // reduce kernels have no integer path, and F64's 53-bit mantissa holds every
-    // i32/i64 index exactly. WebGPU has no F64, and F32's 24-bit mantissa rounds
-    // any value above 2^24, which would size the output wrongly. WebGPU does have
-    // native I32 reduce kernels, so the max stays in the integer domain and is
-    // exact across the whole I32 range. Values beyond I32 are unrepresentable on
-    // this backend at all — that is WebGPU's 32-bit dtype limit, and
-    // `ensure_i32_indices` above is where an I64 input narrows.
-    let max_tensor = client.max(&input, &[0], true)?;
-    let max_val = max_tensor.item::<i32>()? as i64;
-    if max_val < 0 {
-        return Err(Error::InvalidArgument {
-            arg: "input",
-            reason: "bincount requires non-negative values".to_string(),
-        });
+/// Allocate a zeroed histogram of `output_len` bins and dispatch the shader.
+///
+/// The shader already skips any value outside `[0, output_len)`, so both entry
+/// points share it unchanged and differ only in how `output_len` is obtained.
+fn accumulate(
+    client: &WgpuClient,
+    plan: &BincountPlan,
+    output_len: usize,
+) -> Result<Tensor<WgpuRuntime>> {
+    let n = plan.input.numel();
+
+    // Zero bins: WebGPU rejects a zero-sized buffer, so there is nothing to bind
+    // a dispatch to. The result is the empty histogram, in the dtype the
+    // populated path would have returned.
+    if output_len == 0 {
+        let dtype = if plan.weights.is_none() {
+            DType::I64
+        } else {
+            plan.output_dtype
+        };
+        return Tensor::empty(&[0], dtype, client.device());
     }
-    let output_len = ((max_val as usize) + 1).max(minlength);
 
     // Allocate zero-initialized output buffer.
     // Unweighted: U32 counts. Weighted: same dtype as weights (shader uses atomic<u32> bitcast).
-    let output = if output_dtype == DType::U32 {
+    let output = if plan.output_dtype == DType::U32 {
         let zeros = vec![0u32; output_len];
         Tensor::<WgpuRuntime>::from_slice(&zeros, &[output_len], client.device())?
     } else {
-        Tensor::zeros(&[output_len], output_dtype, client.device())?
+        Tensor::zeros(&[output_len], plan.output_dtype, client.device())?
     };
 
     // Get buffers
-    let input_buf = get_tensor_buffer(&input)?;
+    let input_buf = get_tensor_buffer(&plan.input)?;
     let output_buf = get_tensor_buffer(&output)?;
 
-    let weights_buf = if let Some(ref w) = weights {
+    let weights_buf = if let Some(ref w) = plan.weights {
         Some(get_tensor_buffer(w)?)
     } else {
         None
@@ -122,13 +144,65 @@ pub(super) fn bincount(
         &output_buf,
         &params_buf,
         n,
-        weights.as_ref().map(|w| w.dtype()),
+        plan.weights.as_ref().map(|w| w.dtype()),
     )?;
 
     // Cast U32 kernel output to I64 for parity with CPU backend (unweighted returns I64)
-    if weights.is_none() {
+    if plan.weights.is_none() {
         return client.cast(&output, DType::I64);
     }
 
     Ok(output)
+}
+
+pub(super) fn bincount(
+    client: &WgpuClient,
+    input: &Tensor<WgpuRuntime>,
+    weights: Option<&Tensor<WgpuRuntime>>,
+    minlength: usize,
+) -> Result<Tensor<WgpuRuntime>> {
+    let plan = plan_bincount(client, input, weights)?;
+
+    // Determine output size: max reduction on GPU, read single scalar back.
+    // This is a necessary system boundary (same as CPU/CUDA computing max first).
+    //
+    // The max is taken in I32, not a float dtype. CUDA casts to F64 because its
+    // reduce kernels have no integer path, and F64's 53-bit mantissa holds every
+    // i32/i64 index exactly. WebGPU has no F64, and F32's 24-bit mantissa rounds
+    // any value above 2^24, which would size the output wrongly. WebGPU does have
+    // native I32 reduce kernels, so the max stays in the integer domain and is
+    // exact across the whole I32 range. Values beyond I32 are unrepresentable on
+    // this backend at all — that is WebGPU's 32-bit dtype limit, and
+    // `ensure_i32_indices` in `plan_bincount` is where an I64 input narrows.
+    //
+    // `bincount_with_len` below exists to let a caller that already knows the
+    // output length skip this sizing sync entirely.
+    let max_tensor = client.max(&plan.input, &[0], true)?;
+    let max_val = max_tensor.item::<i32>()? as i64;
+    if max_val < 0 {
+        return Err(Error::InvalidArgument {
+            arg: "input",
+            reason: "bincount requires non-negative values".to_string(),
+        });
+    }
+    let output_len = ((max_val as usize) + 1).max(minlength);
+
+    accumulate(client, &plan, output_len)
+}
+
+/// bincount into a caller-sized histogram of exactly `len` bins.
+///
+/// No max reduction and no `item()` readback: nothing on this path moves data
+/// from device to host, which is the entire reason it exists. Values outside
+/// `[0, len)` — negative or too large — are ignored rather than rejected,
+/// because detecting one would need the sync this path avoids. The shader's own
+/// bounds test performs that filtering on device.
+pub(super) fn bincount_with_len(
+    client: &WgpuClient,
+    input: &Tensor<WgpuRuntime>,
+    weights: Option<&Tensor<WgpuRuntime>>,
+    len: usize,
+) -> Result<Tensor<WgpuRuntime>> {
+    let plan = plan_bincount(client, input, weights)?;
+    accumulate(client, &plan, len)
 }

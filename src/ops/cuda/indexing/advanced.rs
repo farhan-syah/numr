@@ -3,10 +3,10 @@
 use crate::algorithm::linalg::helpers::{linalg_demote, linalg_promote};
 use crate::dtype::DType;
 use crate::error::{Error, Result};
-use crate::ops::{ReduceOps, ScatterReduceOp, TypeConversionOps};
+use crate::ops::ScatterReduceOp;
 use crate::runtime::cuda::kernels::{
-    ScatterReduceOpCuda, launch_bincount_weighted, launch_copy, launch_embedding_lookup,
-    launch_fill_with_f64, launch_gather_nd, launch_scatter_reduce, launch_scatter_reduce_count,
+    ScatterReduceOpCuda, launch_copy, launch_embedding_lookup, launch_fill_with_f64,
+    launch_gather_nd, launch_scatter_reduce, launch_scatter_reduce_count,
     launch_scatter_reduce_int, launch_scatter_reduce_mean_div,
 };
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
@@ -374,100 +374,6 @@ pub fn gather_nd(
             slice_size,
             index_depth,
             ndim,
-        )?;
-    }
-
-    Ok(out)
-}
-
-/// Execute bincount operation.
-pub fn bincount(
-    client: &CudaClient,
-    input: &Tensor<CudaRuntime>,
-    weights: Option<&Tensor<CudaRuntime>>,
-    minlength: usize,
-) -> Result<Tensor<CudaRuntime>> {
-    // Validate input is 1D
-    if input.ndim() != 1 {
-        return Err(Error::ShapeMismatch {
-            expected: vec![input.numel()],
-            got: input.shape().to_vec(),
-        });
-    }
-
-    // Validate input is integer type
-    let input_dtype = input.dtype();
-    if !matches!(input_dtype, DType::I32 | DType::I64) {
-        return Err(Error::DTypeMismatch {
-            lhs: DType::I64,
-            rhs: input_dtype,
-        });
-    }
-
-    // Validate weights if provided
-    let weights_dtype = if let Some(w) = weights {
-        if w.shape() != input.shape() {
-            return Err(Error::ShapeMismatch {
-                expected: input.shape().to_vec(),
-                got: w.shape().to_vec(),
-            });
-        }
-        Some(w.dtype())
-    } else {
-        None
-    };
-
-    let out_dtype = weights_dtype.unwrap_or(DType::I64);
-    let input_contig = ensure_contiguous(input)?;
-    let numel = input.numel();
-
-    // Find the max value on GPU to determine output size.
-    // Cast to F64 for max reduction (CUDA reduce kernels support F64 but not integer types),
-    // then read the single scalar back to CPU for allocation sizing —
-    // this is a necessary system boundary (same as CPU impl computing max first).
-    // F64 preserves full i32/i64 precision (up to 2^53), unlike F32 which loses precision past 2^24.
-    let input_f64 = client.cast(input, DType::F64)?;
-    let max_tensor = client.max(&input_f64, &[0], false)?;
-    let max_val = max_tensor.item::<f64>()? as i64;
-    if max_val < 0 {
-        return Err(Error::InvalidArgument {
-            arg: "input",
-            reason: "bincount requires non-negative values".to_string(),
-        });
-    }
-    let output_len = ((max_val as usize) + 1).max(minlength);
-
-    // Allocate output and zero-initialize
-    let out = Tensor::<CudaRuntime>::empty(&[output_len], out_dtype, &client.device)?;
-
-    // Zero the output buffer
-    unsafe {
-        launch_fill_with_f64(
-            &client.context,
-            &client.stream,
-            client.device.index,
-            out_dtype,
-            0.0,
-            out.ptr(),
-            output_len,
-        )?;
-    }
-
-    let weights_contig = weights.map(ensure_contiguous).transpose()?;
-    let weights_ptr = weights_contig.as_ref().map(|w| w.ptr());
-
-    unsafe {
-        launch_bincount_weighted(
-            &client.context,
-            &client.stream,
-            client.device.index,
-            input_dtype,
-            weights_dtype,
-            input_contig.ptr(),
-            weights_ptr,
-            out.ptr(),
-            numel,
-            output_len,
         )?;
     }
 

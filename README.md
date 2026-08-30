@@ -131,7 +131,7 @@ numr implements a comprehensive set of tensor operations across CPU, CUDA, and W
 ### Shape and Data Movement
 
 - **ShapeOps**: cat, stack, split, chunk, repeat, pad, roll
-- **IndexingOps**: gather, scatter, gather_nd, scatter_reduce, index_select, masked_select, masked_fill, embedding_lookup, bincount, argmax, argmin, slice_assign
+- **IndexingOps**: gather, scatter, gather_nd, scatter_reduce, index_select, masked_select, masked_fill, embedding_lookup, bincount, bincount_with_len, argmax, argmin, slice_assign
 - **SortingOps**: sort, argsort, topk, unique, nonzero, searchsorted
 
 ### Reductions

@@ -10,13 +10,14 @@ use crate::dtype::Element;
 /// * `out` - Output pointer (histogram)
 /// * `numel` - Number of elements in input
 /// * `output_len` - Length of output histogram
+/// * `reject_negative` - When true, stop and report a negative input value.
+///   When false, ignore every value outside `[0, output_len)`.
 ///
 /// # Safety
 /// - All pointers must be valid for the specified sizes
-/// - `input` values must be in range [0, output_len)
 ///
 /// # Returns
-/// * `true` if all values were non-negative, `false` if any negative value found
+/// * `true` on success, `false` if `reject_negative` is set and a negative value was found
 #[inline]
 pub unsafe fn bincount_kernel<T: Element>(
     input: *const i64,
@@ -24,6 +25,7 @@ pub unsafe fn bincount_kernel<T: Element>(
     out: *mut T,
     numel: usize,
     output_len: usize,
+    reject_negative: bool,
 ) -> bool {
     // Initialize output to zero
     let out_slice = std::slice::from_raw_parts_mut(out, output_len);
@@ -37,7 +39,10 @@ pub unsafe fn bincount_kernel<T: Element>(
     for i in 0..numel {
         let val = input_slice[i];
         if val < 0 {
-            return false; // Negative value found
+            if reject_negative {
+                return false; // Negative value found
+            }
+            continue; // Caller-sized path ignores out-of-range values
         }
         let idx = val as usize;
         if idx < output_len {

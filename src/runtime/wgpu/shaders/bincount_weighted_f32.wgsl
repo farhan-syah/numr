@@ -26,9 +26,21 @@ fn bincount_weighted_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
+    let bin = u32(value);
     let weight = bincount_weights[idx];
-    // For float weights, we need to use atomic operations
-    // WebGPU only supports atomic ops on u32/i32, so we use bitcast
-    let weight_bits = bitcast<u32>(weight);
-    atomicAdd(&bincount_output[u32(value)], weight_bits);
+
+    // WGSL has no float atomics: the bin is stored as the f32 bit pattern in an
+    // atomic<u32> and updated by compare-and-swap. Adding the bit patterns with
+    // atomicAdd would be integer addition of IEEE encodings, not addition of the
+    // values they encode, so the read-add-write must be done explicitly and the
+    // swap retried whenever another invocation won the race.
+    var old_bits = atomicLoad(&bincount_output[bin]);
+    loop {
+        let new_bits = bitcast<u32>(bitcast<f32>(old_bits) + weight);
+        let cas = atomicCompareExchangeWeak(&bincount_output[bin], old_bits, new_bits);
+        if (cas.exchanged) {
+            break;
+        }
+        old_bits = cas.old_value;
+    }
 }
