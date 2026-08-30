@@ -9,17 +9,17 @@
 //!
 //! CPU is the reference throughout.
 //!
-//! Two neighbouring cases are deliberately NOT covered, because CPU does not
-//! answer them and the divergence is reported instead of pinned:
-//! - Softmax over a zero-length dimension with a non-empty batch (`[3, 0]`):
-//!   CPU's scalar softmax kernel seeds its running max from `a[base]`, which is
-//!   a read past the end of the empty allocation.
-//! - `matmul_bias_activation` with `k == 0` on WebGPU: the answer is
-//!   `act(bias)`, which that backend has no way to write without a dispatch.
+//! One neighbouring case is deliberately NOT covered, because CPU does not
+//! answer it and the divergence is reported instead of pinned: softmax over a
+//! zero-length dimension with a non-empty batch (`[3, 0]`), where CPU's scalar
+//! softmax kernel seeds its running max from `a[base]` — a read past the end of
+//! the empty allocation.
 //!
-//! The BACKWARD with `k == 0` is covered on all three, including WebGPU: unlike
-//! the forward above, `d_bias` there is a reduction of the gradient, which every
-//! backend can produce without binding the zero-byte `a`/`b` operands.
+//! `k == 0` IS covered on all three backends, forward and backward. WebGPU
+//! cannot bind the zero-byte `a`/`b` operands to the epilogue shader, so it
+//! never dispatches one: `bias_only_activation` in `runtime/wgpu/ops/native/
+//! gemm_epilogue.rs` builds `act(bias)` from a broadcast plus the activation op,
+//! and `matmul_bias_residual` takes the matching `bias + residual` branch.
 
 use numr::dtype::DType;
 use numr::error::Error;
@@ -243,7 +243,6 @@ fn check_gemm_epilogue<R, C>(
     cpu_device: &CpuDev,
     dtype: DType,
     backend: &str,
-    cover_zero_k: bool,
 ) where
     R: Runtime<DType = DType>,
     C: GemmEpilogueOps<R>,
@@ -251,10 +250,10 @@ fn check_gemm_epilogue<R, C>(
     // `[0, 5] x [5, 3]` leaves an empty output. `[3, 0] x [0, 4]` leaves a full
     // `[3, 4]` output whose every element sums over no term, so the product part
     // is zero and only the bias — then the activation — remains.
-    let mut cases: Vec<GemmCase> = vec![(&[0usize, 5][..], &[5usize, 3][..], &[0usize, 3][..], 3)];
-    if cover_zero_k {
-        cases.push((&[3, 0][..], &[0, 4][..], &[3, 4][..], 4));
-    }
+    let cases: [GemmCase; 2] = [
+        (&[0usize, 5][..], &[5usize, 3][..], &[0usize, 3][..], 3),
+        (&[3, 0][..], &[0, 4][..], &[3, 4][..], 4),
+    ];
 
     for (a_shape, b_shape, out_shape, n) in cases {
         let bias_shape = [n];
@@ -407,7 +406,6 @@ fn test_empty_normalization_cpu_is_self_consistent() {
             &cpu_device,
             dtype,
             "cpu",
-            true,
         );
         check_gemm_epilogue_bwd::<CpuRuntime, _>(
             &client,
@@ -458,7 +456,6 @@ fn test_empty_normalization_cuda_matches_cpu() {
                 &cpu_device,
                 dtype,
                 "cuda",
-                true,
             );
             check_gemm_epilogue_bwd::<CudaRuntime, _>(
                 &client,
@@ -503,7 +500,6 @@ fn test_empty_normalization_wgpu_matches_cpu() {
                 dtype,
                 "wgpu",
             );
-            // `cover_zero_k` is false: see the module note.
             check_gemm_epilogue::<WgpuRuntime, _>(
                 &client,
                 &device,
@@ -511,7 +507,6 @@ fn test_empty_normalization_wgpu_matches_cpu() {
                 &cpu_device,
                 dtype,
                 "wgpu",
-                false,
             );
             check_gemm_epilogue_bwd::<WgpuRuntime, _>(
                 &client,
