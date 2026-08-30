@@ -58,6 +58,30 @@
 //   Both land one ulp apart, and in both the two-rounding answer is the one a
 //   1% relative tolerance cannot tell from the correct one.
 //
+// Hand verification of the `sub_scalar` case — FP8E4M3, `0.25 - 0.3`:
+//
+//   * Unrounded: 0.25 - 0.3 = -0.05. FP8E4M3 steps by 2^-8 = 0.00390625 across
+//     [0.03125, 0.0625) (the bucket that holds |{-0.05}|). -0.05 / 0.00390625
+//     = -12.8, which rounds to -13 * 0.00390625 = -0.05078125.
+//   * Round twice: 0.3 rounds to FP8E4M3 first (see the `add_scalar` case
+//     above) as 0.3125. 0.25 - 0.3125 = -0.0625 exactly (2^-4, no further
+//     rounding).
+//
+//   -0.05078125 vs -0.0625 — one ulp apart, same shape of divergence as
+//   `add_scalar`, `mul_scalar`, `div_scalar` and `rsub_scalar` below. Every
+//   `sub_scalar`, F16 and BF16 case is found the same way `add_scalar`'s are:
+//   enumerate the dtype's representable values and keep the ones where the two
+//   rounding orders disagree.
+//
+// `pow_scalar` is deliberately NOT in the table above: narrow floats never
+// round the exponent into the element type at all (CPU widens the base to F64
+// and CUDA to F32 — see `narrow_float_scalar_op`'s `None` arm for `Pow` and
+// `numr_scalar_pow`'s F16/BF16 specializations in `scalar_ops.cuh`), so there
+// is no "round the scalar first" defect to reproduce. CPU and CUDA computing
+// `pow` in different widths (F64 vs F32) is an expected, tolerance-sized
+// difference, not a bug, so `pow_scalar_on_narrow_floats_matches_cuda_within_tolerance`
+// below checks it against the standard dtype tolerance only.
+//
 // WebGPU is absent on purpose: it is a 32-bit backend and carries no
 // narrow-float dtype at all.
 
@@ -102,6 +126,13 @@ const CASES: &[Case] = &[
     },
     Case {
         dtype: DType::FP8E4M3,
+        op: "sub_scalar",
+        input: &[0.25, 0.28125, 0.3125],
+        once: &[-0.05078125, -0.01953125, 0.01171875],
+        twice: &[-0.0625, -0.03125, 0.0],
+    },
+    Case {
+        dtype: DType::FP8E4M3,
         op: "mul_scalar",
         input: &[0.34375, 0.375, 0.4375],
         once: &[0.1015625, 0.109375, 0.125],
@@ -127,6 +158,13 @@ const CASES: &[Case] = &[
         input: &[0.375, 0.625],
         once: &[0.625, 0.875],
         twice: &[0.75, 1.0],
+    },
+    Case {
+        dtype: DType::FP8E5M2,
+        op: "sub_scalar",
+        input: &[0.25, 0.3125, 0.375],
+        once: &[-0.046875, 0.01171875, 0.078125],
+        twice: &[-0.0625, 0.0, 0.0625],
     },
     Case {
         dtype: DType::FP8E5M2,
@@ -158,6 +196,13 @@ const CASES: &[Case] = &[
     },
     Case {
         dtype: DType::F16,
+        op: "sub_scalar",
+        input: &[0.25, 0.250244140625, 0.25048828125],
+        once: &[-0.04998779296875, -0.04974365234375, -0.04949951171875],
+        twice: &[-0.050048828125, -0.0498046875, -0.049560546875],
+    },
+    Case {
+        dtype: DType::F16,
         op: "mul_scalar",
         input: &[0.250732421875, 0.251953125, 0.253173828125],
         once: &[0.0751953125, 0.0755615234375, 0.075927734375],
@@ -183,6 +228,13 @@ const CASES: &[Case] = &[
         input: &[0.251953125, 0.259765625, 0.267578125],
         once: &[0.55078125, 0.55859375, 0.56640625],
         twice: &[0.5546875, 0.5625, 0.5703125],
+    },
+    Case {
+        dtype: DType::BF16,
+        op: "sub_scalar",
+        input: &[0.25, 0.251953125, 0.25390625],
+        once: &[-0.050048828125, -0.048095703125, -0.046142578125],
+        twice: &[-0.05078125, -0.048828125, -0.046875],
     },
     Case {
         dtype: DType::BF16,
@@ -215,9 +267,11 @@ fn apply<R: Runtime>(
 ) -> numr::error::Result<Tensor<R>> {
     match op {
         "add_scalar" => client.add_scalar(tensor, scalar),
+        "sub_scalar" => client.sub_scalar(tensor, scalar),
         "mul_scalar" => client.mul_scalar(tensor, scalar),
         "div_scalar" => client.div_scalar(tensor, scalar),
         "rsub_scalar" => client.rsub_scalar(tensor, scalar),
+        "pow_scalar" => client.pow_scalar(tensor, scalar),
         _ => panic!("unknown scalar op: {op}"),
     }
 }
@@ -380,6 +434,50 @@ fn scalar_ops_on_narrow_floats_match_cuda_within_tolerance() {
                 &cpu_result,
                 dtype,
                 &format!("{op} CUDA vs CPU [{dtype:?}] scalar={SCALAR}"),
+            );
+        }
+    });
+}
+
+/// `pow_scalar` on every narrow float, CPU vs CUDA, within the standard dtype
+/// tolerance.
+///
+/// `pow_scalar` has no "round the scalar first" defect to reproduce — see the
+/// file header — so this does not belong in the exact-bit CASES table above.
+/// CPU raises in F64 (`pow_elem_scalar`) and CUDA in F32
+/// (`numr_scalar_pow`'s F16/BF16 rows, `NUMR_SCALAR_ROW_FP8`'s F32 body), so a
+/// small divergence between the two is expected and is exactly what the
+/// dtype's own tolerance exists for.
+const POW_SCALAR: f64 = 2.5;
+const POW_INPUT: &[f64] = &[1.0, 1.5, 2.0, 3.0];
+
+#[cfg(feature = "cuda")]
+#[test]
+fn pow_scalar_on_narrow_floats_matches_cuda_within_tolerance() {
+    let (cpu_client, cpu_device) = create_cpu_client();
+
+    with_cuda_backend(|cuda_client, cuda_device| {
+        for dtype in [DType::FP8E4M3, DType::FP8E5M2, DType::F16, DType::BF16] {
+            if !is_dtype_supported("cpu", dtype) || !is_dtype_supported("cuda", dtype) {
+                continue;
+            }
+
+            let shape = [POW_INPUT.len()];
+            let cpu_tensor = tensor_from_f64(POW_INPUT, &shape, dtype, &cpu_device, &cpu_client)
+                .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
+            let cpu_result = apply(&cpu_client, "pow_scalar", &cpu_tensor, POW_SCALAR)
+                .unwrap_or_else(|e| panic!("CPU pow_scalar failed for {dtype:?}: {e}"));
+
+            let cuda_tensor = tensor_from_f64(POW_INPUT, &shape, dtype, &cuda_device, &cuda_client)
+                .unwrap_or_else(|e| panic!("CUDA tensor_from_f64 failed for {dtype:?}: {e}"));
+            let cuda_result = apply(&cuda_client, "pow_scalar", &cuda_tensor, POW_SCALAR)
+                .unwrap_or_else(|e| panic!("CUDA pow_scalar failed for {dtype:?}: {e}"));
+
+            assert_tensor_allclose(
+                &cuda_result,
+                &cpu_result,
+                dtype,
+                &format!("pow_scalar CUDA vs CPU [{dtype:?}] scalar={POW_SCALAR}"),
             );
         }
     });
