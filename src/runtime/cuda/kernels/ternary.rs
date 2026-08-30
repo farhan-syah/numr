@@ -127,9 +127,9 @@ pub unsafe fn launch_where_broadcast_op(
     let ndim = out_shape.len();
 
     // Compute broadcast strides
-    let cond_strides = compute_broadcast_strides(cond_shape, out_shape);
-    let x_strides = compute_broadcast_strides(x_shape, out_shape);
-    let y_strides = compute_broadcast_strides(y_shape, out_shape);
+    let cond_strides = compute_broadcast_strides(cond_shape, out_shape)?;
+    let x_strides = compute_broadcast_strides(x_shape, out_shape)?;
+    let y_strides = compute_broadcast_strides(y_shape, out_shape)?;
     let shape_u32: Vec<u32> = out_shape.iter().map(|&x| x as u32).collect();
 
     // Allocate device memory for strides and shape using Tensor
@@ -304,9 +304,9 @@ pub unsafe fn launch_where_broadcast_generic_op(
     let ndim = out_shape.len();
 
     // Compute broadcast strides
-    let cond_strides = compute_broadcast_strides(cond_shape, out_shape);
-    let x_strides = compute_broadcast_strides(x_shape, out_shape);
-    let y_strides = compute_broadcast_strides(y_shape, out_shape);
+    let cond_strides = compute_broadcast_strides(cond_shape, out_shape)?;
+    let x_strides = compute_broadcast_strides(x_shape, out_shape)?;
+    let y_strides = compute_broadcast_strides(y_shape, out_shape)?;
     let shape_u32: Vec<u32> = out_shape.iter().map(|&x| x as u32).collect();
 
     // Allocate device memory for strides and shape using Tensor

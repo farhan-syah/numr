@@ -5,7 +5,7 @@
 //! because their broadcast shaders take the same layout.
 
 use crate::dtype::DType;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::runtime::wgpu::WgpuClient;
 
 use super::buffer::{create_params_buffer, create_storage_buffer};
@@ -17,10 +17,27 @@ use super::elementwise_params::BroadcastBinaryParams;
 /// - If the input dimension matches, use the original stride
 /// - If the input dimension is 1 (broadcast), use stride 0
 /// - If the input doesn't have this dimension (prepended), use stride 0
-pub fn compute_broadcast_strides(input_shape: &[usize], output_shape: &[usize]) -> Vec<u32> {
+///
+/// Errors when the input rank exceeds the output rank: right-aligning is then
+/// impossible, and the offset that maps input dims onto output dims would
+/// underflow. Every caller derives `output_shape` from a broadcast, so this
+/// cannot happen today, but the helper does not rely on that.
+pub fn compute_broadcast_strides(
+    input_shape: &[usize],
+    output_shape: &[usize],
+) -> Result<Vec<u32>> {
     let mut strides = vec![0u32; output_shape.len()];
     let input_ndim = input_shape.len();
     let output_ndim = output_shape.len();
+
+    if input_ndim > output_ndim {
+        return Err(Error::InvalidArgument {
+            arg: "input_shape",
+            reason: format!(
+                "broadcast strides: input rank {input_ndim} exceeds output rank {output_ndim}"
+            ),
+        });
+    }
 
     // Compute input strides (row-major)
     let mut input_strides = vec![1usize; input_ndim];
@@ -46,7 +63,7 @@ pub fn compute_broadcast_strides(input_shape: &[usize], output_shape: &[usize]) 
         }
     }
 
-    strides
+    Ok(strides)
 }
 
 /// Stride and params buffers for a broadcast binary-shaped dispatch (shared by
@@ -65,12 +82,12 @@ pub(crate) fn broadcast_buffers(
     b_shape: &[usize],
     out_shape: &[usize],
     numel: usize,
-) -> BroadcastBuffers {
+) -> Result<BroadcastBuffers> {
     let ndim = out_shape.len();
 
     // Broadcast dimensions get stride 0.
-    let a_strides = compute_broadcast_strides(a_shape, out_shape);
-    let b_strides = compute_broadcast_strides(b_shape, out_shape);
+    let a_strides = compute_broadcast_strides(a_shape, out_shape)?;
+    let b_strides = compute_broadcast_strides(b_shape, out_shape)?;
 
     // Output strides are row-major.
     let mut out_strides = vec![1u32; ndim];
@@ -83,12 +100,12 @@ pub(crate) fn broadcast_buffers(
         ndim: ndim as u32,
     };
 
-    BroadcastBuffers {
+    Ok(BroadcastBuffers {
         a_strides: create_storage_buffer(client, &a_strides),
         b_strides: create_storage_buffer(client, &b_strides),
         out_strides: create_storage_buffer(client, &out_strides),
         params: create_params_buffer(client, &params),
-    }
+    })
 }
 
 /// Launch a broadcast dispatch of `op`, shared by arithmetic and compare: with
@@ -107,7 +124,7 @@ pub(crate) fn launch_broadcast(
     numel: usize,
     dtype: DType,
 ) -> Result<()> {
-    let bufs = broadcast_buffers(client, a_shape, b_shape, out_shape, numel);
+    let bufs = broadcast_buffers(client, a_shape, b_shape, out_shape, numel)?;
 
     crate::runtime::wgpu::shaders::elementwise::launch_broadcast_binary_op(
         client.pipeline_cache(),
@@ -123,4 +140,34 @@ pub(crate) fn launch_broadcast(
         numel,
         dtype,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn broadcast_strides_right_aligns_lower_rank_input() {
+        // Shape [3, 1] against output [2, 3, 4]: the prepended dim broadcasts,
+        // the size-3 dim keeps its input stride, the size-1 dim broadcasts.
+        let strides = compute_broadcast_strides(&[3, 1], &[2, 3, 4])
+            .expect("input rank 2 fits output rank 3");
+        assert_eq!(strides, vec![0, 1, 0]);
+    }
+
+    #[test]
+    fn broadcast_strides_rejects_input_rank_above_output_rank() {
+        // Previously underflowed `output_ndim - input_ndim` and then indexed
+        // `input_shape` out of bounds. It must be an error, not a panic.
+        let err = compute_broadcast_strides(&[2, 3, 4], &[3, 4])
+            .expect_err("input rank 3 cannot right-align onto output rank 2");
+        match err {
+            Error::InvalidArgument { arg, reason } => {
+                assert_eq!(arg, "input_shape");
+                assert!(reason.contains("input rank 3"), "reason: {reason}");
+                assert!(reason.contains("output rank 2"), "reason: {reason}");
+            }
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        }
+    }
 }

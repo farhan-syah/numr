@@ -84,7 +84,7 @@ impl BroadcastContext {
         }
 
         // Compute broadcast strides for mask
-        let mask_strides = compute_broadcast_strides(mask.shape(), a.shape());
+        let mask_strides = compute_broadcast_strides(mask.shape(), a.shape())?;
         let out_shape_u32: Vec<u32> = a.shape().iter().map(|&x| x as u32).collect();
         let ndim = a.shape().len();
 

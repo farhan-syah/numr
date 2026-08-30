@@ -106,9 +106,9 @@ pub(crate) fn native_where_cond(
     let x_contig = ensure_contiguous(x)?;
     let y_contig = ensure_contiguous(y)?;
 
-    let cond_strides = compute_broadcast_strides(cond.shape(), &out_shape);
-    let x_strides = compute_broadcast_strides(x.shape(), &out_shape);
-    let y_strides = compute_broadcast_strides(y.shape(), &out_shape);
+    let cond_strides = compute_broadcast_strides(cond.shape(), &out_shape)?;
+    let x_strides = compute_broadcast_strides(x.shape(), &out_shape)?;
+    let y_strides = compute_broadcast_strides(y.shape(), &out_shape)?;
     let shape_u32: Vec<u32> = out_shape.iter().map(|&s| s as u32).collect();
 
     let out = alloc_output(client, &out_shape, out_dtype)?;

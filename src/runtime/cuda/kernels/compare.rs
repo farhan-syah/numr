@@ -136,8 +136,8 @@ pub unsafe fn launch_broadcast_compare_op(
     let ndim = out_shape.len();
 
     // Compute broadcast strides
-    let a_strides = compute_broadcast_strides(a_shape, out_shape);
-    let b_strides = compute_broadcast_strides(b_shape, out_shape);
+    let a_strides = compute_broadcast_strides(a_shape, out_shape)?;
+    let b_strides = compute_broadcast_strides(b_shape, out_shape)?;
     let shape_u32: Vec<u32> = out_shape.iter().map(|&x| x as u32).collect();
 
     // Allocate device memory for strides and shape using Tensor
