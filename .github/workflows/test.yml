@@ -39,13 +39,16 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Run clippy (all CI-safe features)
+        if: always()
         run: cargo clippy --all-targets --features f16,sparse -- -D warnings
 
       - name: Build docs (docs.rs feature set)
+        if: always()
         run: cargo doc --no-deps --features f16,sparse,fp8,wgpu
 
       - name: Run doctests
-        run: cargo test --doc --features f16,sparse
+        if: always()
+        run: cargo test --doc --features f16,sparse --no-fail-fast
 
   test:
     name: Test (${{ matrix.os }})
@@ -65,11 +68,15 @@ jobs:
         with:
           prefix-key: test
 
+      # --no-fail-fast: cargo stops after the first failing test BINARY by
+      # default, so one broken binary hides every later one and a fix reveals
+      # the next failure only on the following run. Report them all at once.
       - name: Run tests (default)
-        run: cargo test
+        run: cargo test --no-fail-fast
 
       - name: Run tests (f16 + sparse)
-        run: cargo test --features f16,sparse
+        if: always()
+        run: cargo test --features f16,sparse --no-fail-fast
 
   backend-and-parity:
     name: Backend Compile, Parity & Examples
@@ -89,26 +96,33 @@ jobs:
         run: cargo check --no-default-features
 
       - name: "Compile: cpu + f16 + sparse"
+        if: always()
         run: cargo check --features f16,sparse
 
       - name: "Compile: wgpu"
+        if: always()
         run: cargo check --features wgpu,f16,sparse
 
       - name: "Compile tests: cpu-only"
+        if: always()
         run: cargo test --no-run --no-default-features
 
       - name: "Compile tests: wgpu"
+        if: always()
         run: cargo test --no-run --features wgpu,f16,sparse
 
       # Backend parity
       - name: Run backend parity tests
-        run: cargo test backend_parity --features f16,sparse
+        if: always()
+        run: cargo test backend_parity --features f16,sparse --no-fail-fast
 
       # Examples
       - name: Build all examples
+        if: always()
         run: cargo build --examples --features sparse
 
       - name: Run examples
+        if: always()
         run: |
           cargo run --example basic_tensor_ops
           cargo run --example autograd_linear_regression
