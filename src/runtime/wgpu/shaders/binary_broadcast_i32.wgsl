@@ -78,7 +78,7 @@ fn broadcast_div_i32(@builtin(global_invocation_id) gid: vec3<u32>) {
         a_offset = a_offset + coord * broadcast_a_strides[d];
         b_offset = b_offset + coord * broadcast_b_strides[d];
     }
-    broadcast_out[idx] = broadcast_a[a_offset] / broadcast_b[b_offset];
+    broadcast_out[idx] = numr_idiv_i32(broadcast_a[a_offset], broadcast_b[b_offset]);
 }
 
 @compute @workgroup_size(256)

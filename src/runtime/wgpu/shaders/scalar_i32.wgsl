@@ -47,7 +47,7 @@ fn mul_scalar_i32(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn div_scalar_i32(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     if (idx < scalar_params.numel) {
-        scalar_out[idx] = scalar_a[idx] / scalar_params.scalar;
+        scalar_out[idx] = numr_idiv_i32(scalar_a[idx], scalar_params.scalar);
     }
 }
 

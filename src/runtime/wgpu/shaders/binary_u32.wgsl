@@ -37,7 +37,7 @@ fn mul_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn div_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     if (idx < binary_params.numel) {
-        binary_out[idx] = binary_a[idx] / binary_b[idx];
+        binary_out[idx] = numr_idiv_u32(binary_a[idx], binary_b[idx]);
     }
 }
 

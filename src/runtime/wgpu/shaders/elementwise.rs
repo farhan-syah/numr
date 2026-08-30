@@ -16,28 +16,34 @@ use crate::error::{Error, Result};
 // ============================================================================
 
 const BINARY_F32_SHADER: &str = include_str!("binary.wgsl");
-// The integer shaders share one saturating-power helper, prepended to each
-// module that calls it. WGSL has no include, so this is where the single copy
-// in the repository reaches the three I32 and three U32 modules.
+// The integer shaders share one saturating-power helper and one guarded
+// integer division, prepended to each module that calls them. WGSL has no
+// include, so this is where the single copy in the repository reaches the three
+// I32 and three U32 modules. Order matters: WGSL has no forward declarations,
+// so a helper must be concatenated ahead of its callers.
 const BINARY_I32_SHADER: &str = concat!(
     include_str!("int_saturate.wgsl"),
     include_str!("ipow_i32.wgsl"),
+    include_str!("idiv_i32.wgsl"),
     include_str!("binary_i32.wgsl")
 );
 const BINARY_U32_SHADER: &str = concat!(
     include_str!("int_saturate.wgsl"),
     include_str!("ipow_u32.wgsl"),
+    include_str!("idiv_u32.wgsl"),
     include_str!("binary_u32.wgsl")
 );
 const BINARY_BROADCAST_F32_SHADER: &str = include_str!("binary_broadcast.wgsl");
 const BINARY_BROADCAST_I32_SHADER: &str = concat!(
     include_str!("int_saturate.wgsl"),
     include_str!("ipow_i32.wgsl"),
+    include_str!("idiv_i32.wgsl"),
     include_str!("binary_broadcast_i32.wgsl")
 );
 const BINARY_BROADCAST_U32_SHADER: &str = concat!(
     include_str!("int_saturate.wgsl"),
     include_str!("ipow_u32.wgsl"),
+    include_str!("idiv_u32.wgsl"),
     include_str!("binary_broadcast_u32.wgsl")
 );
 const UNARY_SHADER: &str = include_str!("unary.wgsl");
@@ -47,11 +53,13 @@ const SCALAR_SHADER: &str = include_str!("scalar.wgsl");
 const SCALAR_I32_SHADER: &str = concat!(
     include_str!("int_saturate.wgsl"),
     include_str!("ipow_i32.wgsl"),
+    include_str!("idiv_i32.wgsl"),
     include_str!("scalar_i32.wgsl")
 );
 const SCALAR_U32_SHADER: &str = concat!(
     include_str!("int_saturate.wgsl"),
     include_str!("ipow_u32.wgsl"),
+    include_str!("idiv_u32.wgsl"),
     include_str!("scalar_u32.wgsl")
 );
 const COMPARE_SHADER: &str = include_str!("compare.wgsl");
