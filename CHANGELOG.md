@@ -11,7 +11,7 @@ nothing below is stated as a delta against an earlier version.
 
 ---
 
-## [Unreleased] — <= 0.7.0
+## [0.7.0] — 2026-08-30
 
 Tensors, linear algebra, FFT, and autograd behind one API on CPU, CUDA, and WebGPU.
 Every kernel is written in-house — no cuBLAS, cuSOLVER, or MKL.
