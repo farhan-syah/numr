@@ -6,6 +6,7 @@
 pub mod activations;
 mod complex;
 pub mod fused_activations;
+mod int;
 pub mod scalar;
 
 pub use activations::{elu_kernel, gelu_kernel, leaky_relu_kernel, sigmoid_kernel, silu_kernel};
@@ -74,6 +75,14 @@ pub unsafe fn unary_op_kernel<T: Element>(op: UnaryOp, a: *const T, out: *mut T,
 /// Scalar unary operation for all Element types
 #[inline]
 unsafe fn unary_op_scalar<T: Element>(op: UnaryOp, a: *const T, out: *mut T, len: usize) {
+    // Integer neg, abs and sign WRAP and are computed in the element type. The
+    // f64 round trip below saturates and loses every bit past the 53rd, so it
+    // answers `i32::MAX` for `neg(i32::MIN)` where CUDA and WebGPU both answer
+    // `i32::MIN`. See `int::unary_int_kernel`.
+    if unsafe { int::unary_int_kernel(op, a, out, len) } {
+        return;
+    }
+
     let a_slice = std::slice::from_raw_parts(a, len);
     let out_slice = std::slice::from_raw_parts_mut(out, len);
 

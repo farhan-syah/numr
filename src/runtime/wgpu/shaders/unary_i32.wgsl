@@ -25,3 +25,18 @@ fn abs_i32(@builtin(global_invocation_id) gid: vec3<u32>) {
         unary_out[idx] = abs(unary_a[idx]);
     }
 }
+
+@compute @workgroup_size(256)
+fn sign_i32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        let v = unary_a[idx];
+        if (v > 0) {
+            unary_out[idx] = 1;
+        } else if (v < 0) {
+            unary_out[idx] = -1;
+        } else {
+            unary_out[idx] = 0;
+        }
+    }
+}

@@ -15,6 +15,7 @@
 //   Special:     clamp, isnan, isinf
 //
 // Types: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, i32, i64, u8 (bool)
+//        neg, abs and sign also cover i8 and i16
 //
 // Notes:
 //   - Clamp operation: clamp(x, min_scalar, max_scalar) = min(max(x, lo), hi)
@@ -82,6 +83,36 @@ __device__ __forceinline__ numr_fp8_e5m2 clamp_impl(numr_fp8_e5m2 val, numr_fp8_
     float minf = fp8_e5m2_to_f32(min_val.data);
     float maxf = fp8_e5m2_to_f32(max_val.data);
     return numr_fp8_e5m2(f32_to_fp8_e5m2(fminf(fmaxf(vf, minf), maxf)));
+}
+
+// ============================================================================
+// Integer neg/abs/sign Helper Device Functions (Templated - outside extern "C")
+// ============================================================================
+//
+// Element-wise integer ops WRAP. That is the convention documented in
+// src/runtime/cpu/kernels/wide_acc.rs and mirrored by binary_ops.cuh, so
+// neg and abs of the type's minimum answer the minimum itself rather than
+// saturating to the maximum. WebGPU's unary_i32.wgsl answers the same by
+// WGSL's own definition.
+//
+// Signed overflow is undefined behaviour in C++, so both run in the dtype's
+// unsigned counterpart and convert back. That conversion is modulo 2^N, which
+// is exactly what Rust's wrapping_neg and wrapping_abs produce. A bare `-a` or
+// `abs(a)` is UB on the minimum instead.
+
+template<typename T, typename U>
+__device__ __forceinline__ T numr_int_neg(T a) {
+    return (T)(U)((U)0 - (U)a);
+}
+
+template<typename T, typename U>
+__device__ __forceinline__ T numr_int_abs(T a) {
+    return (a < (T)0) ? (T)(U)((U)0 - (U)a) : a;
+}
+
+template<typename T>
+__device__ __forceinline__ T numr_int_sign(T a) {
+    return (a > (T)0) ? (T)1 : ((a < (T)0) ? (T)(-1) : (T)0);
 }
 
 extern "C" {
@@ -998,14 +1029,14 @@ __global__ void atanh_bf16(const __nv_bfloat16* a, __nv_bfloat16* out, unsigned 
 __global__ void neg_i32(const int* a, int* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = -a[idx];
+        out[idx] = numr_int_neg<int, unsigned int>(a[idx]);
     }
 }
 
 __global__ void abs_i32(const int* a, int* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = abs(a[idx]);
+        out[idx] = numr_int_abs<int, unsigned int>(a[idx]);
     }
 }
 
@@ -1024,14 +1055,14 @@ __global__ void square_i32(const int* a, int* out, unsigned int n) {
 __global__ void neg_i64(const long long* a, long long* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = -a[idx];
+        out[idx] = numr_int_neg<long long, unsigned long long>(a[idx]);
     }
 }
 
 __global__ void abs_i64(const long long* a, long long* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        out[idx] = llabs(a[idx]);
+        out[idx] = numr_int_abs<long long, unsigned long long>(a[idx]);
     }
 }
 
@@ -1040,6 +1071,56 @@ __global__ void square_i64(const long long* a, long long* out, unsigned int n) {
     if (idx < n) {
         long long val = a[idx];
         out[idx] = val * val;
+    }
+}
+
+// ============================================================================
+// I8 / I16 Unary Operations
+//
+// Only neg, abs and sign. The narrow signed dtypes carry no transcendental
+// kernels, and these three are the ops backend_parity/unary_signed_int.rs
+// sweeps over every signed width.
+// ============================================================================
+
+__global__ void neg_i8(const signed char* a, signed char* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_int_neg<signed char, unsigned char>(a[idx]);
+    }
+}
+
+__global__ void abs_i8(const signed char* a, signed char* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_int_abs<signed char, unsigned char>(a[idx]);
+    }
+}
+
+__global__ void sign_i8(const signed char* a, signed char* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_int_sign<signed char>(a[idx]);
+    }
+}
+
+__global__ void neg_i16(const short* a, short* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_int_neg<short, unsigned short>(a[idx]);
+    }
+}
+
+__global__ void abs_i16(const short* a, short* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_int_abs<short, unsigned short>(a[idx]);
+    }
+}
+
+__global__ void sign_i16(const short* a, short* out, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = numr_int_sign<short>(a[idx]);
     }
 }
 
@@ -1648,16 +1729,14 @@ __global__ void sign_bf16(const __nv_bfloat16* a, __nv_bfloat16* out, unsigned i
 __global__ void sign_i32(const int* a, int* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        int val = a[idx];
-        out[idx] = (val > 0) ? 1 : ((val < 0) ? -1 : 0);
+        out[idx] = numr_int_sign<int>(a[idx]);
     }
 }
 
 __global__ void sign_i64(const long long* a, long long* out, unsigned int n) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
-        long long val = a[idx];
-        out[idx] = (val > 0) ? 1 : ((val < 0) ? -1 : 0);
+        out[idx] = numr_int_sign<long long>(a[idx]);
     }
 }
 
