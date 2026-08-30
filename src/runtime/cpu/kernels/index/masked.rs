@@ -12,7 +12,10 @@ use crate::dtype::Element;
 /// # Safety
 /// - `mask` must be valid pointer to `numel` u8 elements
 #[inline]
-#[allow(dead_code)] // Internally called by simd::index on x86_64, kept for API compatibility
+// Only the `not(target_arch = "x86_64")` arm of `masked_select` calls this; the
+// x86_64 arm gets its count from the SIMD kernel. So it IS dead code on x86_64,
+// and a missing re-export here went unnoticed until an aarch64 build failed.
+#[allow(dead_code)]
 pub unsafe fn masked_count_kernel(mask: *const u8, numel: usize) -> usize {
     // Use SIMD on x86_64 and aarch64
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
