@@ -139,11 +139,13 @@ pub fn validate_cat<R: Runtime<DType = DType>>(
     let mut out_shape = first.shape().to_vec();
     out_shape[dim_idx] = cat_dim_total;
 
-    // Compute outer/inner sizes for the cat algorithm
+    // Compute outer/inner sizes for the cat algorithm. Never floor these at 1: an
+    // empty slice already products to 1, so a clamp fires only on a genuinely zero
+    // dimension, and then reports rows the allocation does not have — CPU takes its
+    // `outer_size == 1` single-memcpy path and copies a whole row out of an empty
+    // tensor, and the GPU launchers' `total_elements == 0` early return is missed.
     let outer_size: usize = out_shape[..dim_idx].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = out_shape[dim_idx + 1..].iter().product();
-    let inner_size = inner_size.max(1);
 
     Ok(CatParams {
         dim_idx,

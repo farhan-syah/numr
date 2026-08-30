@@ -40,13 +40,21 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
             });
         }
 
-        // Compute batch_size as product of all dimensions except last
+        // Compute batch_size as product of all dimensions except last.
+        // Unclamped: the 1D case already products to 1 over the empty slice, so a
+        // clamp would only fabricate a row for a genuinely zero batch dim.
         let batch_size: usize = input_shape[..input_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1); // Handle 1D case
 
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
         let out = Tensor::<CudaRuntime>::empty(input_shape, dtype, &self.device)?;
+
+        // A zero-element input normalizes nothing. The launcher takes its grid from
+        // `batch_size` and its block from `hidden_size` without flooring either, so a
+        // zero in one of them is a launch error rather than a wrong answer.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         unsafe {
             launch_rms_norm(
@@ -103,14 +111,22 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
             });
         }
 
-        // Compute batch_size as product of all dimensions except last
+        // Compute batch_size as product of all dimensions except last.
+        // Unclamped: the 1D case already products to 1 over the empty slice, so a
+        // clamp would only fabricate a row for a genuinely zero batch dim.
         let batch_size: usize = input_shape[..input_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1); // Handle 1D case
 
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
         let out = Tensor::<CudaRuntime>::empty(input_shape, dtype, &self.device)?;
+
+        // A zero-element input normalizes nothing. The launcher takes its grid from
+        // `batch_size` and its block from `hidden_size` without flooring either, so a
+        // zero in one of them is a launch error rather than a wrong answer.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         unsafe {
             launch_layer_norm(
@@ -169,7 +185,9 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
             });
         }
         let channels_per_group = channels / num_groups;
-        let spatial: usize = shape[2..].iter().product::<usize>().max(1);
+        // Unclamped: a 2D input already products to 1 over the empty trailing slice,
+        // and a zero spatial dim must stay 0 so the kernel touches nothing.
+        let spatial: usize = shape[2..].iter().product();
 
         if weight.shape() != [channels] || bias.shape() != [channels] {
             return Err(Error::ShapeMismatch {
@@ -186,6 +204,13 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let weight_contig = ensure_contiguous(weight)?;
         let bias_contig = ensure_contiguous(bias)?;
         let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device)?;
+
+        // A zero-element input normalizes nothing. The launcher takes its grid from
+        // `batch * num_groups` and its block from `channels_per_group * spatial`
+        // without flooring either, so a zero in one of them is a launch error.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         unsafe {
             launch_group_norm(
@@ -248,15 +273,20 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
             });
         }
 
-        // Compute batch_size as product of all dimensions except last
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = x_shape[..x_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         let x_contig = ensure_contiguous(x)?;
         let residual_contig = ensure_contiguous(residual)?;
         let weight_contig = ensure_contiguous(weight)?;
         let output = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
         let pre_norm = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
+
+        // Nothing to normalize. The launcher derives its grid from `batch_size` and
+        // its block from `hidden_size` unfloored, so a zero is a launch error.
+        if output.numel() == 0 {
+            return Ok((output, pre_norm));
+        }
 
         unsafe {
             launch_fused_add_rms_norm(
@@ -316,14 +346,21 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
             });
         }
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = grad_shape[..grad_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         let grad_contig = ensure_contiguous(grad)?;
         let pre_norm_contig = ensure_contiguous(pre_norm)?;
         let weight_contig = ensure_contiguous(weight)?;
         let d_input_residual = Tensor::<CudaRuntime>::empty(grad_shape, dtype, &self.device)?;
         let d_weight = Tensor::<CudaRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
+
+        // No rows contribute, so `d_weight` keeps the zeros it was seeded with —
+        // exactly what CPU leaves behind. The launcher would take a zero grid or
+        // block extent from `batch_size`/`hidden_size`, which is a launch error.
+        if d_input_residual.numel() == 0 {
+            return Ok((d_input_residual, d_weight));
+        }
 
         unsafe {
             launch_fused_add_rms_norm_bwd(
@@ -393,8 +430,8 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
             });
         }
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = x_shape[..x_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         let x_contig = ensure_contiguous(x)?;
         let residual_contig = ensure_contiguous(residual)?;
@@ -402,6 +439,12 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let bias_contig = ensure_contiguous(bias)?;
         let output = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
         let pre_norm = Tensor::<CudaRuntime>::empty(x_shape, dtype, &self.device)?;
+
+        // Nothing to normalize. The launcher derives its grid from `batch_size` and
+        // its block from `hidden_size` unfloored, so a zero is a launch error.
+        if output.numel() == 0 {
+            return Ok((output, pre_norm));
+        }
 
         unsafe {
             launch_fused_add_layer_norm(
@@ -473,8 +516,8 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
             });
         }
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = grad_shape[..grad_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         // FP8: compute backward in F32, then cast results back (FP8 precision too low for
         // multi-pass backward with atomicAdd accumulation)
@@ -504,6 +547,13 @@ impl NormalizationOps<CudaRuntime> for CudaClient {
         let d_input_residual = Tensor::<CudaRuntime>::empty(grad_shape, dtype, &self.device)?;
         let d_weight = Tensor::<CudaRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
         let d_bias = Tensor::<CudaRuntime>::zeros(&[hidden_size], dtype, &self.device)?;
+
+        // No rows contribute, so `d_weight` and `d_bias` keep the zeros they were
+        // seeded with — exactly what CPU leaves behind. The launcher would take a
+        // zero grid or block extent from `batch_size`/`hidden_size` otherwise.
+        if d_input_residual.numel() == 0 {
+            return Ok((d_input_residual, d_weight, d_bias));
+        }
 
         unsafe {
             launch_fused_add_layer_norm_bwd(

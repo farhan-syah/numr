@@ -41,11 +41,12 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let dim_idx = normalize_dim(dim, ndim)?;
         let sort_size = shape[dim_idx];
 
-        // Compute strides
+        // Never clamp these with `.max(1)`: an empty slice already products to 1, so
+        // a clamp only fires on a genuinely zero extent, and the zero-element guard
+        // below then never sees it while the shader is told about rows the
+        // allocation does not contain.
         let outer_size: usize = shape[..dim_idx].iter().product();
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
-        let outer_size = outer_size.max(1);
-        let inner_size = inner_size.max(1);
 
         // Ensure contiguous
         let a_contig = ensure_contiguous(a)?;
@@ -124,10 +125,12 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let dim_idx = normalize_dim(dim, ndim)?;
         let sort_size = shape[dim_idx];
 
+        // Never clamp these with `.max(1)`: an empty slice already products to 1, so
+        // a clamp only fires on a genuinely zero extent, and the zero-element guard
+        // below then never sees it while the shader is told about rows the
+        // allocation does not contain.
         let outer_size: usize = shape[..dim_idx].iter().product();
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
-        let outer_size = outer_size.max(1);
-        let inner_size = inner_size.max(1);
 
         let a_contig = ensure_contiguous(a)?;
 
@@ -206,10 +209,12 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
         let dim_idx = normalize_dim(dim, ndim)?;
         let sort_size = shape[dim_idx];
 
+        // Never clamp these with `.max(1)`: an empty slice already products to 1, so
+        // a clamp only fires on a genuinely zero extent, and the zero-element guard
+        // below then never sees it while the shader is told about rows the
+        // allocation does not contain.
         let outer_size: usize = shape[..dim_idx].iter().product();
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
-        let outer_size = outer_size.max(1);
-        let inner_size = inner_size.max(1);
 
         let a_contig = ensure_contiguous(a)?;
 
@@ -305,10 +310,12 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
             ));
         }
 
+        // Never clamp these with `.max(1)`: an empty slice already products to 1, so
+        // a clamp only fires on a genuinely zero extent, and the zero-element guard
+        // below then never sees it while the shader is told about rows the
+        // allocation does not contain.
         let outer_size: usize = shape[..dim_idx].iter().product();
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
-        let outer_size = outer_size.max(1);
-        let inner_size = inner_size.max(1);
 
         let a_contig = ensure_contiguous(a)?;
 
@@ -318,6 +325,13 @@ impl SortingOps<WgpuRuntime> for WgpuClient {
 
         let values_out = alloc_output(self, &out_shape, dtype)?;
         let indices_out = alloc_output(self, &out_shape, DType::I32)?;
+
+        // `k >= 1` is validated above, so a zero element count means a zero outer or
+        // inner extent. `get_tensor_buffer` has no buffer to return for a zero-byte
+        // allocation, so the empty results are handed back before the dispatch.
+        if a.numel() == 0 {
+            return Ok((values_out, indices_out));
+        }
 
         let a_buf = get_tensor_buffer(&a_contig)?;
         let values_buf = get_tensor_buffer(&values_out)?;

@@ -41,6 +41,14 @@ pub(crate) fn native_gemm_bias_activation(
         let bias_c = ensure_contiguous(bias)?;
         let out = alloc_output(client, &out_shape, dtype)?;
 
+        // A zero-element output has nothing to compute, and `get_tensor_buffer` has
+        // no buffer to return for a zero-byte allocation. A zero-length contraction
+        // over a NON-empty output is a separate case this backend does not yet
+        // answer: it needs `act(bias)` written without a dispatch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;
         let bias_buf = get_tensor_buffer(&bias_c)?;
@@ -88,6 +96,14 @@ pub(crate) fn native_gemm_bias_activation(
         let b_c = ensure_contiguous(b)?;
         let bias_c = ensure_contiguous(bias)?;
         let out = alloc_output(client, &out_shape, dtype)?;
+
+        // A zero-element output has nothing to compute, and `get_tensor_buffer` has
+        // no buffer to return for a zero-byte allocation. A zero-length contraction
+        // over a NON-empty output is a separate case this backend does not yet
+        // answer: it needs `act(bias)` written without a dispatch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;
@@ -171,6 +187,14 @@ pub(crate) fn native_gemm_bias_residual(
         let res_c = ensure_contiguous(residual)?;
         let out = alloc_output(client, &out_shape, dtype)?;
 
+        // A zero-element output has nothing to compute, and `get_tensor_buffer` has
+        // no buffer to return for a zero-byte allocation. A zero-length contraction
+        // over a NON-empty output is a separate case this backend does not yet
+        // answer: it needs `act(bias)` written without a dispatch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;
         let bias_buf = get_tensor_buffer(&bias_c)?;
@@ -220,6 +244,14 @@ pub(crate) fn native_gemm_bias_residual(
         let bias_c = ensure_contiguous(bias)?;
         let res_c = ensure_contiguous(residual)?;
         let out = alloc_output(client, &out_shape, dtype)?;
+
+        // A zero-element output has nothing to compute, and `get_tensor_buffer` has
+        // no buffer to return for a zero-byte allocation. A zero-length contraction
+        // over a NON-empty output is a separate case this backend does not yet
+        // answer: it needs `act(bias)` written without a dispatch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         let a_buf = get_tensor_buffer(&a_c)?;
         let b_buf = get_tensor_buffer(&b_c)?;

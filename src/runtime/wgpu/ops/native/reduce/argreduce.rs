@@ -43,14 +43,22 @@ pub(crate) fn native_argreduce_op(
     // Output indices as I32 (WebGPU doesn't support I64, shader uses u32)
     let out = alloc_output(client, &out_shape, DType::I32)?;
 
+    // A zero-element output has nothing to hold, and `get_tensor_buffer` has no
+    // buffer to return for its zero-byte allocation. Never restore a `.max(1)` on
+    // `outer_size`, `inner_size` or `numel_out`: it would make this guard
+    // unreachable and bind a buffer the output does not have.
+    if out.numel() == 0 {
+        return Ok(out);
+    }
+
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
     let params = ArgReduceParams {
         reduce_size: reduce_size as u32,
-        outer_size: outer_size.max(1) as u32,
-        inner_size: inner_size.max(1) as u32,
-        numel_out: numel_out.max(1) as u32,
+        outer_size: outer_size as u32,
+        inner_size: inner_size as u32,
+        numel_out: numel_out as u32,
     };
     let params_buf = create_params_buffer(client, &params);
 
@@ -61,7 +69,7 @@ pub(crate) fn native_argreduce_op(
         &a_buf,
         &out_buf,
         &params_buf,
-        numel_out.max(1),
+        numel_out,
         dtype,
     )?;
 

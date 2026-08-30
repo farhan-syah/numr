@@ -303,9 +303,11 @@ impl RandomOps<CudaRuntime> for CudaClient {
             });
         }
 
-        // Compute number of distributions (product of all dims except last)
+        // Compute number of distributions (product of all dims except last).
+        // Unclamped: a 1D input already products to 1 over the empty slice, so a
+        // clamp would only fabricate a distribution for a genuinely zero leading dim
+        // and write samples past the end of the output.
         let num_distributions: usize = shape[..shape.len() - 1].iter().product();
-        let num_distributions = num_distributions.max(1); // At least 1 for 1D input
 
         // Ensure probs is contiguous
         let probs = crate::runtime::ensure_contiguous(probs)?;
@@ -318,6 +320,13 @@ impl RandomOps<CudaRuntime> for CudaClient {
         }
 
         let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &self.device)?;
+
+        // No distribution to sample from, or no sample asked for. The launchers take
+        // their grid from `num_distributions` and `num_samples` without flooring
+        // them, so a zero there is a launch error rather than a wrong answer.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         // Generate seed
         let seed = generate_random_seed();

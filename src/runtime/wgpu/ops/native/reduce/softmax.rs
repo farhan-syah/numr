@@ -81,11 +81,19 @@ fn native_softmax_last_dim(
 
     let out = alloc_output(client, shape, dtype)?;
 
+    // A zero-element input normalizes nothing, and `get_tensor_buffer` has no
+    // buffer to return for a zero-byte allocation. Never restore a `.max(1)` on
+    // `batch_size`: it would make this guard unreachable and tell the shader about
+    // a row the allocation does not contain.
+    if out.numel() == 0 {
+        return Ok(out);
+    }
+
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
     let params = SoftmaxParams {
-        batch_size: batch_size.max(1) as u32,
+        batch_size: batch_size as u32,
         dim_size: dim_size as u32,
     };
     let params_buf = create_params_buffer(client, &params);
@@ -96,7 +104,7 @@ fn native_softmax_last_dim(
         &a_buf,
         &out_buf,
         &params_buf,
-        batch_size.max(1),
+        batch_size,
         dtype,
     )?;
 
@@ -165,12 +173,20 @@ fn native_softmax_bwd_last_dim(
 
     let d_input = alloc_output(client, shape, dtype)?;
 
+    // Nothing to differentiate, and `get_tensor_buffer` has no buffer to return for
+    // a zero-byte allocation. Never restore a `.max(1)` on `batch_size`: it would
+    // make this guard unreachable and tell the shader about a row the allocation
+    // does not contain.
+    if d_input.numel() == 0 {
+        return Ok(d_input);
+    }
+
     let grad_buf = get_tensor_buffer(&grad_contig)?;
     let output_buf = get_tensor_buffer(&output_contig)?;
     let d_input_buf = get_tensor_buffer(&d_input)?;
 
     let params = SoftmaxParams {
-        batch_size: batch_size.max(1) as u32,
+        batch_size: batch_size as u32,
         dim_size: dim_size as u32,
     };
     let params_buf = create_params_buffer(client, &params);
@@ -182,7 +198,7 @@ fn native_softmax_bwd_last_dim(
         &output_buf,
         &d_input_buf,
         &params_buf,
-        batch_size.max(1),
+        batch_size,
         dtype,
     )?;
 

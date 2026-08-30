@@ -17,6 +17,10 @@ use crate::runtime::ensure_contiguous;
 use crate::tensor::Tensor;
 
 /// Batch count an operand contributes, i.e. the product of all but its last two dims.
+///
+/// Floored at 1 deliberately: this feeds `batch % batch_count(..)` below, where a 0
+/// is a division-by-zero panic. A genuinely zero batch dim leaves a zero-element
+/// output, which matmul returns before any indexing happens.
 pub(crate) fn batch_count(shape: &[usize]) -> usize {
     shape
         .iter()

@@ -854,6 +854,13 @@ pub fn slice_assign_impl(
     let src_c = ensure_contiguous(src)?;
     let out = Tensor::<CpuRuntime>::empty(dst.shape(), dtype, &client.device)?;
 
+    // Nothing to assign. The kernel copies with `copy_nonoverlapping`, and two
+    // zero-byte allocations share one dangling address, which that call rejects
+    // as overlapping even for a count of 0.
+    if out.numel() == 0 {
+        return Ok(out);
+    }
+
     let dst_ptr = dst_c.ptr();
     let src_ptr = src_c.ptr();
     let out_ptr = out.ptr();

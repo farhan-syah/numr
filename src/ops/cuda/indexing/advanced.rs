@@ -340,13 +340,14 @@ pub fn gather_nd(
         out_shape.push(1);
     }
 
-    // Compute num_slices (product of indices.shape[:-1])
+    // Compute num_slices (product of indices.shape[:-1]) and slice_size (product of
+    // input.shape[M:]). Never clamp either with `.max(1)`: a 1-D `indices` and a
+    // fully-consumed `input_shape` already product to 1 over their empty slices, so
+    // a clamp only fires on a genuinely zero extent — and then defeats the
+    // launcher's own `total == 0` early return, reading index vectors that do not
+    // exist or writing to a zero-element output.
     let num_slices: usize = indices_shape[..indices_ndim - 1].iter().product();
-    let num_slices = num_slices.max(1);
-
-    // Compute slice_size (product of input.shape[M:])
     let slice_size: usize = input_shape[index_depth..].iter().product();
-    let slice_size = slice_size.max(1);
 
     let input_contig = ensure_contiguous(input)?;
     let indices_contig = ensure_contiguous(&indices_i64)?;

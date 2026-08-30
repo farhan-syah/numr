@@ -66,17 +66,27 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
             },
         )?;
 
+        // Unclamped: an unbatched matmul takes 0 dims and already products to 1, so
+        // a clamp would only fabricate a batch for a genuinely zero batch dim — and
+        // then pick the single-matmul branch, writing one m*n tile into an empty
+        // allocation.
         let batch_size: usize = out_shape
             .iter()
             .take(out_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+            .product();
 
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
         let bias_contig = ensure_contiguous(bias)?;
 
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device)?;
+
+        // A zero-element output has nothing to compute. The launchers derive their
+        // grid from `m`, `n` and the batch count without flooring them, and a grid
+        // extent of 0 is a launch error, so return before any launch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         unsafe {
             if batch_size > 1 {
@@ -173,11 +183,14 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         let k = a_shape[a_shape.len() - 1];
         let n = b_shape[b_shape.len() - 1];
 
+        // Unclamped: an unbatched matmul takes 0 dims and already products to 1, so
+        // a clamp would only fabricate a batch for a genuinely zero batch dim — and
+        // then pick the single-matmul branch, writing one m*n tile into an empty
+        // allocation.
         let batch_size: usize = out_shape
             .iter()
             .take(out_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+            .product();
 
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
@@ -185,6 +198,13 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         let res_contig = ensure_contiguous(residual)?;
 
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device)?;
+
+        // A zero-element output has nothing to compute. The launchers derive their
+        // grid from `m`, `n` and the batch count without flooring them, and a grid
+        // extent of 0 is a launch error, so return before any launch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         unsafe {
             if batch_size > 1 {
@@ -259,11 +279,14 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         let k = a_shape[a_shape.len() - 1];
         let n = b_shape[b_shape.len() - 1];
 
+        // Unclamped: an unbatched matmul takes 0 dims and already products to 1, so
+        // a clamp would only fabricate a batch for a genuinely zero batch dim — and
+        // then pick the single-matmul branch, writing one m*n tile into an empty
+        // allocation.
         let batch_size: usize = a_shape
             .iter()
             .take(a_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+            .product();
 
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
@@ -273,6 +296,14 @@ impl GemmEpilogueOps<CudaRuntime> for CudaClient {
         let d_a = Tensor::<CudaRuntime>::empty(a_shape, dtype, &self.device)?;
         let d_b = Tensor::<CudaRuntime>::zeros(b_shape, dtype, &self.device)?;
         let d_bias = Tensor::<CudaRuntime>::zeros(&[n], dtype, &self.device)?;
+
+        // No batch contributes, so every gradient sums over nothing and stays at the
+        // additive identity `d_b` and `d_bias` were seeded with. A zero `m`, `n` or
+        // `k` still reaches the launcher, which skips only the individual kernels
+        // whose own output is empty — `d_bias` is a real sum even when `k == 0`.
+        if batch_size == 0 {
+            return Ok((d_a, d_b, d_bias));
+        }
 
         // Temporary buffer for grad_pre (M * N elements, reused per batch)
         let grad_pre = Tensor::<CudaRuntime>::empty(&[m, n], dtype, &self.device)?;

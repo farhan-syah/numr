@@ -53,10 +53,41 @@ pub(crate) fn native_index_put(
         return alloc_output(client, shape, dtype);
     }
 
+    // Allocate output and copy input first
+    let out = alloc_output(client, shape, dtype)?;
+
+    let a_buf = get_tensor_buffer(&a_contig)?;
+    let out_buf = get_tensor_buffer(&out)?;
+
+    // First copy input to output
+    let copy_params = CopyParams {
+        numel: a.numel() as u32,
+    };
+    let copy_params_buf = create_params_buffer(client, &copy_params);
+    index::launch_copy(
+        client.pipeline_cache(),
+        client.wgpu_queue(),
+        &a_buf,
+        &out_buf,
+        &copy_params_buf,
+        a.numel(),
+        dtype,
+    )?;
+
+    // An empty index set writes nothing, so the copy above is already the whole
+    // result. `src` is the zero-byte allocation here, and `get_tensor_buffer`
+    // has no buffer to return for it, so the dispatch must not be reached.
+    if total_src == 0 {
+        return Ok(out);
+    }
+
+    // Validated after the copy: an empty index set returns above, and
+    // `get_tensor_buffer` has no buffer to hand back for a zero-byte index
+    // allocation.
     let indices_buf = get_tensor_buffer(&indices_contig)?;
 
     // Validate indices on GPU (only costs copying 4 bytes back)
-    if index_len > 0 {
+    {
         let error_count_buffer = client.wgpu_device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("validate_indices_error_count"),
             size: 4,
@@ -94,41 +125,16 @@ pub(crate) fn native_index_put(
         }
     }
 
-    // Allocate output and copy input first
-    let out = alloc_output(client, shape, dtype)?;
-
-    let a_buf = get_tensor_buffer(&a_contig)?;
-    let out_buf = get_tensor_buffer(&out)?;
-
-    // First copy input to output
-    let copy_params = CopyParams {
-        numel: a.numel() as u32,
-    };
-    let copy_params_buf = create_params_buffer(client, &copy_params);
-    index::launch_copy(
-        client.pipeline_cache(),
-        client.wgpu_queue(),
-        &a_buf,
-        &out_buf,
-        &copy_params_buf,
-        a.numel(),
-        dtype,
-    )?;
-
-    // An empty index set writes nothing, so the copy above is already the whole
-    // result. `src` is the zero-byte allocation here, and `get_tensor_buffer`
-    // has no buffer to return for it, so the dispatch must not be reached.
-    if total_src == 0 {
-        return Ok(out);
-    }
-
     let src_buf = get_tensor_buffer(&src_contig)?;
 
     // Then apply index_put
+    // Never restore a `.max(1)` on these: the `total_src == 0` guard above already
+    // rules a zero out, and a clamp would tell the shader about a row the
+    // allocation does not contain.
     let params = IndexSelectParams {
-        outer_size: outer_size.max(1) as u32,
+        outer_size: outer_size as u32,
         dim_size: dim_size as u32,
-        inner_size: inner_size.max(1) as u32,
+        inner_size: inner_size as u32,
         index_len: index_len as u32,
     };
     let params_buf = create_params_buffer(client, &params);
@@ -140,7 +146,7 @@ pub(crate) fn native_index_put(
         &src_buf,
         &out_buf,
         &params_buf,
-        total_src.max(1),
+        total_src,
         dtype,
     )?;
 

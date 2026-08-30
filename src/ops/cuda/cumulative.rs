@@ -40,7 +40,9 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         // Ensure contiguous for CUDA kernel
         let a_contig = ensure_contiguous(a)?;
 
-        // Calculate dimensions for kernel launch
+        // Calculate dimensions for kernel launch. Never clamp these with `.max(1)`:
+        // the `numel() == 0` guard above already rules a zero out, and a clamp
+        // would fabricate a row the allocation does not contain.
         let scan_size = shape[dim];
         let outer_size: usize = shape[..dim].iter().product();
         let inner_size: usize = shape[dim + 1..].iter().product();
@@ -51,7 +53,6 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         // Choose kernel based on dimension position
         if inner_size == 1 {
             // Scan along last dimension or effectively contiguous
-            let outer = outer_size.max(1);
             unsafe {
                 launch_cumsum(
                     &self.context,
@@ -61,7 +62,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
                     a_contig.ptr(),
                     out.ptr(),
                     scan_size,
-                    outer,
+                    outer_size,
                 )?;
             }
         } else {
@@ -75,7 +76,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
                     a_contig.ptr(),
                     out.ptr(),
                     scan_size,
-                    outer_size.max(1),
+                    outer_size,
                     inner_size,
                 )?;
             }
@@ -114,7 +115,9 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         // Ensure contiguous for CUDA kernel
         let a_contig = ensure_contiguous(a)?;
 
-        // Calculate dimensions for kernel launch
+        // Calculate dimensions for kernel launch. Never clamp these with `.max(1)`:
+        // the `numel() == 0` guard above already rules a zero out, and a clamp
+        // would fabricate a row the allocation does not contain.
         let scan_size = shape[dim];
         let outer_size: usize = shape[..dim].iter().product();
         let inner_size: usize = shape[dim + 1..].iter().product();
@@ -125,7 +128,6 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         // Choose kernel based on dimension position
         if inner_size == 1 {
             // Scan along last dimension or effectively contiguous
-            let outer = outer_size.max(1);
             unsafe {
                 launch_cumprod(
                     &self.context,
@@ -135,7 +137,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
                     a_contig.ptr(),
                     out.ptr(),
                     scan_size,
-                    outer,
+                    outer_size,
                 )?;
             }
         } else {
@@ -149,7 +151,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
                     a_contig.ptr(),
                     out.ptr(),
                     scan_size,
-                    outer_size.max(1),
+                    outer_size,
                     inner_size,
                 )?;
             }
@@ -241,7 +243,9 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         // Ensure contiguous for CUDA kernel
         let a_contig = ensure_contiguous(&a_compute)?;
 
-        // Calculate dimensions for kernel launch
+        // Calculate dimensions for kernel launch. Never clamp these with `.max(1)`:
+        // the `numel() == 0` guard above already rules a zero out, and a clamp
+        // would fabricate a row the allocation does not contain.
         let reduce_size = shape[dim];
         let outer_size: usize = shape[..dim].iter().product();
         let inner_size: usize = shape[dim + 1..].iter().product();
@@ -257,7 +261,6 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
         // Choose kernel based on dimension position
         if inner_size == 1 {
             // Reduction along last dimension
-            let outer = outer_size.max(1);
             unsafe {
                 launch_logsumexp(
                     &self.context,
@@ -267,7 +270,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
                     a_contig.ptr(),
                     out.ptr(),
                     reduce_size,
-                    outer,
+                    outer_size,
                 )?;
             }
         } else {
@@ -281,7 +284,7 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
                     a_contig.ptr(),
                     out.ptr(),
                     reduce_size,
-                    outer_size.max(1),
+                    outer_size,
                     inner_size,
                 )?;
             }

@@ -71,7 +71,8 @@ fn validate_and_extract(
         .iter()
         .take(out_shape.len().saturating_sub(2))
         .product();
-    let batch_size = batch_size.max(1);
+    // No `.max(1)`: an unbatched matmul takes 0 dims and already products to 1, so
+    // a clamp would only fabricate a batch for a genuinely zero batch dim.
 
     Ok((out_shape, batch_size, m, k, n))
 }
@@ -91,6 +92,20 @@ impl Fp8MatmulOps<CudaRuntime> for CudaClient {
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &self.device)?;
+
+        // A zero-element output has nothing to compute, and the launcher takes its
+        // grid from `ceil(n / TILE_N)`, `ceil(m / TILE_M)` and the batch count, so a
+        // zero `m`, `n` or batch is a launch error rather than a wrong answer.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
+        // A zero-length contraction leaves a NON-empty output whose every element
+        // sums over no term. CPU answers zeros; the kernel would read off the end of
+        // the empty operands.
+        if k == 0 {
+            return Tensor::<CudaRuntime>::zeros(&out_shape, out_dtype, &self.device);
+        }
 
         unsafe {
             if batch_size > 1 {
@@ -144,6 +159,20 @@ impl Fp8MatmulOps<CudaRuntime> for CudaClient {
         let a_contig = ensure_contiguous(a)?;
         let b_contig = ensure_contiguous(b)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &self.device)?;
+
+        // A zero-element output has nothing to compute, and the launcher takes its
+        // grid from `ceil(n / TILE_N)`, `ceil(m / TILE_M)` and the batch count, so a
+        // zero `m`, `n` or batch is a launch error rather than a wrong answer.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
+        // A zero-length contraction leaves a NON-empty output whose every element
+        // sums over no term. CPU answers zeros; the kernel would read off the end of
+        // the empty operands.
+        if k == 0 {
+            return Tensor::<CudaRuntime>::zeros(&out_shape, out_dtype, &self.device);
+        }
 
         unsafe {
             if batch_size > 1 {

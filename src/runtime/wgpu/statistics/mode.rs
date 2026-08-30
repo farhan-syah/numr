@@ -86,6 +86,13 @@ pub fn mode_impl(
     let mode_values = Tensor::<WgpuRuntime>::empty(&out_shape, dtype, client.device())?;
     let mode_counts = Tensor::<WgpuRuntime>::empty(&out_shape, DType::I32, client.device())?;
 
+    // A zero-element output means a zero outer or inner extent — `dim_size == 0` is
+    // handled above. `get_buffer` has no buffer to return for a zero-byte
+    // allocation, so the empty results are handed back before the dispatch.
+    if mode_values.numel() == 0 {
+        return Ok((mode_values, mode_counts));
+    }
+
     // Get wgpu buffers
     let sorted_buf = get_buffer(sorted_contig.ptr())
         .ok_or_else(|| Error::Internal("Failed to get sorted buffer".to_string()))?;

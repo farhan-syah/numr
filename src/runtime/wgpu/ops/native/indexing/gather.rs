@@ -87,7 +87,9 @@ pub(crate) fn native_gather(
         &indices_buf,
         &out_buf,
         &params_buf,
-        total_elements.max(1),
+        // Never restore a `.max(1)` here: the `total_elements == 0` guard above
+        // already rules a zero out.
+        total_elements,
         dtype,
     )?;
 

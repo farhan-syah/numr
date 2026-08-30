@@ -40,7 +40,9 @@ pub(crate) fn native_cumsum(
 
     let a_contig = ensure_contiguous(a)?;
 
-    // Compute parameters
+    // Compute parameters. Never clamp these with `.max(1)`: the `numel() == 0`
+    // guard below already rules a zero out, and a clamp would tell the shader
+    // about a row the allocation does not contain.
     let scan_size = shape[dim];
     let outer_size: usize = shape[..dim].iter().product();
     let inner_size: usize = shape[dim + 1..].iter().product();
@@ -62,7 +64,7 @@ pub(crate) fn native_cumsum(
         // Contiguous case: operating on last dim or only dim
         let params = CumsumParams {
             scan_size: scan_size as u32,
-            outer_size: outer_size.max(1) as u32,
+            outer_size: outer_size as u32,
         };
         let params_buf = create_params_buffer(client, &params);
 
@@ -72,19 +74,19 @@ pub(crate) fn native_cumsum(
             &a_buf,
             &out_buf,
             &params_buf,
-            outer_size.max(1),
+            outer_size,
             dtype,
         )?;
     } else {
         // Strided case: need inner_size
         let params = CumsumStridedParams {
             scan_size: scan_size as u32,
-            outer_size: outer_size.max(1) as u32,
+            outer_size: outer_size as u32,
             inner_size: inner_size as u32,
         };
         let params_buf = create_params_buffer(client, &params);
 
-        let total_inner = outer_size.max(1) * inner_size;
+        let total_inner = outer_size * inner_size;
         cumulative::launch_cumsum_strided(
             client.pipeline_cache(),
             client.wgpu_queue(),
@@ -132,7 +134,9 @@ pub(crate) fn native_cumprod(
 
     let a_contig = ensure_contiguous(a)?;
 
-    // Compute parameters
+    // Compute parameters. Never clamp these with `.max(1)`: the `numel() == 0`
+    // guard below already rules a zero out, and a clamp would tell the shader
+    // about a row the allocation does not contain.
     let scan_size = shape[dim];
     let outer_size: usize = shape[..dim].iter().product();
     let inner_size: usize = shape[dim + 1..].iter().product();
@@ -154,7 +158,7 @@ pub(crate) fn native_cumprod(
         // Contiguous case: operating on last dim or only dim
         let params = CumprodParams {
             scan_size: scan_size as u32,
-            outer_size: outer_size.max(1) as u32,
+            outer_size: outer_size as u32,
         };
         let params_buf = create_params_buffer(client, &params);
 
@@ -164,19 +168,19 @@ pub(crate) fn native_cumprod(
             &a_buf,
             &out_buf,
             &params_buf,
-            outer_size.max(1),
+            outer_size,
             dtype,
         )?;
     } else {
         // Strided case: need inner_size
         let params = CumprodStridedParams {
             scan_size: scan_size as u32,
-            outer_size: outer_size.max(1) as u32,
+            outer_size: outer_size as u32,
             inner_size: inner_size as u32,
         };
         let params_buf = create_params_buffer(client, &params);
 
-        let total_inner = outer_size.max(1) * inner_size;
+        let total_inner = outer_size * inner_size;
         cumulative::launch_cumprod_strided(
             client.pipeline_cache(),
             client.wgpu_queue(),
@@ -277,7 +281,9 @@ fn native_logsumexp_single_dim(
 
     let a_contig = ensure_contiguous(a)?;
 
-    // Compute parameters
+    // Never clamp these with `.max(1)`: the `numel() == 0` guard below already
+    // rules a zero out, and a clamp would tell the shader about a row the
+    // allocation does not contain.
     let reduce_size = shape[dim];
     let outer_size: usize = shape[..dim].iter().product();
     let inner_size: usize = shape[dim + 1..].iter().product();
@@ -312,7 +318,7 @@ fn native_logsumexp_single_dim(
         // Contiguous case
         let params = LogsumexpParams {
             reduce_size: reduce_size as u32,
-            outer_size: outer_size.max(1) as u32,
+            outer_size: outer_size as u32,
         };
         let params_buf = create_params_buffer(client, &params);
 
@@ -322,19 +328,19 @@ fn native_logsumexp_single_dim(
             &a_buf,
             &out_buf,
             &params_buf,
-            outer_size.max(1),
+            outer_size,
             dtype,
         )?;
     } else {
         // Strided case
         let params = LogsumexpStridedParams {
             reduce_size: reduce_size as u32,
-            outer_size: outer_size.max(1) as u32,
+            outer_size: outer_size as u32,
             inner_size: inner_size as u32,
         };
         let params_buf = create_params_buffer(client, &params);
 
-        let total_inner = outer_size.max(1) * inner_size;
+        let total_inner = outer_size * inner_size;
         cumulative::launch_logsumexp_strided(
             client.pipeline_cache(),
             client.wgpu_queue(),

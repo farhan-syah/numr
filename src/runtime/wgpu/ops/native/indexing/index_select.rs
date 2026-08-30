@@ -93,10 +93,13 @@ pub(crate) fn native_index_select(
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
+    // Never restore a `.max(1)` on these: the `total_output == 0` guard above
+    // already rules a zero out, and a clamp would tell the shader about a row the
+    // allocation does not contain.
     let params = IndexSelectParams {
-        outer_size: outer_size.max(1) as u32,
+        outer_size: outer_size as u32,
         dim_size: dim_size as u32,
-        inner_size: inner_size.max(1) as u32,
+        inner_size: inner_size as u32,
         index_len: index_len as u32,
     };
     let params_buf = create_params_buffer(client, &params);
@@ -108,7 +111,7 @@ pub(crate) fn native_index_select(
         &indices_buf,
         &out_buf,
         &params_buf,
-        total_output.max(1),
+        total_output,
         dtype,
     )?;
 

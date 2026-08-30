@@ -121,7 +121,9 @@ pub(crate) fn native_scatter(
         &indices_buf,
         &out_buf,
         &params_buf,
-        src_total.max(1),
+        // Never restore a `.max(1)` here: the `src_total == 0` guard above already
+        // rules a zero out.
+        src_total,
         dtype,
     )?;
 

@@ -68,8 +68,36 @@ where
         let batch = shape[0];
         let channels = shape[1];
         let cpg = channels / self.num_groups;
-        let spatial: usize = shape[2..].iter().product::<usize>().max(1);
+        // Unclamped: a 2D input already products to 1 over the empty trailing slice,
+        // and a zero spatial dim must stay 0 so the flattened reshape below keeps the
+        // element count the empty input actually has.
+        let spatial: usize = shape[2..].iter().product();
         let group_size = cpg * spatial;
+
+        // A zero-element input contributes to no gradient: every reduction below
+        // would fold over an empty group and produce a value no element supports.
+        // `d_input` matches the empty input, and both parameter gradients sum over
+        // nothing, so both are the additive identity.
+        if input.numel() == 0 {
+            let dtype = input.dtype();
+            let device = input.device();
+            let d_input = if needed[0] {
+                Some(Tensor::<R>::zeros_generic(shape, dtype, device)?)
+            } else {
+                None
+            };
+            let d_weight = if needed[1] {
+                Some(Tensor::<R>::zeros_generic(&[channels], dtype, device)?)
+            } else {
+                None
+            };
+            let d_bias = if needed[2] {
+                Some(Tensor::<R>::zeros_generic(&[channels], dtype, device)?)
+            } else {
+                None
+            };
+            return Ok(vec![d_input, d_weight, d_bias]);
+        }
 
         // Flatten to [B, G, C/G * spatial] for per-group normalization.
         // `input`/`grad_output` may be non-contiguous views (saved_input is

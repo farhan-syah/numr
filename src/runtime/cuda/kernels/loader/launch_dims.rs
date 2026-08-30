@@ -48,8 +48,11 @@ const MAX_GRID_DIM_YZ: u32 = 65_535;
 /// `inner` is 262144) launches and computes every output instead of being
 /// rejected with `CUDA_ERROR_INVALID_VALUE`.
 ///
-/// Each axis is also floored at 1: a grid extent of 0 is itself a launch error,
-/// and callers pass sizes already clamped to at least 1.
+/// Each axis is also floored at 1: a grid extent of 0 is itself a launch error.
+/// The floor stays here rather than at the callers, which pass `outer`/`inner`
+/// unclamped and guard on a zero-element output before launching at all; the
+/// dim-reduction kernels bound both loops by `outer_size`/`inner_size`, so a
+/// floored axis over a zero extent does no work.
 #[inline]
 pub fn reduce_dim_launch_config(outer: usize, inner: usize) -> ((u32, u32, u32), u32) {
     let grid_x = (outer.min(MAX_GRID_DIM_X as usize) as u32).max(1);

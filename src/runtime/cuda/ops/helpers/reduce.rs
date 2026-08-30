@@ -44,15 +44,13 @@ pub(crate) fn native_reduce_op(
         let reduce_size = shape[dim];
         let inner_size: usize = shape[dim + 1..].iter().product();
 
-        let outer_size = outer_size.max(1);
-        let inner_size = inner_size.max(1);
-
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
         // A zero-size output (some non-reduced dimension is 0) has nothing to
-        // compute, and `outer_size`/`inner_size` were floored at 1 above, so
-        // launching would write past the empty allocation.
+        // compute. Never restore a `.max(1)` on the extents above: it would make
+        // this guard unreachable and launch a grid over elements the empty
+        // allocation does not have.
         if out.numel() == 0 {
             return Ok(out);
         }

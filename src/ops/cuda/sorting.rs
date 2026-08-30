@@ -31,6 +31,13 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device)?;
 
+        // A zero-element input has nothing to sort. The launcher takes its grid
+        // straight from `outer_size` and `inner_size`, and a grid extent of 0 is a
+        // launch error, so the empty result is returned before any launch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
         unsafe {
             launch_sort_values_only(
                 &self.context,
@@ -70,6 +77,13 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let out_values = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device)?;
         let out_indices = Tensor::<CudaRuntime>::empty(shape, DType::I64, &self.device)?;
 
+        // A zero-element input has nothing to sort. The launcher takes its grid
+        // straight from `outer_size` and `inner_size`, and a grid extent of 0 is a
+        // launch error, so the empty result is returned before any launch.
+        if out_values.numel() == 0 {
+            return Ok((out_values, out_indices));
+        }
+
         unsafe {
             launch_sort(
                 &self.context,
@@ -107,6 +121,13 @@ impl SortingOps<CudaRuntime> for CudaClient {
         let (outer_size, sort_size, inner_size) = compute_reduce_strides(shape, dim_idx);
         let a_contig = ensure_contiguous(a)?;
         let out = Tensor::<CudaRuntime>::empty(shape, DType::I64, &self.device)?;
+
+        // A zero-element input has nothing to sort. The launcher takes its grid
+        // straight from `outer_size` and `inner_size`, and a grid extent of 0 is a
+        // launch error, so the empty result is returned before any launch.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         unsafe {
             launch_argsort(
@@ -177,6 +198,13 @@ impl SortingOps<CudaRuntime> for CudaClient {
 
         let out_values = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device)?;
         let out_indices = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &self.device)?;
+
+        // A zero-element input has nothing to sort. The launcher takes its grid
+        // straight from `outer_size` and `inner_size`, and a grid extent of 0 is a
+        // launch error, so the empty result is returned before any launch.
+        if out_values.numel() == 0 {
+            return Ok((out_values, out_indices));
+        }
 
         unsafe {
             launch_topk(

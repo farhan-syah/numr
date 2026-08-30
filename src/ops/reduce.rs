@@ -124,11 +124,16 @@ pub fn reduce_output_shape(input_shape: &[usize], dims: &[usize], keepdim: bool)
 /// * `shape` - Shape of the input tensor
 /// * `dim` - The dimension to reduce over
 ///
+/// Never floor `outer_size` or `inner_size` at 1: an empty slice already products
+/// to 1, so a clamp fires only on a genuinely zero dimension, and then reports an
+/// extent the allocation does not have — a CPU loop past the end of the buffer, or
+/// a GPU grid over elements that do not exist. Callers guard on a zero-element
+/// input or output before looping or launching instead.
 #[inline]
 pub fn compute_reduce_strides(shape: &[usize], dim: usize) -> (usize, usize, usize) {
-    let outer_size: usize = shape[..dim].iter().product::<usize>().max(1);
+    let outer_size: usize = shape[..dim].iter().product();
     let reduce_size = shape[dim];
-    let inner_size: usize = shape[dim + 1..].iter().product::<usize>().max(1);
+    let inner_size: usize = shape[dim + 1..].iter().product();
     (outer_size, reduce_size, inner_size)
 }
 

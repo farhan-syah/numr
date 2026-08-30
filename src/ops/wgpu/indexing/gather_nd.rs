@@ -63,8 +63,11 @@ pub(super) fn gather_nd(
 
     // Compute output shape and slice size
     // Output shape = indices_shape[:-1] + input_shape[index_depth:]
+    // Never floor `slice_size` at 1: a fully-consumed `input_shape` already
+    // products to 1 over the empty slice, so a floor fires only on a genuinely
+    // zero trailing dim — and then dispatches over elements the empty output does
+    // not have.
     let slice_size: usize = input_shape[index_depth..].iter().product();
-    let slice_size = if slice_size == 0 { 1 } else { slice_size };
 
     let mut output_shape: Vec<usize> = indices_shape[..indices_shape.len() - 1].to_vec();
     output_shape.extend_from_slice(&input_shape[index_depth..]);
@@ -76,6 +79,12 @@ pub(super) fn gather_nd(
 
     // Allocate output
     let output = alloc_output(client, &output_shape, dtype)?;
+
+    // A zero-element output has nothing to gather, and `get_tensor_buffer` has no
+    // buffer to return for a zero-byte allocation.
+    if total_output == 0 {
+        return Ok(output);
+    }
 
     // Get buffers
     let input_buf = get_tensor_buffer(&input)?;

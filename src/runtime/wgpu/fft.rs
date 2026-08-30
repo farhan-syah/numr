@@ -117,6 +117,13 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
         let total_elements = input_contig.numel();
         let element_size = dtype.size_in_bytes();
 
+        // No row to transform — `n >= 1` is validated above, so this means a zero
+        // batch dim. `get_buffer` has no buffer to return for the zero-byte input
+        // allocation the dispatches below would bind.
+        if total_elements == 0 {
+            return Tensor::<WgpuRuntime>::empty(input_contig.shape(), dtype, device);
+        }
+
         // Allocate output buffer
         let output_size = total_elements * element_size;
         let output_guard = AllocGuard::new(self.allocator(), output_size)?;
@@ -310,13 +317,19 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
         })?;
 
         // Calculate batch size
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = shape[..shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         // Output has shape [..., N/2 + 1]
         let out_n = n / 2 + 1;
         let mut out_shape = shape.clone();
         *out_shape.last_mut().unwrap() = out_n;
+
+        // No row to transform, and `get_buffer` has no buffer to return for the
+        // zero-byte input allocation the dispatches below would bind.
+        if batch_size == 0 {
+            return Tensor::<WgpuRuntime>::empty(&out_shape, complex_dtype, device);
+        }
 
         let total_input = input_contig.numel();
         let total_output = out_shape.iter().product::<usize>();
@@ -436,12 +449,18 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
         }
 
         // Calculate batch size
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = shape[..shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         // Output shape
         let mut out_shape = shape.clone();
         *out_shape.last_mut().unwrap() = full_n;
+
+        // No row to transform, and `get_buffer` has no buffer to return for the
+        // zero-byte input allocation the dispatches below would bind.
+        if batch_size == 0 {
+            return Tensor::<WgpuRuntime>::empty(&out_shape, real_dtype, device);
+        }
 
         let total_output = out_shape.iter().product::<usize>();
 
@@ -573,9 +592,15 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
             reason: format!("expected at least 1D tensor, got shape {:?}", shape),
         })?;
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = shape[..shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
         let total_elements = input_contig.numel();
+
+        // Nothing to shift, and `get_buffer` has no buffer to return for a
+        // zero-byte allocation.
+        if total_elements == 0 {
+            return Tensor::<WgpuRuntime>::empty(&shape, dtype, device);
+        }
 
         let output_size = total_elements * dtype.size_in_bytes();
         let output_guard = AllocGuard::new(self.allocator(), output_size)?;
@@ -626,9 +651,15 @@ impl FftAlgorithms<WgpuRuntime> for WgpuClient {
             reason: format!("expected at least 1D tensor, got shape {:?}", shape),
         })?;
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = shape[..shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
         let total_elements = input_contig.numel();
+
+        // Nothing to shift, and `get_buffer` has no buffer to return for a
+        // zero-byte allocation.
+        if total_elements == 0 {
+            return Tensor::<WgpuRuntime>::empty(&shape, dtype, device);
+        }
 
         let output_size = total_elements * dtype.size_in_bytes();
         let output_guard = AllocGuard::new(self.allocator(), output_size)?;

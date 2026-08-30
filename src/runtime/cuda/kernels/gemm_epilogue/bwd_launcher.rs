@@ -174,9 +174,13 @@ unsafe fn launch_gemm_bwd_kernels(
     let mk = (m * k) as u32;
     let kn = (k * n) as u32;
 
+    // Each of the four launches below takes its grid from a product that can be
+    // zero — `m * n`, `m * k`, `k * n`, `n`. A grid extent of 0 is a launch error
+    // the driver rejects, so a launch whose whole output is empty is skipped
+    // rather than floored: the tensor it would write has no element to write.
     unsafe {
         // Kernel 1: grad_pre = grad * act'(A @ B + bias)
-        {
+        if mn != 0 {
             let func_name = kernel_name("gemm_bias_act_bwd_grad_pre", dtype);
             let func = get_kernel_function(&module, &func_name)?;
             let cfg = launch_config(grid_1d(mn), block_1d(), 0);
@@ -196,7 +200,7 @@ unsafe fn launch_gemm_bwd_kernels(
         }
 
         // Kernel 2: d_a = grad_pre @ B^T (always write, not accumulate)
-        {
+        if mk != 0 {
             let func_name = kernel_name("gemm_bwd_da", dtype);
             let func = get_kernel_function(&module, &func_name)?;
             let cfg = launch_config(grid_1d(mk), block_1d(), 0);
@@ -213,7 +217,7 @@ unsafe fn launch_gemm_bwd_kernels(
         }
 
         // Kernel 3: d_b = A^T @ grad_pre (or d_b += for accumulate)
-        {
+        if kn != 0 {
             let base = if accumulate {
                 "gemm_bwd_db_accum"
             } else {
@@ -235,7 +239,7 @@ unsafe fn launch_gemm_bwd_kernels(
         }
 
         // Kernel 4: d_bias = sum(grad_pre, dim=0) (or += for accumulate)
-        {
+        if n_u32 != 0 {
             let base = if accumulate {
                 "gemm_bwd_dbias_accum"
             } else {

@@ -56,6 +56,14 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
 
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
 
+        // A zero-element output has nothing to compute. The dispatch below takes the
+        // single-matmul branch for any `batch_size <= 1`, and a batch of 0 lands
+        // there too — it would then write one full m*n tile into an empty
+        // allocation. Return before that.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();
         let bias_ptr = bias_contig.ptr();
@@ -178,6 +186,14 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
 
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
 
+        // A zero-element output has nothing to compute. The dispatch below takes the
+        // single-matmul branch for any `batch_size <= 1`, and a batch of 0 lands
+        // there too — it would then write one full m*n tile into an empty
+        // allocation. Return before that.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
         let a_ptr = a_contig.ptr();
         let b_ptr = b_contig.ptr();
         let bias_ptr = bias_contig.ptr();
@@ -288,6 +304,15 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
         // Output gradients
         let d_a = Tensor::<CpuRuntime>::empty(a_shape, dtype, &self.device)?;
         let d_b = Tensor::<CpuRuntime>::zeros(b_shape, dtype, &self.device)?;
+
+        // No batch contributes. The batched branch below zeroes `d_b` over k*n
+        // elements before accumulating, which overruns `d_b` when its own batch dim
+        // is 0. Both gradients sum over nothing here, so both are the additive
+        // identity `d_b` was already seeded with.
+        if batch_size == 0 {
+            let d_bias_full = Tensor::<CpuRuntime>::zeros(&[n], dtype, &self.device)?;
+            return Ok((d_a, d_b, d_bias_full));
+        }
 
         // d_bias is always [N] — we need to sum across batches
         let d_bias_full = Tensor::<CpuRuntime>::empty(&[n], dtype, &self.device)?;

@@ -160,11 +160,12 @@ impl ShapeOps<CudaRuntime> for CudaClient {
         let tensor_contig = ensure_contiguous(tensor)?;
         let out = Tensor::<CudaRuntime>::empty(tensor.shape(), tensor.dtype(), &self.device)?;
 
-        // Compute outer/inner sizes
+        // Compute outer/inner sizes. Never clamp these with `.max(1)`: an empty
+        // slice already products to 1, so a clamp only fires on a genuinely zero
+        // extent — and then defeats the launcher's own `total_elements == 0` early
+        // return, writing to a zero-element output.
         let outer_size: usize = tensor.shape()[..params.dim_idx].iter().product();
         let inner_size: usize = tensor.shape()[params.dim_idx + 1..].iter().product();
-        let outer_size = outer_size.max(1);
-        let inner_size = inner_size.max(1);
 
         unsafe {
             launch_roll(

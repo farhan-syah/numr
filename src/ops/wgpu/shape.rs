@@ -29,6 +29,13 @@ impl ShapeOps<WgpuRuntime> for WgpuClient {
 
         // Allocate output
         let out = alloc_output(self, &cat_params.out_shape, cat_params.dtype)?;
+
+        // A zero-element result has nothing to copy, and `get_tensor_buffer` has no
+        // buffer to return for a zero-byte allocation.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
+
         let out_buf = get_tensor_buffer(&out)?;
 
         // Copy data from each tensor using WGSL kernel
@@ -37,6 +44,11 @@ impl ShapeOps<WgpuRuntime> for WgpuClient {
             let tensor_contig = tensor.contiguous()?;
             let src_cat_size = tensor.shape()[cat_params.dim_idx];
             let total_elements = cat_params.outer_size * src_cat_size * cat_params.inner_size;
+
+            // An empty operand contributes nothing, and has no buffer to bind.
+            if total_elements == 0 {
+                continue;
+            }
 
             let src_buf = get_tensor_buffer(&tensor_contig)?;
 
@@ -331,13 +343,22 @@ impl ShapeOps<WgpuRuntime> for WgpuClient {
 
         // Allocate output (same shape as input)
         let out = alloc_output(self, shape, tensor.dtype())?;
+
+        // A zero-element tensor has nothing to roll, and `get_tensor_buffer` has no
+        // buffer to return for a zero-byte allocation.
+        if total_elements == 0 {
+            return Ok(out);
+        }
+
         let out_buf = get_tensor_buffer(&out)?;
         let src_buf = get_tensor_buffer(&tensor_contig)?;
 
+        // Unclamped: the guard above rules a zero extent out, and clamping would
+        // tell the shader about a row the allocation does not contain.
         let shader_params = RollParams {
-            outer_size: outer_size.max(1) as u32,
+            outer_size: outer_size as u32,
             dim_size: params.dim_size as u32,
-            inner_size: inner_size.max(1) as u32,
+            inner_size: inner_size as u32,
             shift: params.shift as u32,
             total_elements: total_elements as u32,
             _pad0: 0,

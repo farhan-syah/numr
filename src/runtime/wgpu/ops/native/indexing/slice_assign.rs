@@ -57,10 +57,11 @@ pub(crate) fn native_slice_assign(
         });
     }
 
+    // Never clamp these with `.max(1)`: an empty slice already products to 1, so a
+    // clamp fires only on a genuinely zero extent, and then hides it from the
+    // `total_src == 0` guard below.
     let outer_size: usize = dst.shape()[..dim].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = dst.shape()[dim + 1..].iter().product();
-    let inner_size = inner_size.max(1);
     let total_src = outer_size * src_dim_size * inner_size;
 
     let dst_contig = ensure_contiguous(dst)?;
@@ -119,7 +120,7 @@ pub(crate) fn native_slice_assign(
         &src_buf,
         &out_buf,
         &params_buf,
-        total_src.max(1),
+        total_src,
         dtype,
     )?;
 

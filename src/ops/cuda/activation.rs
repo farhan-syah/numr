@@ -409,8 +409,14 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         let dim_size = shape[dim_idx];
         let inner_size: usize = shape[dim_idx + 1..].iter().product();
 
-        let outer_size = outer_size.max(1);
-        let inner_size = inner_size.max(1);
+        // Unclamped: an empty slice already products to 1, so a clamp would only
+        // fire on a genuinely zero dim and fabricate a row that is not allocated.
+        // A zero-element input has nothing to normalize, and the launchers take
+        // their grid from `outer_size`/`inner_size` and their block from
+        // `dim_size` unfloored, so a zero in any of them is a launch error.
+        if out.numel() == 0 {
+            return Ok(out);
+        }
 
         unsafe {
             if dim_idx == ndim - 1 {
@@ -460,9 +466,17 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         let d_input = Tensor::<CudaRuntime>::empty(grad.shape(), dtype, &self.device)?;
 
         let shape = grad.shape();
-        let outer_size: usize = shape[..dim_idx].iter().product::<usize>().max(1);
+        // Unclamped: an empty slice already products to 1, so a clamp would only
+        // fire on a genuinely zero dim and fabricate a row that is not allocated.
+        let outer_size: usize = shape[..dim_idx].iter().product();
         let dim_size = shape[dim_idx];
-        let inner_size: usize = shape[dim_idx + 1..].iter().product::<usize>().max(1);
+        let inner_size: usize = shape[dim_idx + 1..].iter().product();
+
+        // Nothing to differentiate, and a zero grid or block extent taken from
+        // these is a launch error rather than a wrong answer.
+        if d_input.numel() == 0 {
+            return Ok(d_input);
+        }
 
         unsafe {
             if dim_idx == ndim - 1 {
@@ -522,10 +536,18 @@ impl ActivationOps<CudaRuntime> for CudaClient {
         let can_fuse = dim_idx == ndim - 1 && bias_last_dim == dim_size && bias_numel == dim_size; // bias is a single row: all outer dims are 1
 
         if can_fuse {
-            let outer_size: usize = a_shape[..dim_idx].iter().product::<usize>().max(1);
+            // Unclamped: an empty slice already products to 1, so a clamp would only
+            // fire on a genuinely zero dim and fabricate a row that is not allocated.
+            let outer_size: usize = a_shape[..dim_idx].iter().product();
             let a_contig = ensure_contiguous(a)?;
             let bias_contig = ensure_contiguous(bias)?;
             let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &self.device)?;
+
+            // Nothing to normalize, and a zero grid or block extent taken from
+            // `outer_size`/`dim_size` is a launch error rather than a wrong answer.
+            if out.numel() == 0 {
+                return Ok(out);
+            }
 
             unsafe {
                 launch_softmax_with_bias(

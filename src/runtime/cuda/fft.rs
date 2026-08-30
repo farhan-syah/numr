@@ -54,8 +54,15 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         };
 
         // Calculate batch size and scale factor
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-        let batch_size = batch_size.max(1);
+
+        // No row to transform. `n >= 1` is validated above, so every kernel below
+        // would read a full row out of the empty input allocation.
+        if batch_size == 0 {
+            return Tensor::<CudaRuntime>::empty(input_contig.shape(), dtype, self.device());
+        }
+
         let scale = norm.factor(direction, n);
         let inverse = direction == FftDirection::Inverse;
 
@@ -253,8 +260,16 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         let complex_dtype = complex_dtype_for_real(dtype)?;
         let device = self.device();
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-        let batch_size = batch_size.max(1);
+
+        // No row to transform. `n >= 1` is validated above, so every kernel below
+        // would read a full row out of the empty input allocation.
+        if batch_size == 0 {
+            let mut out_shape = input_contig.shape().to_vec();
+            out_shape[ndim - 1] = n / 2 + 1;
+            return Tensor::<CudaRuntime>::empty(&out_shape, complex_dtype, device);
+        }
 
         // Bluestein for non-power-of-two. `out_n` keeps the Hermitian half
         // directly, so no separate truncate pass is needed.
@@ -451,8 +466,16 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         let device = self.device();
         let real_dtype = real_dtype_for_complex(dtype)?;
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-        let batch_size = batch_size.max(1);
+
+        // No row to transform. `output_n >= 1` is validated above, so every kernel
+        // below would read a full row out of the empty input allocation.
+        if batch_size == 0 {
+            let mut out_shape = input_contig.shape().to_vec();
+            out_shape[ndim - 1] = output_n;
+            return Tensor::<CudaRuntime>::empty(&out_shape, real_dtype, device);
+        }
 
         // Non-power-of-two: extend the Hermitian half to a full spectrum, run
         // the inverse transform through Bluestein, then drop the (zero)
@@ -696,8 +719,14 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         };
 
         let device = self.device();
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-        let batch_size = batch_size.max(1);
+
+        // Nothing to shift. The kernel is launched over `batch_size * n` without
+        // flooring, and reads the input row by row out of an empty allocation.
+        if batch_size == 0 || n == 0 {
+            return Tensor::<CudaRuntime>::empty(input_contig.shape(), dtype, device);
+        }
 
         let total_elements = batch_size * n;
         let output_size = total_elements * dtype.size_in_bytes();
@@ -743,8 +772,14 @@ impl FftAlgorithms<CudaRuntime> for CudaClient {
         };
 
         let device = self.device();
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-        let batch_size = batch_size.max(1);
+
+        // Nothing to shift. The kernel is launched over `batch_size * n` without
+        // flooring, and reads the input row by row out of an empty allocation.
+        if batch_size == 0 || n == 0 {
+            return Tensor::<CudaRuntime>::empty(input_contig.shape(), dtype, device);
+        }
 
         let total_elements = batch_size * n;
         let output_size = total_elements * dtype.size_in_bytes();

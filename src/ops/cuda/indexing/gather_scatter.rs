@@ -253,12 +253,11 @@ pub fn index_select(
 
     let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
 
-    // Compute outer/dim/inner sizes
+    // Compute outer/dim/inner sizes. Never clamp these with `.max(1)`: the
+    // zero-element guard above already rules a zero out, and a clamp would make
+    // the launcher's own `total == 0` check miss and read past the allocation.
     let outer_size: usize = shape[..dim].iter().product();
     let inner_size: usize = shape[dim + 1..].iter().product();
-
-    let outer_size = outer_size.max(1);
-    let inner_size = inner_size.max(1);
 
     unsafe {
         launch_index_select(
@@ -450,12 +449,13 @@ pub fn index_put(
     // Clone a to output first
     let out = a_contig.clone();
 
-    // Compute outer/dim/inner sizes
+    // Compute outer/dim/inner sizes. Never clamp these with `.max(1)`: a clamp
+    // fires only on a genuinely zero extent, and then defeats the launcher's own
+    // `total == 0` early return so the kernel reads past an empty allocation.
+    // Unclamped, `total` is 0 and the launcher returns without dispatching, which
+    // leaves `out` as the copy of `a` that CPU also produces.
     let outer_size: usize = shape[..dim].iter().product();
     let inner_size: usize = shape[dim + 1..].iter().product();
-
-    let outer_size = outer_size.max(1);
-    let inner_size = inner_size.max(1);
 
     unsafe {
         launch_index_put(
@@ -527,10 +527,12 @@ pub fn slice_assign(
         });
     }
 
+    // Never clamp these with `.max(1)`: a clamp fires only on a genuinely zero
+    // extent, and then defeats the launcher's own `total == 0` early return so the
+    // kernel reads past an empty allocation. Unclamped, the slice-assign launch is
+    // skipped and `out` keeps the copy of `dst` that CPU also produces.
     let outer_size: usize = dst.shape()[..dim].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = dst.shape()[dim + 1..].iter().product();
-    let inner_size = inner_size.max(1);
 
     let dst_contig = ensure_contiguous(dst)?;
     let src_contig = ensure_contiguous(src)?;
