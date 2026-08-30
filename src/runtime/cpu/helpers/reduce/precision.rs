@@ -5,7 +5,9 @@ use super::single_dim::reduce_non_last_dim_outer;
 use crate::dispatch_dtype;
 use crate::dtype::Element;
 use crate::error::{Error, Result};
-use crate::ops::{AccumulationPrecision, ReduceOp, reduce_output_shape};
+use crate::ops::{
+    AccumulationPrecision, ReduceOp, max_identity, min_identity, reduce_output_shape,
+};
 use crate::runtime::cpu::kernels::{self, Accumulator};
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
 use crate::runtime::ensure_contiguous;
@@ -229,16 +231,17 @@ pub(super) unsafe fn reduce_non_last_dim_acc_outer<T: Element, A: Accumulator>(
     for inner in 0..inner_size {
         // The seed read is conditional because a zero-length reduce dimension
         // leaves nothing to read: the input allocation is empty, and
-        // `CpuRuntime::allocate` hands back a null pointer for zero bytes, so
-        // an unconditional read here is a null dereference. `Max` and `Min` fall
+        // `CpuRuntime::allocate` hands back a dangling, non-null address for
+        // zero bytes, so an unconditional read here is out of bounds. `Max` and `Min` fall
         // back to the identity of their own reduction; the other ops never used
         // the seed.
         let mut acc: A = if reduce_size == 0 {
             match op {
                 ReduceOp::Sum | ReduceOp::Mean | ReduceOp::Any => A::ZERO,
                 ReduceOp::Prod | ReduceOp::All => A::ONE,
-                ReduceOp::Max => A::acc_in(T::DTYPE.min_value()),
-                ReduceOp::Min => A::acc_in(T::DTYPE.max_value()),
+                // Floats fold to -/+inf, integers to the dtype's own extreme.
+                ReduceOp::Max => A::acc_in(max_identity(T::DTYPE)),
+                ReduceOp::Min => A::acc_in(min_identity(T::DTYPE)),
             }
         } else {
             let first_idx = outer * reduce_size * inner_size + inner;

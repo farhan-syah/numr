@@ -2,6 +2,7 @@
 
 use super::helpers::*;
 use crate::error::{Error, Result};
+use crate::runtime::RuntimeClient;
 use crate::runtime::ensure_contiguous;
 use crate::runtime::wgpu::shaders::cumulative;
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
@@ -304,10 +305,22 @@ fn native_logsumexp_single_dim(
 
     let out = alloc_output(client, &out_shape, dtype)?;
 
-    // A zero-element input or output has nothing to reduce, and
-    // `get_tensor_buffer` has no buffer to return for a zero-byte allocation.
-    if a.numel() == 0 || out.numel() == 0 {
+    // A zero-element output has nothing to hold, and `get_tensor_buffer` has no
+    // buffer to return for a zero-byte allocation.
+    if out.numel() == 0 {
         return Ok(out);
+    }
+
+    // A zero-length reduce dimension over a NON-empty output: every element
+    // folds over no input, so `log(sum of nothing)` is `log(0)` = -inf, and no
+    // dispatch can produce it — the input is the zero-byte allocation.
+    if a.numel() == 0 {
+        return Tensor::<WgpuRuntime>::full_scalar(
+            &out_shape,
+            dtype,
+            f64::NEG_INFINITY,
+            RuntimeClient::device(client),
+        );
     }
 
     let a_buf = get_tensor_buffer(&a_contig)?;

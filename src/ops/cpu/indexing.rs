@@ -4,7 +4,7 @@ use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::{
     IndexingOps, ScatterReduceOp,
-    reduce::{compute_reduce_strides, reduce_dim_output_shape},
+    reduce::{compute_reduce_strides, ensure_arg_reduce_dim_nonempty, reduce_dim_output_shape},
 };
 use crate::runtime::cpu::{
     CpuClient, CpuRuntime,
@@ -39,6 +39,9 @@ impl IndexingOps<CpuRuntime> for CpuClient {
         }
 
         let (outer_size, reduce_size, inner_size) = compute_reduce_strides(shape, dim);
+        // No index names an element of an empty dimension, and the seed read in
+        // the kernel would walk off the empty allocation.
+        ensure_arg_reduce_dim_nonempty(reduce_size, dim, "argmax")?;
         let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
         let a_contig = ensure_contiguous(a)?;
@@ -81,6 +84,9 @@ impl IndexingOps<CpuRuntime> for CpuClient {
         }
 
         let (outer_size, reduce_size, inner_size) = compute_reduce_strides(shape, dim);
+        // No index names an element of an empty dimension, and the seed read in
+        // the kernel would walk off the empty allocation.
+        ensure_arg_reduce_dim_nonempty(reduce_size, dim, "argmin")?;
         let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
         let a_contig = ensure_contiguous(a)?;

@@ -404,6 +404,20 @@ pub unsafe fn logsumexp_kernel<T: Element>(
     reduce_size: usize,
     outer_size: usize,
 ) {
+    // A zero-length reduce dimension makes every output element a fold over no
+    // input: `log(sum of nothing)` is `log(0)`, so the answer is -inf. Both the
+    // SIMD paths below and the scalar fallback seed their max from `a[base]`,
+    // which on an empty allocation reads past the end (`CpuRuntime::allocate`
+    // hands back a dangling, non-null address for zero bytes), so this must
+    // answer before any of them run.
+    if reduce_size == 0 {
+        let identity = T::from_f64(f64::NEG_INFINITY);
+        for o in 0..outer_size {
+            *out.add(o) = identity;
+        }
+        return;
+    }
+
     // Dispatch to SIMD for f32/f64 on x86-64 and aarch64
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
@@ -512,6 +526,18 @@ pub unsafe fn logsumexp_strided_kernel<T: Element>(
     _in_stride: usize, // stride along the reduce dimension in input (unused, kept for API parity)
     out_stride: usize, // stride in output
 ) {
+    // Same identity as `logsumexp_kernel`: a fold over no input is `log(0)`,
+    // and the seed read below would otherwise walk off an empty allocation.
+    if reduce_size == 0 {
+        let identity = T::from_f64(f64::NEG_INFINITY);
+        for o in 0..outer_size {
+            for i in 0..inner_size {
+                *out.add(o * out_stride + i) = identity;
+            }
+        }
+        return;
+    }
+
     for o in 0..outer_size {
         for i in 0..inner_size {
             let out_idx = o * out_stride + i;

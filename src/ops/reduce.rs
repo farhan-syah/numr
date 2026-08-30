@@ -4,6 +4,7 @@
 //! The actual operations are defined in the `TensorOps` trait.
 
 use crate::dtype::DType;
+use crate::error::{Error, Result};
 
 /// Reduction operation kind
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -135,6 +136,66 @@ pub fn compute_reduce_strides(shape: &[usize], dim: usize) -> (usize, usize, usi
     let reduce_size = shape[dim];
     let inner_size: usize = shape[dim + 1..].iter().product();
     (outer_size, reduce_size, inner_size)
+}
+
+/// True when this dtype's reductions carry infinity as their `max`/`min`
+/// identity.
+///
+/// F64, F32, F16 and BF16 do. Integers and bool have no infinity. FP8 is left
+/// out on purpose: its CUDA accumulator traits seed from `-/+FP8_*_MAX`, so an
+/// infinite identity here would answer something the GPU never produces.
+#[inline]
+fn reduces_with_infinite_identity(dtype: DType) -> bool {
+    matches!(dtype, DType::F64 | DType::F32 | DType::F16 | DType::BF16)
+}
+
+/// Value a `max` reduction must produce when it folds over zero elements.
+///
+/// A reduction over an empty set is the operation's identity. For a float wide
+/// enough to hold it that is negative infinity — the true identity, and what the
+/// CUDA kernels already seed with. Every other dtype takes the identity of the
+/// same monoid inside its own range: the dtype's minimum.
+#[inline]
+pub fn max_identity(dtype: DType) -> f64 {
+    if reduces_with_infinite_identity(dtype) {
+        f64::NEG_INFINITY
+    } else {
+        dtype.min_value()
+    }
+}
+
+/// Value a `min` reduction must produce when it folds over zero elements.
+///
+/// The mirror of [`max_identity`]: positive infinity for F64/F32/F16/BF16, the
+/// dtype's own maximum for FP8, integers and bool.
+#[inline]
+pub fn min_identity(dtype: DType) -> f64 {
+    if reduces_with_infinite_identity(dtype) {
+        f64::INFINITY
+    } else {
+        dtype.max_value()
+    }
+}
+
+/// Reject `argmax`/`argmin` over a zero-length dimension.
+///
+/// Every other reduction folds an empty set to an identity, but an index
+/// reduction has no index to name: there is no element to point at, and reading
+/// one anyway walks off an empty allocation. Every backend calls this before it
+/// loops or launches.
+#[inline]
+pub fn ensure_arg_reduce_dim_nonempty(
+    reduce_size: usize,
+    dim: usize,
+    op: &'static str,
+) -> Result<()> {
+    if reduce_size == 0 {
+        return Err(Error::InvalidArgument {
+            arg: "dim",
+            reason: format!("{op}: dimension {dim} has length 0, so no index is a valid answer"),
+        });
+    }
+    Ok(())
 }
 
 /// Compute output shape for a single-dimension reduction (used by argmax/argmin).

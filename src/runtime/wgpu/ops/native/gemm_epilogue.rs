@@ -2,7 +2,10 @@
 
 use super::helpers::*;
 use crate::error::{Error, Result};
-use crate::ops::{GemmActivation, matmul_bias_output_shape, validate_gemm_epilogue_dtypes};
+use crate::ops::{
+    ActivationOps, BinaryOps, GemmActivation, UnaryOps, matmul_bias_output_shape,
+    validate_gemm_epilogue_dtypes,
+};
 use crate::runtime::ensure_contiguous;
 use crate::runtime::traits::client::RuntimeClient;
 use crate::runtime::wgpu::shaders::gemm_epilogue;
@@ -11,6 +14,29 @@ use crate::runtime::wgpu::shaders::gemm_epilogue_bwd::{
 };
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
 use crate::tensor::Tensor;
+
+/// `act(bias)` broadcast over `out_shape`, for a contraction with no terms.
+///
+/// `A @ B` over `k == 0` sums nothing, so the pre-activation value is the bias
+/// alone. The `a` and `b` allocations are zero-byte here and have no buffer to
+/// bind, so the epilogue shader cannot run; the same result is built from ops
+/// that do have buffers. This is what CPU answers for `k == 0`.
+fn bias_only_activation(
+    client: &WgpuClient,
+    bias: &Tensor<WgpuRuntime>,
+    out_shape: &[usize],
+    activation: GemmActivation,
+) -> Result<Tensor<WgpuRuntime>> {
+    let pre = bias.broadcast_to(out_shape)?.contiguous()?;
+    match activation {
+        GemmActivation::None => Ok(pre),
+        GemmActivation::ReLU => client.relu(&pre),
+        GemmActivation::GELU => client.gelu(&pre),
+        GemmActivation::SiLU => client.silu(&pre),
+        GemmActivation::Sigmoid => client.sigmoid(&pre),
+        GemmActivation::Tanh => client.tanh(&pre),
+    }
+}
 
 pub(crate) fn native_gemm_bias_activation(
     client: &WgpuClient,
@@ -42,11 +68,15 @@ pub(crate) fn native_gemm_bias_activation(
         let out = alloc_output(client, &out_shape, dtype)?;
 
         // A zero-element output has nothing to compute, and `get_tensor_buffer` has
-        // no buffer to return for a zero-byte allocation. A zero-length contraction
-        // over a NON-empty output is a separate case this backend does not yet
-        // answer: it needs `act(bias)` written without a dispatch.
+        // no buffer to return for a zero-byte allocation.
         if out.numel() == 0 {
             return Ok(out);
+        }
+
+        // A contraction with no terms over a NON-empty output: `act(bias)`, built
+        // without a dispatch because `a` and `b` have no buffer to bind.
+        if k == 0 {
+            return bias_only_activation(client, &bias_c, &out_shape, activation);
         }
 
         let a_buf = get_tensor_buffer(&a_c)?;
@@ -98,11 +128,15 @@ pub(crate) fn native_gemm_bias_activation(
         let out = alloc_output(client, &out_shape, dtype)?;
 
         // A zero-element output has nothing to compute, and `get_tensor_buffer` has
-        // no buffer to return for a zero-byte allocation. A zero-length contraction
-        // over a NON-empty output is a separate case this backend does not yet
-        // answer: it needs `act(bias)` written without a dispatch.
+        // no buffer to return for a zero-byte allocation.
         if out.numel() == 0 {
             return Ok(out);
+        }
+
+        // A contraction with no terms over a NON-empty output: `act(bias)`, built
+        // without a dispatch because `a` and `b` have no buffer to bind.
+        if k == 0 {
+            return bias_only_activation(client, &bias_c, &out_shape, activation);
         }
 
         let a_buf = get_tensor_buffer(&a_c)?;
@@ -188,11 +222,17 @@ pub(crate) fn native_gemm_bias_residual(
         let out = alloc_output(client, &out_shape, dtype)?;
 
         // A zero-element output has nothing to compute, and `get_tensor_buffer` has
-        // no buffer to return for a zero-byte allocation. A zero-length contraction
-        // over a NON-empty output is a separate case this backend does not yet
-        // answer: it needs `act(bias)` written without a dispatch.
+        // no buffer to return for a zero-byte allocation.
         if out.numel() == 0 {
             return Ok(out);
+        }
+
+        // A contraction with no terms over a NON-empty output: the result is
+        // `bias + residual`, built without a dispatch because `a` and `b` have no
+        // buffer to bind.
+        if k == 0 {
+            let pre = bias_c.broadcast_to(&out_shape)?.contiguous()?;
+            return client.add(&pre, &res_c);
         }
 
         let a_buf = get_tensor_buffer(&a_c)?;
@@ -246,11 +286,17 @@ pub(crate) fn native_gemm_bias_residual(
         let out = alloc_output(client, &out_shape, dtype)?;
 
         // A zero-element output has nothing to compute, and `get_tensor_buffer` has
-        // no buffer to return for a zero-byte allocation. A zero-length contraction
-        // over a NON-empty output is a separate case this backend does not yet
-        // answer: it needs `act(bias)` written without a dispatch.
+        // no buffer to return for a zero-byte allocation.
         if out.numel() == 0 {
             return Ok(out);
+        }
+
+        // A contraction with no terms over a NON-empty output: the result is
+        // `bias + residual`, built without a dispatch because `a` and `b` have no
+        // buffer to bind.
+        if k == 0 {
+            let pre = bias_c.broadcast_to(&out_shape)?.contiguous()?;
+            return client.add(&pre, &res_c);
         }
 
         let a_buf = get_tensor_buffer(&a_c)?;
@@ -349,6 +395,18 @@ pub(crate) fn native_gemm_bias_activation_bwd(
 
     if a_shape[a_shape.len() - 1] != k || b_shape[b_shape.len() - 2] != k {
         return Err(Error::shape_mismatch(a_shape, b_shape));
+    }
+
+    // No gradient element contributes: `d_a` and `d_b` are either empty or sum
+    // over nothing, and `d_bias` sums nothing, so every gradient is zero. The
+    // `[batch, M, N]` scratch below is a zero-byte allocation with no buffer to
+    // bind, so this must answer first. CPU and CUDA give the same zeros.
+    if grad.numel() == 0 {
+        return Ok((
+            Tensor::<WgpuRuntime>::zeros(a_shape, dtype, RuntimeClient::device(client))?,
+            Tensor::<WgpuRuntime>::zeros(b_shape, dtype, RuntimeClient::device(client))?,
+            Tensor::<WgpuRuntime>::zeros(&[n], dtype, RuntimeClient::device(client))?,
+        ));
     }
 
     let a_c = ensure_contiguous(a)?;

@@ -2,6 +2,7 @@
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
+use crate::ops::reduce::ensure_arg_reduce_dim_nonempty;
 use crate::ops::{compute_reduce_strides, reduce_dim_output_shape};
 use crate::runtime::cuda::kernels::{launch_argmax_dim, launch_argmin_dim};
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
@@ -28,13 +29,16 @@ pub fn argmax(
     }
 
     let (outer_size, reduce_size, inner_size) = compute_reduce_strides(shape, dim);
+    // No index names an element of an empty dimension, and the kernel's seed
+    // read would land past the end of the empty allocation.
+    ensure_arg_reduce_dim_nonempty(reduce_size, dim, "argmax")?;
     let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
     let a_contig = ensure_contiguous(a)?;
     let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device)?;
 
-    // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
-    // would still make the kernel write one element past the empty allocation.
+    // A zero-size output (some non-reduced dimension is 0) has nothing to hold,
+    // and a launch would write one element past the empty allocation.
     if out.numel() == 0 {
         return Ok(out);
     }
@@ -76,13 +80,16 @@ pub fn argmin(
     }
 
     let (outer_size, reduce_size, inner_size) = compute_reduce_strides(shape, dim);
+    // No index names an element of an empty dimension, and the kernel's seed
+    // read would land past the end of the empty allocation.
+    ensure_arg_reduce_dim_nonempty(reduce_size, dim, "argmin")?;
     let out_shape = reduce_dim_output_shape(shape, dim, keepdim);
 
     let a_contig = ensure_contiguous(a)?;
     let out = Tensor::<CudaRuntime>::empty(&out_shape, DType::I64, &client.device)?;
 
-    // `compute_reduce_strides` floors outer/inner at 1, so a zero-size output
-    // would still make the kernel write one element past the empty allocation.
+    // A zero-size output (some non-reduced dimension is 0) has nothing to hold,
+    // and a launch would write one element past the empty allocation.
     if out.numel() == 0 {
         return Ok(out);
     }

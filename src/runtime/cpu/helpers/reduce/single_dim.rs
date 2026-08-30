@@ -3,7 +3,7 @@
 use crate::dispatch_dtype;
 use crate::dtype::Element;
 use crate::error::{Error, Result};
-use crate::ops::{Kernel, ReduceOp, reduce_output_shape};
+use crate::ops::{Kernel, ReduceOp, max_identity, min_identity, reduce_output_shape};
 use crate::runtime::cpu::kernels::wide_acc::{WideAcc, int_mean_from_sum};
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
 use crate::tensor::Tensor;
@@ -107,15 +107,16 @@ pub(super) unsafe fn reduce_non_last_dim_outer<T: Element>(
 ) {
     // A zero-length reduce dimension leaves `Max` and `Min` with no element to
     // seed from, and the loop below seeds them by reading index `inner` of an
-    // empty allocation — a null dereference, since `CpuRuntime::allocate` hands
-    // back a null pointer for zero bytes. Both are given the identity of their
+    // empty allocation — a silent out-of-bounds read, since `CpuRuntime::allocate`
+    // hands back a dangling, non-null address for zero bytes. Both are given the identity of their
     // own reduction; every other op already starts from its identity and
     // iterates zero times.
     if reduce_size == 0 && matches!(op, ReduceOp::Max | ReduceOp::Min) {
+        // Floats fold to -/+inf, integers to the dtype's own extreme.
         let identity = if matches!(op, ReduceOp::Max) {
-            T::from_f64(T::DTYPE.min_value())
+            T::from_f64(max_identity(T::DTYPE))
         } else {
-            T::from_f64(T::DTYPE.max_value())
+            T::from_f64(min_identity(T::DTYPE))
         };
         for inner in 0..inner_size {
             *out.add(outer * inner_size + inner) = identity;

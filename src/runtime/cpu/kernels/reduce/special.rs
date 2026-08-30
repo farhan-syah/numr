@@ -114,6 +114,15 @@ pub unsafe fn softmax_kernel<T: Element>(
     outer_size: usize,
     dim_size: usize,
 ) {
+    // A zero-length softmax dimension makes the output empty, so there is
+    // nothing to write — but the SIMD paths below and the scalar fallback all
+    // seed their max from `a[base]`, which on an empty allocation reads past the
+    // end (`CpuRuntime::allocate` hands back a dangling, non-null address for
+    // zero bytes). Answer before any of them run.
+    if dim_size == 0 {
+        return;
+    }
+
     // Dispatch to SIMD for f32/f64 on x86-64 and aarch64
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {

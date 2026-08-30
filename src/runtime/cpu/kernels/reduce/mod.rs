@@ -11,7 +11,7 @@ pub use special::{
 };
 
 use crate::dtype::Element;
-use crate::ops::{AccumulationPrecision, ReduceOp};
+use crate::ops::{AccumulationPrecision, ReduceOp, max_identity, min_identity};
 use int_acc::{reduce_mean_int_kernel, reduce_sum_prod_int_kernel};
 
 /// Reduce along contiguous dimension with automatic SIMD dispatch
@@ -41,22 +41,24 @@ pub unsafe fn reduce_kernel<T: Element>(
 ) {
     // A zero-length reduce dimension leaves `Max` and `Min` with no element to
     // seed from, and every path below seeds them by reading `a[o * 0]`. The
-    // input allocation is empty here — `CpuRuntime::allocate` hands back a null
-    // pointer for zero bytes — so that read is a null dereference, not merely a
-    // wrong answer. `Sum`, `Mean`, `Prod`, `All` and `Any` all start from their
+    // input allocation is empty here — `CpuRuntime::allocate` hands back a
+    // dangling, non-null address for zero bytes — so that read is a silent
+    // out-of-bounds access, not merely a wrong answer. `Sum`, `Mean`, `Prod`, `All` and `Any` all start from their
     // identity and iterate zero times, so they need no special case; these two
     // are given the identity of their own reduction instead.
     if reduce_size == 0 {
         match op {
             ReduceOp::Max => {
-                let identity = T::from_f64(T::DTYPE.min_value());
+                // Floats fold to -inf, integers to the dtype's own minimum.
+                let identity = T::from_f64(max_identity(T::DTYPE));
                 for o in 0..outer_size {
                     *out.add(o) = identity;
                 }
                 return;
             }
             ReduceOp::Min => {
-                let identity = T::from_f64(T::DTYPE.max_value());
+                // Floats fold to +inf, integers to the dtype's own maximum.
+                let identity = T::from_f64(min_identity(T::DTYPE));
                 for o in 0..outer_size {
                     *out.add(o) = identity;
                 }
@@ -340,9 +342,9 @@ unsafe fn reduce_kernel_acc<T: Element, A: Accumulator>(
     reduce_size: usize,
     outer_size: usize,
 ) {
-    // Same null-dereference guard as `reduce_kernel`: `Max` and `Min` seed
-    // themselves from `a[o * 0]`, which is a read from the null pointer an empty
-    // CPU allocation hands back. See the comment there.
+    // Same out-of-bounds guard as `reduce_kernel`: `Max` and `Min` seed
+    // themselves from `a[o * 0]`, which reads past the end of the empty
+    // allocation. See the comment there.
     if reduce_size == 0 && matches!(op, ReduceOp::Max | ReduceOp::Min) {
         reduce_kernel(op, a, out, reduce_size, outer_size);
         return;

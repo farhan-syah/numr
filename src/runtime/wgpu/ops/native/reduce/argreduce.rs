@@ -6,7 +6,7 @@
 use super::super::helpers::*;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
-use crate::ops::reduce::reduce_output_shape;
+use crate::ops::reduce::{ensure_arg_reduce_dim_nonempty, reduce_output_shape};
 use crate::runtime::ensure_contiguous;
 use crate::runtime::wgpu::shaders::reduce;
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
@@ -33,6 +33,9 @@ pub(crate) fn native_argreduce_op(
     let a_contig = ensure_contiguous(a)?;
 
     let reduce_size = shape[dim];
+    // No index names an element of an empty dimension, and the shader's seed
+    // read would land past the end of the zero-byte allocation.
+    ensure_arg_reduce_dim_nonempty(reduce_size, dim, op)?;
     let outer_size: usize = shape[..dim].iter().product();
     let inner_size: usize = shape[dim + 1..].iter().product();
     let numel_out = outer_size * inner_size;

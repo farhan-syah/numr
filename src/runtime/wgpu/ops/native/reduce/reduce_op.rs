@@ -5,9 +5,10 @@
 //! kernel.
 
 use super::super::helpers::*;
+use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::ScalarOps;
-use crate::ops::reduce::reduce_output_shape;
+use crate::ops::reduce::{max_identity, min_identity, reduce_output_shape};
 use crate::runtime::RuntimeClient;
 use crate::runtime::ensure_contiguous;
 use crate::runtime::wgpu::shaders::reduce;
@@ -121,6 +122,20 @@ fn native_int_acc_reduce(
     result.reshape(out_shape)
 }
 
+/// Value one output element takes when a reduction folds over zero inputs.
+///
+/// `sum`/`mean`/`any` fold to 0, `prod`/`all` to 1, and `max`/`min` to the
+/// dtype's own extreme — negative/positive infinity for floats, which is what
+/// the CPU and CUDA kernels answer for the same shape.
+fn empty_reduce_identity(op: &str, dtype: DType) -> f64 {
+    match op {
+        "prod" | "all" => 1.0,
+        "max" => max_identity(dtype),
+        "min" => min_identity(dtype),
+        _ => 0.0,
+    }
+}
+
 fn native_single_dim_reduce(
     client: &WgpuClient,
     op: &'static str,
@@ -162,16 +177,17 @@ fn native_single_dim_reduce(
 
     // A zero-length reduce dimension over a NON-empty output: every output
     // element folds over no input, so the value is the reduction's identity and
-    // no dispatch can produce it — the input is the zero-byte allocation. `sum`
-    // and `mean` fold to the additive identity and `prod` to the multiplicative
-    // one; `max` and `min` have no identity over an empty set, and the zero is
-    // there only so the allocation is never handed back uninitialized.
+    // no dispatch can produce it — the input is the zero-byte allocation. `sum`,
+    // `mean` and `any` fold to the additive identity, `prod` and `all` to the
+    // multiplicative one, and `max`/`min` to the dtype's own extreme (-/+inf for
+    // floats). These must match what CPU and CUDA answer for the same shape.
     if a.numel() == 0 {
-        let zeros = Tensor::<WgpuRuntime>::zeros(&out_shape, dtype, client.device())?;
-        if op == "prod" {
-            return client.add_scalar(&zeros, 1.0);
-        }
-        return Ok(zeros);
+        return Tensor::<WgpuRuntime>::full_scalar(
+            &out_shape,
+            dtype,
+            empty_reduce_identity(op, dtype),
+            client.device(),
+        );
     }
 
     let a_buf = get_tensor_buffer(&a_contig)?;
@@ -209,17 +225,16 @@ fn native_full_reduce(
     let numel = a.numel();
 
     // A zero-element input has no buffer to bind, so the value is produced here
-    // rather than by a dispatch. `sum` and `mean` fold to the additive identity
-    // and `prod` to the multiplicative one; `max` and `min` have no identity
-    // over an empty set, and the zero is there only so the allocation is never
-    // handed back uninitialized. The caller reshapes this to the reduction's
-    // output shape, so the `[1]` result keeps that contract.
+    // rather than by a dispatch: each op folds to its own identity. The caller
+    // reshapes this to the reduction's output shape, so the `[1]` result keeps
+    // that contract.
     if numel == 0 {
-        let out = Tensor::<WgpuRuntime>::zeros(&[1], dtype, client.device())?;
-        if op == "prod" {
-            return client.add_scalar(&out, 1.0);
-        }
-        return Ok(out);
+        return Tensor::<WgpuRuntime>::full_scalar(
+            &[1],
+            dtype,
+            empty_reduce_identity(op, dtype),
+            client.device(),
+        );
     }
 
     // For mean, we need to divide by numel at the end

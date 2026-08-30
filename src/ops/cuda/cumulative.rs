@@ -205,10 +205,17 @@ impl CumulativeOps<CudaRuntime> for CudaClient {
             }
         }
 
-        // Handle empty tensor
+        // Every output element folds over no input: `log(sum of nothing)` is
+        // `log(0)`, so the identity is -inf. An empty output takes the same
+        // path and stays empty. Never hand back the uninitialized allocation.
         if a_compute.numel() == 0 {
             let out_shape = reduce_output_shape(shape, &actual_dims, keepdim);
-            let out = Tensor::<CudaRuntime>::empty(&out_shape, a_compute.dtype(), &self.device)?;
+            let out = Tensor::<CudaRuntime>::full_scalar(
+                &out_shape,
+                a_compute.dtype(),
+                f64::NEG_INFINITY,
+                &self.device,
+            )?;
             // Cast back to original dtype if needed
             return if needs_cast {
                 Ok(self.cast(&out, input_dtype)?)

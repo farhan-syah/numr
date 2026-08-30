@@ -473,6 +473,11 @@ unsafe fn softmax_non_last_dim<T: crate::dtype::Element>(
     dim_size: usize,
     inner_size: usize,
 ) {
+    // Empty softmax dim: nothing to write, and the max seed below would read past the empty input.
+    if dim_size == 0 {
+        return;
+    }
+
     unsafe {
         for outer in 0..outer_size {
             for inner in 0..inner_size {
