@@ -11,8 +11,12 @@ keywords = ["tensor", "ndarray", "linear-algebra", "gpu", "fft"]
 categories = ["science", "mathematics", "data-structures"]
 
 [package.metadata.docs.rs]
-features = ["f16", "sparse"]
-# cuda and wgpu require hardware SDKs not available on docs.rs
+features = ["f16", "sparse", "fp8", "wgpu"]
+# Everything that builds without a vendor SDK is documented. `wgpu` needs a GPU
+# adapter to RUN, not to compile, so the WebGPU backend is documented too.
+# `cuda` is excluded because build.rs invokes nvcc, which docs.rs does not have.
+# `distributed` is excluded because it pulls nexar; a dependency that fails to
+# resolve takes the whole docs build down with it.
 
 [features]
 default = ["rayon"]

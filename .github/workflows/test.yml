@@ -41,8 +41,8 @@ jobs:
       - name: Run clippy (all CI-safe features)
         run: cargo clippy --all-targets --features f16,sparse -- -D warnings
 
-      - name: Build docs
-        run: cargo doc --no-deps --features f16,sparse
+      - name: Build docs (docs.rs feature set)
+        run: cargo doc --no-deps --features f16,sparse,fp8,wgpu
 
       - name: Run doctests
         run: cargo test --doc --features f16,sparse
