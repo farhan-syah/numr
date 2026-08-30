@@ -5,11 +5,13 @@ All notable changes to numr will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 numr uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-This file starts at 0.7.0. Releases before it are not covered.
+One entry, covering everything up to and including 0.7.0. Tags `v0.1.0` through
+`v0.6.1` predate this file and are folded in here rather than reconstructed, so
+nothing below is stated as a delta against an earlier version.
 
 ---
 
-## [Unreleased] — 0.7.0
+## [Unreleased] — <= 0.7.0
 
 Tensors, linear algebra, FFT, and autograd behind one API on CPU, CUDA, and WebGPU.
 Every kernel is written in-house — no cuBLAS, cuSOLVER, or MKL.
@@ -31,30 +33,15 @@ Every kernel is written in-house — no cuBLAS, cuSOLVER, or MKL.
 - **Sparse** (`sparse`) — CSR, CSC, COO with conversions, element-wise ops, SpMM, SpMV, and sparse LU / QR with COLAMD ordering.
 - **Distributed** (`distributed`, `nccl`) — a `Communicator` trait over NCCL, nexar, hierarchical, and no-op backends, plus process groups.
 
-### Changed
+### Semantics
 
-These change results that earlier code could observe. Read them before upgrading.
+Behaviour a caller must know. These are contracts, not defaults.
 
-- `pow_scalar` on an integer tensor returns F64 when the exponent is not a whole non-negative number. A caller reading the result as an integer now fails at runtime. An op's output dtype depends on its input dtypes, never on a value.
-- Integer accumulators saturate at the dtype's bound. This covers `sum`, `prod`, `mean`, `cumsum`, `cumprod`, `matmul`, and `scatter_reduce`. They wrapped before.
-- Integer element-wise ops wrap. `add`, `sub`, `mul`, and the fused forms panicked on overflow in debug builds.
-- Integer division by zero returns 0, and `INT_MIN / -1` returns `INT_MIN`. Both panicked before.
-- `matmul_bias` on I8 takes an I32 bias and returns I32, matching `matmul` on I8. It took an I8 bias and saturated the result into I8 before.
-- The GEMM epilogue ops (`matmul_bias_activation`, `matmul_bias_residual`, and the backward form) reject I8. They shared `matmul_bias`'s validator, so an I8 call would have read a wider bias buffer as I8.
-- `matmul_output_dtype` is public. A caller needs it to size a bias, because I8 widens.
-
-### Fixed
-
-- Multi-dimension `var` computed the variance of the variances. For `[[1, 2], [3, 4]]` it returned 0 where the answer is 1.25. `std` inherited it.
-- Multi-dimension integer `mean` returned a different value above 1 MiB or on a non-contiguous input, because only the small contiguous path divided once.
-- Integer `matmul_bias` saturated the product and then wrapped the bias into the element type.
-- CUDA `max` and `min` on F32 and F64 disagreed with CPU on NaN.
-- CUDA `cast` rejected U32 and the narrow integer widths, so no U32 tensor could be built on a GPU.
-- CUDA had no integer reduction kernels and no U32 kernels for element-wise, compare, scalar, indexing, sort, or matmul ops.
-- WebGPU had no integer matmul, semiring, `topk`, `searchsorted`, `clamp`, `linspace`, or fused element-wise kernels.
-- WebGPU integer scatter shaders bound read-only storage against a read-write layout, which failed pipeline creation and lost the device.
-- WebGPU integer reductions narrowed to the element type between passes, and `scatter_reduce` wrapped on an overflowing sum.
-- WebGPU converted a float to an unsigned integer without a range guard, which WGSL leaves implementation-defined.
+- **Output dtype is a function of input dtypes, never input values.** `pow_scalar` on an integer tensor returns F64 unless the exponent is a whole non-negative number. `matmul_output_dtype` is public so a caller can size a bias against it.
+- **Integer accumulators saturate** at the dtype's bound: `sum`, `prod`, `mean`, `cumsum`, `cumprod`, `matmul`, `scatter_reduce`.
+- **Integer element-wise ops wrap**: `add`, `sub`, `mul`, and the fused forms.
+- **Integer division by zero returns 0**, and `INT_MIN / -1` returns `INT_MIN`. Neither panics.
+- **I8 matmul widens to I32.** `matmul_bias` on I8 takes an I32 bias and returns I32. The GEMM epilogue ops (`matmul_bias_activation`, `matmul_bias_residual`, and the backward form) reject I8 rather than read a wider bias buffer as I8.
 
 ### Notes
 
