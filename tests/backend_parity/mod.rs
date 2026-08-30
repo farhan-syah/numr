@@ -21,6 +21,7 @@ pub mod einsum;
 pub mod empty_shapes_elementwise;
 pub mod empty_shapes_fft;
 pub mod empty_shapes_normalization;
+pub mod empty_shapes_reduce_identity;
 pub mod empty_shapes_shape_ops;
 pub mod empty_shapes_structural;
 pub mod fft;
