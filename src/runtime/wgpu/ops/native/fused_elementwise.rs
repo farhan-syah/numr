@@ -42,6 +42,12 @@ pub(crate) fn native_fused_mul_add(
     let numel = a.numel();
     let out = alloc_output(client, a.shape(), dtype)?;
 
+    // A zero-element tensor has nothing to compute, and `get_tensor_buffer` has
+    // no buffer to return for a zero-byte allocation.
+    if numel == 0 {
+        return Ok(out);
+    }
+
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
     let c_buf = get_tensor_buffer(&c_contig)?;
@@ -96,6 +102,12 @@ pub(crate) fn native_fused_add_mul(
     let numel = a.numel();
     let out = alloc_output(client, a.shape(), dtype)?;
 
+    // A zero-element tensor has nothing to compute, and `get_tensor_buffer` has
+    // no buffer to return for a zero-byte allocation.
+    if numel == 0 {
+        return Ok(out);
+    }
+
     let a_buf = get_tensor_buffer(&a_contig)?;
     let b_buf = get_tensor_buffer(&b_contig)?;
     let c_buf = get_tensor_buffer(&c_contig)?;
@@ -126,6 +138,12 @@ pub(crate) fn native_fused_mul_add_scalar(
     let a_contig = ensure_contiguous(a)?;
     let numel = a.numel();
     let out = alloc_output(client, a.shape(), dtype)?;
+
+    // A zero-element tensor has nothing to compute, and `get_tensor_buffer` has
+    // no buffer to return for a zero-byte allocation.
+    if numel == 0 {
+        return Ok(out);
+    }
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

@@ -8,6 +8,7 @@ use super::super::helpers::*;
 use crate::error::{Error, Result};
 use crate::ops::ScalarOps;
 use crate::ops::reduce::reduce_output_shape;
+use crate::runtime::RuntimeClient;
 use crate::runtime::ensure_contiguous;
 use crate::runtime::wgpu::shaders::reduce;
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
@@ -151,6 +152,28 @@ fn native_single_dim_reduce(
 
     let out = alloc_output(client, &out_shape, dtype)?;
 
+    // A zero-element output has nothing to hold, and `get_tensor_buffer` has no
+    // buffer to return for its zero-byte allocation. `outer_size`, `inner_size`
+    // and `numel_out` are all floored at 1 below, so reaching the dispatch would
+    // bind a buffer the output does not have.
+    if out.numel() == 0 {
+        return Ok(out);
+    }
+
+    // A zero-length reduce dimension over a NON-empty output: every output
+    // element folds over no input, so the value is the reduction's identity and
+    // no dispatch can produce it — the input is the zero-byte allocation. `sum`
+    // and `mean` fold to the additive identity and `prod` to the multiplicative
+    // one; `max` and `min` have no identity over an empty set, and the zero is
+    // there only so the allocation is never handed back uninitialized.
+    if a.numel() == 0 {
+        let zeros = Tensor::<WgpuRuntime>::zeros(&out_shape, dtype, client.device())?;
+        if op == "prod" {
+            return client.add_scalar(&zeros, 1.0);
+        }
+        return Ok(zeros);
+    }
+
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
@@ -184,6 +207,20 @@ fn native_full_reduce(
     let dtype = a.dtype();
     let a_contig = ensure_contiguous(a)?;
     let numel = a.numel();
+
+    // A zero-element input has no buffer to bind, so the value is produced here
+    // rather than by a dispatch. `sum` and `mean` fold to the additive identity
+    // and `prod` to the multiplicative one; `max` and `min` have no identity
+    // over an empty set, and the zero is there only so the allocation is never
+    // handed back uninitialized. The caller reshapes this to the reduction's
+    // output shape, so the `[1]` result keeps that contract.
+    if numel == 0 {
+        let out = Tensor::<WgpuRuntime>::zeros(&[1], dtype, client.device())?;
+        if op == "prod" {
+            return client.add_scalar(&out, 1.0);
+        }
+        return Ok(out);
+    }
 
     // For mean, we need to divide by numel at the end
     let is_mean = op == "mean";

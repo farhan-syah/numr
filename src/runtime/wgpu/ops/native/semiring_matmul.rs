@@ -35,6 +35,14 @@ pub(crate) fn native_semiring_matmul(
     let out_shape = matmul_output_shape(a.shape(), b.shape())
         .ok_or_else(|| Error::shape_mismatch(a.shape(), b.shape()))?;
 
+    // A zero-element output has nothing to compute. The dispatches below derive
+    // their workgroup counts from `m`, `n` and the batch extent, and every
+    // buffer they bind comes from `get_tensor_buffer`, which has no buffer to
+    // return for a zero-byte allocation. Hand the empty result back first.
+    if out_shape.iter().product::<usize>() == 0 {
+        return alloc_output(client, &out_shape, dtype);
+    }
+
     // Operands the batched kernel cannot index directly are flattened to 3D first.
     if let Some((a3, b3)) = flatten_batched_operands(a, b, &out_shape)? {
         return native_semiring_matmul(client, &a3, &b3, op)?.reshape(&out_shape);

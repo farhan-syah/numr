@@ -48,6 +48,12 @@ pub(crate) fn native_cumsum(
     // Output has same shape as input
     let out = alloc_output(client, shape, dtype)?;
 
+    // A zero-element tensor has nothing to scan, and `get_tensor_buffer` has no
+    // buffer to return for a zero-byte allocation. Hand the empty result back.
+    if a.numel() == 0 {
+        return Ok(out);
+    }
+
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
@@ -133,6 +139,12 @@ pub(crate) fn native_cumprod(
 
     // Output has same shape as input
     let out = alloc_output(client, shape, dtype)?;
+
+    // A zero-element tensor has nothing to scan, and `get_tensor_buffer` has no
+    // buffer to return for a zero-byte allocation. Hand the empty result back.
+    if a.numel() == 0 {
+        return Ok(out);
+    }
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
@@ -285,6 +297,12 @@ fn native_logsumexp_single_dim(
     };
 
     let out = alloc_output(client, &out_shape, dtype)?;
+
+    // A zero-element input or output has nothing to reduce, and
+    // `get_tensor_buffer` has no buffer to return for a zero-byte allocation.
+    if a.numel() == 0 || out.numel() == 0 {
+        return Ok(out);
+    }
 
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;

@@ -117,6 +117,16 @@ fn accumulate(
         Tensor::zeros(&[output_len], plan.output_dtype, client.device())?
     };
 
+    // An empty input contributes to no bin, so the zeroed histogram above is
+    // already the answer. `get_tensor_buffer` has no buffer to return for the
+    // input's zero-byte allocation, so the dispatch must not be reached.
+    if n == 0 {
+        if plan.weights.is_none() {
+            return client.cast(&output, DType::I64);
+        }
+        return Ok(output);
+    }
+
     // Get buffers
     let input_buf = get_tensor_buffer(&plan.input)?;
     let output_buf = get_tensor_buffer(&output)?;

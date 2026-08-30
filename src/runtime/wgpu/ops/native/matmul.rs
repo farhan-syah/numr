@@ -5,7 +5,10 @@ use super::matmul_broadcast::flatten_batched_operands;
 use crate::dtype::DType;
 use crate::error::Error;
 use crate::error::Result;
-use crate::ops::{matmul_bias_output_shape, matmul_output_shape, validate_matmul_bias_dtypes};
+use crate::ops::{
+    BinaryOps, matmul_bias_output_shape, matmul_output_shape, validate_matmul_bias_dtypes,
+};
+use crate::runtime::RuntimeClient;
 use crate::runtime::ensure_contiguous;
 use crate::runtime::wgpu::shaders::{gemv_bt, matmul};
 use crate::runtime::wgpu::{WgpuClient, WgpuRuntime};
@@ -48,6 +51,20 @@ pub(crate) fn native_matmul(
 
     let a_shape = a.shape();
     let b_shape = b.shape();
+
+    // A zero-element output has nothing to compute, and `get_tensor_buffer` has
+    // no buffer to return for a zero-byte allocation. Every path below binds the
+    // output, so the empty result is returned before any of them runs.
+    if out_shape.iter().product::<usize>() == 0 {
+        return alloc_output(client, &out_shape, dtype);
+    }
+
+    // A contracted dimension of zero leaves a non-empty output whose every
+    // element sums over no terms, so the answer is zero. The operands are the
+    // empty allocations here, so this too must not reach a dispatch.
+    if a.numel() == 0 || b.numel() == 0 {
+        return Tensor::<WgpuRuntime>::zeros(&out_shape, dtype, client.device());
+    }
 
     // Operands the batched kernel cannot index directly are flattened to 3D first;
     // the recursive call then lands on the batched path below.
@@ -337,6 +354,19 @@ pub(crate) fn native_matmul_bias(
 
     let a_shape = a.shape();
     let b_shape = b.shape();
+
+    // A zero-element output has nothing to compute, and `get_tensor_buffer` has
+    // no buffer to return for a zero-byte allocation.
+    if out_shape.iter().product::<usize>() == 0 {
+        return alloc_output(client, &out_shape, dtype);
+    }
+
+    // A contracted dimension of zero leaves each output element summing over no
+    // terms, so the product part is zero and the bias alone remains.
+    if a.numel() == 0 || b.numel() == 0 {
+        let zeros = Tensor::<WgpuRuntime>::zeros(&out_shape, dtype, client.device())?;
+        return client.add(&zeros, bias);
+    }
 
     // Handle 2D case
     if a_shape.len() == 2 && b_shape.len() == 2 {

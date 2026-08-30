@@ -20,6 +20,12 @@ pub(crate) fn native_clamp(
 
     let out = alloc_output(client, a.shape(), dtype)?;
 
+    // A zero-element tensor has nothing to clamp, and `get_tensor_buffer` has no
+    // buffer to return for a zero-byte allocation.
+    if numel == 0 {
+        return Ok(out);
+    }
+
     let a_buf = get_tensor_buffer(&a_contig)?;
     let out_buf = get_tensor_buffer(&out)?;
 
@@ -66,6 +72,13 @@ pub(crate) fn native_where_cond(
     })?;
 
     let numel: usize = out_shape.iter().product();
+
+    // A zero-element result has nothing to select, and `get_tensor_buffer` has
+    // no buffer to return for a zero-byte allocation. Both paths below bind
+    // every operand, so the empty result is returned before either runs.
+    if numel == 0 {
+        return alloc_output(client, &out_shape, out_dtype);
+    }
 
     // Same shape case - use element-wise kernel
     if cond.shape() == x.shape() && x.shape() == y.shape() {

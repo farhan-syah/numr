@@ -83,6 +83,13 @@ pub(super) fn scatter_reduce(
     let src_dim_size = src.shape().get(dim).copied().unwrap_or(1);
     let total_src = src.numel();
 
+    // An empty destination has no slot any index could address, and neither
+    // `full_scalar` nor `add_scalar` below can bind a zero-byte allocation.
+    // The empty result is returned before either runs.
+    if dst.numel() == 0 {
+        return alloc_output(client, dst_shape, dtype);
+    }
+
     // Initialize output with identity for the operation
     let identity = match op {
         ScatterReduceOp::Sum | ScatterReduceOp::Mean => 0.0f64,
@@ -97,6 +104,13 @@ pub(super) fn scatter_reduce(
     } else {
         Tensor::full_scalar(dst_shape, dtype, identity, client.device())?
     };
+
+    // An empty source scatters nothing, leaving the identity-filled (or copied)
+    // output above as the whole result. `src` is the zero-byte allocation here,
+    // and `get_tensor_buffer` has no buffer to return for it.
+    if total_src == 0 {
+        return Ok(output);
+    }
 
     // Create shared params
     let params = ScatterReduceParams {
