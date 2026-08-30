@@ -194,15 +194,16 @@ impl DType {
     /// `rand` samples in `[0, 1)`. Narrowing an f64 sample near 1.0 to a
     /// dtype with few mantissa bits rounds it up to exactly 1.0, which
     /// breaks that contract. Every uniform generator clamps its output to
-    /// this bound instead of the raw sample. `None` for F32/F64, wide
-    /// enough that narrowing never reaches 1.0, and for non-float dtypes,
-    /// where the question does not apply.
+    /// this bound instead of the raw sample. `None` for F64, where the
+    /// sample is already f64 and no narrowing occurs, and for non-float
+    /// dtypes, where the question does not apply.
     pub fn largest_value_below_one(self) -> Option<f64> {
         match self {
-            Self::F16 => Some(0.99951171875), // 2047/2048, 10 mantissa bits
-            Self::BF16 => Some(0.99609375),   // 255/256, 7 mantissa bits
-            Self::FP8E4M3 => Some(0.9375),    // 15/16, 3 mantissa bits
-            Self::FP8E5M2 => Some(0.875),     // 7/8, 2 mantissa bits
+            Self::F32 => Some(0.99999994039535522), // 0x3F7FFFFF, 1 - 2^-24, 23 mantissa bits
+            Self::F16 => Some(0.99951171875),       // 2047/2048, 10 mantissa bits
+            Self::BF16 => Some(0.99609375),         // 255/256, 7 mantissa bits
+            Self::FP8E4M3 => Some(0.9375),          // 15/16, 3 mantissa bits
+            Self::FP8E5M2 => Some(0.875),           // 7/8, 2 mantissa bits
             _ => None,
         }
     }
@@ -301,5 +302,18 @@ impl DType {
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.short_name())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f32_largest_value_below_one_is_predecessor_of_one() {
+        let bound = DType::F32.largest_value_below_one().unwrap();
+        let bound_f32 = bound as f32;
+        assert!(bound_f32 < 1.0);
+        assert_eq!(bound_f32, f32::from_bits(0x3F7FFFFF));
     }
 }

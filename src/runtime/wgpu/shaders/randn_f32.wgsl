@@ -21,7 +21,10 @@ fn pcg_init(seed_lo: u32, seed_hi: u32, idx: u32) -> u32 {
 // Generate uniform float in [0, 1)
 fn pcg_uniform(state: ptr<function, u32>) -> f32 {
     *state = pcg_hash(*state);
-    return f32(*state) / 4294967296.0;  // Divide by 2^32
+    // f32(state) rounds up to 2^32 at the top of the u32 range, which would
+    // return exactly 1.0 against a documented [0, 1). Clamp to the largest f32
+    // below 1.0 -- the shader twin of `DType::largest_value_below_one`.
+    return min(f32(*state) / 4294967296.0, 0.99999994);
 }
 
 // Box-Muller transform for normal distribution

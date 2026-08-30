@@ -236,6 +236,14 @@ __global__ void latin_hypercube_f32(float* out, unsigned int n_samples, unsigned
             float lower = (float)interval / (float)n_samples;
             float upper = (float)(interval + 1) / (float)n_samples;
             float random_offset = (float)xorshift128plus_uniform(&state);
+            // random_offset must stay in [0, 1). Narrowing the f64 sample to
+            // f32 can round a value near 1.0 up to exactly 1.0, so clamp to
+            // F32's largest value below 1.0: `largest_value_below_one` in
+            // `src/dtype/dtype_enum.rs` is the authority for this bound
+            // (1 - 2^-24, 23 mantissa bits).
+            if (random_offset >= 1.0f) {
+                random_offset = 0.99999994039535522f;
+            }
 
             out[i * dimension + dim] = lower + random_offset * (upper - lower);
         }

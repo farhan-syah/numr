@@ -117,7 +117,7 @@ pub(crate) fn sample_uniform(rng: &mut Xoshiro256) -> f64 {
 /// Narrowing an f64 sample near 1.0 to `T` can round it up to exactly 1.0
 /// for low-precision floats (FP8, F16, BF16). When that happens, replace it
 /// with `T::DTYPE`'s largest value strictly below 1.0
-/// ([`DType::largest_value_below_one`]). A no-op for F32/F64 and integers.
+/// ([`DType::largest_value_below_one`]). A no-op for F64 and integers.
 #[inline(always)]
 pub(crate) fn clamp_uniform_sample<T: crate::dtype::Element>(val: T) -> T {
     if val.to_f64() >= 1.0
@@ -280,6 +280,16 @@ mod tests {
         let var = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
         assert!(mean.abs() < 0.05, "mean = {mean}");
         assert!((var - 1.0).abs() < 0.1, "var = {var}");
+    }
+
+    #[test]
+    fn test_clamp_uniform_sample_f32() {
+        let clamped = clamp_uniform_sample::<f32>(1.0f32);
+        assert!(clamped < 1.0);
+        assert_eq!(clamped, f32::from_bits(0x3F7FFFFF));
+
+        let unchanged = clamp_uniform_sample::<f32>(0.5f32);
+        assert_eq!(unchanged, 0.5f32);
     }
 
     #[test]

@@ -21,7 +21,15 @@ __global__ void rand_f32(float* out, unsigned long long seed, unsigned int n) {
     if (idx < n) {
         XorShift128PlusState state;
         xorshift128plus_init(&state, seed, idx);
-        out[idx] = (float)xorshift128plus_uniform(&state);
+        float val = (float)xorshift128plus_uniform(&state);
+        // rand must stay in [0, 1). Narrowing the f64 sample to f32 can round
+        // a value near 1.0 up to exactly 1.0, so clamp to F32's largest value
+        // below 1.0: `largest_value_below_one` in `src/dtype/dtype_enum.rs`
+        // is the authority for this bound (1 - 2^-24, 23 mantissa bits).
+        if (val >= 1.0f) {
+            val = 0.99999994039535522f;
+        }
+        out[idx] = val;
     }
 }
 

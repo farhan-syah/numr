@@ -64,6 +64,22 @@ fn test_rand_seeded_reproducibility_cuda() {
     });
 }
 
+#[cfg(feature = "cuda")]
+#[test]
+fn test_rand_seeded_f32_never_reaches_one_cuda() {
+    // Regression: rand_f32 narrowed a raw f64 uniform sample to f32 with no
+    // clamp. A sample in [1 - 2^-25, 1) rounds to exactly 1.0f32 under
+    // round-to-nearest, breaking the documented [0, 1) contract. A large
+    // tensor makes this land reliably at the ~2^-25 per-sample probability.
+    with_cuda_backend(|client, _device| {
+        let a = client.rand_seeded(&[10_000_000], DType::F32, 7).unwrap();
+        let a_vec: Vec<f32> = a.to_vec();
+        for &v in &a_vec {
+            assert!((0.0..1.0).contains(&v), "value out of range: {v}");
+        }
+    });
+}
+
 #[cfg(feature = "wgpu")]
 #[test]
 fn test_rand_seeded_reproducibility_wgpu() {

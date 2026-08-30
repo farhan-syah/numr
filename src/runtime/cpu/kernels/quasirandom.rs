@@ -249,7 +249,7 @@ pub unsafe fn latin_hypercube_f32(out: *mut f32, n_samples: usize, dimension: us
         for (i, &interval) in intervals.iter().enumerate() {
             let lower = interval as f32 / n_samples as f32;
             let upper = (interval + 1) as f32 / n_samples as f32;
-            let random_offset = rng::sample_uniform(&mut prng) as f32;
+            let random_offset = rng::clamp_uniform_sample(rng::sample_uniform(&mut prng) as f32);
 
             *out.add(i * dimension + d) = lower + random_offset * (upper - lower);
         }
