@@ -38,6 +38,16 @@ impl UtilityOps<CudaRuntime> for CudaClient {
             return Tensor::<CudaRuntime>::empty(shape, dtype, &self.device);
         }
 
+        // `FillValue::from_f64` stores Bool as a raw `value as u8`, which is
+        // wrong for any fill value other than 0.0/1.0 (e.g. `fill(_, 2.0,
+        // Bool)` would write byte 2, not the boolean collapse). Route through
+        // the dtype-generic constructor instead, which applies the
+        // crate-wide Bool convention (any nonzero, NaN included, is true)
+        // and matches CPU/WebGPU `fill` above/below.
+        if dtype == DType::Bool {
+            return Tensor::<CudaRuntime>::full_scalar(shape, dtype, value, &self.device);
+        }
+
         // Allocate output tensor
         let out = Tensor::<CudaRuntime>::empty(shape, dtype, &self.device)?;
 

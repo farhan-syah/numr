@@ -45,6 +45,14 @@ impl UtilityOps<CpuRuntime> for CpuClient {
     }
 
     fn fill(&self, shape: &[usize], value: f64, dtype: DType) -> Result<Tensor<CpuRuntime>> {
+        // `dispatch_dtype!` has no Bool arm (Bool is not a numeric `Element`),
+        // so route through the dtype-generic constructor. It already applies
+        // the crate-wide Bool convention (any nonzero, NaN included, is true)
+        // and matches CUDA/WebGPU `fill` below.
+        if dtype == DType::Bool {
+            return Tensor::<CpuRuntime>::full_scalar(shape, dtype, value, &self.device);
+        }
+
         let out = Tensor::<CpuRuntime>::empty(shape, dtype, &self.device)?;
         let out_ptr = out.ptr();
         let numel = out.numel();

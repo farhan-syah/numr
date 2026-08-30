@@ -1,6 +1,7 @@
 //! Element-wise unary op launcher for the CUDA client.
 
-use crate::error::Result;
+use crate::dtype::DType;
+use crate::error::{Error, Result};
 use crate::runtime::cuda::kernels::launch_unary_op;
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::runtime::ensure_contiguous;
@@ -19,6 +20,15 @@ pub(crate) fn native_unary_op(
     op: &'static str,
 ) -> Result<Tensor<CudaRuntime>> {
     let dtype = a.dtype();
+
+    // `unary.cu` instantiates no `bool` row, so an unguarded launch would
+    // fail kernel lookup with an opaque `Error::Internal`. CPU rejects Bool
+    // here too (`dispatch_dtype!` has no Bool arm), so report the same
+    // `UnsupportedDType` CPU does instead of a symbol-not-found error.
+    if dtype == DType::Bool {
+        return Err(Error::UnsupportedDType { dtype, op });
+    }
+
     let a_contig = ensure_contiguous(a)?;
     let out = Tensor::<CudaRuntime>::empty(a.shape(), dtype, &client.device)?;
 

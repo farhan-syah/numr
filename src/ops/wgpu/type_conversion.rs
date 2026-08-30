@@ -30,11 +30,11 @@ impl WgpuClient {
             DType::I32 => a_contig.to_vec::<i32>().iter().map(|&v| v as f64).collect(),
             DType::I64 => a_contig.to_vec::<i64>().iter().map(|&v| v as f64).collect(),
             DType::U32 => a_contig.to_vec::<u32>().iter().map(|&v| v as f64).collect(),
-            DType::Bool => a_contig
-                .to_vec::<u8>()
-                .iter()
-                .map(|&v| if v != 0 { 1.0 } else { 0.0 })
-                .collect(),
+            // Bool is stored as a raw byte, exactly like CPU and CUDA: the
+            // stored value (not a collapsed 0/1) is what feeds the cast, so
+            // a byte holding something other than 0 or 1 casts identically
+            // on every backend instead of only here being clamped early.
+            DType::Bool => a_contig.to_vec::<u8>().iter().map(|&v| v as f64).collect(),
             #[cfg(feature = "f16")]
             DType::F16 => a_contig
                 .to_vec::<half::f16>()

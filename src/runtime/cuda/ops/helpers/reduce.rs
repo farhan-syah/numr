@@ -3,7 +3,8 @@
 //! Reduces one dimension per kernel launch, reshaping to the requested output
 //! shape once every dimension has been consumed.
 
-use crate::error::Result;
+use crate::dtype::DType;
+use crate::error::{Error, Result};
 use crate::ops::reduce_output_shape;
 use crate::runtime::cuda::kernels::{AccumulationPrecision, launch_reduce_dim_op};
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
@@ -31,6 +32,16 @@ pub(crate) fn native_reduce_op(
     precision: Option<AccumulationPrecision>,
 ) -> Result<Tensor<CudaRuntime>> {
     let dtype = a.dtype();
+
+    // `reduce.cu`/`reduce_int.cu` instantiate no `bool` row, so an unguarded
+    // launch would fail kernel lookup with an opaque `Error::Internal`. CPU
+    // rejects Bool here too (`dispatch_dtype!` has no Bool arm), so report
+    // the same `UnsupportedDType` CPU does instead of a symbol-not-found
+    // error.
+    if dtype == DType::Bool {
+        return Err(Error::UnsupportedDType { dtype, op });
+    }
+
     let out_shape = reduce_output_shape(a.shape(), dims, keepdim);
     let acc_precision = precision.unwrap_or_default();
 

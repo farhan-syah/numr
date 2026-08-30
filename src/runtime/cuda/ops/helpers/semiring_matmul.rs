@@ -2,6 +2,11 @@
 //!
 //! The semiring op is a kernel argument, so both forms share one kernel name
 //! per dtype.
+//!
+//! `out_dtype` and `kernel_dtype` are separate because Bool has no kernel of its
+//! own: it shares U8's, the two being one byte wide. Selecting that kernel must
+//! not relabel the RESULT, whose dtype is fixed by the input's — so the output is
+//! allocated as `out_dtype` while the launch dispatches on `kernel_dtype`.
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -19,7 +24,8 @@ pub(crate) fn semiring_matmul_native(
     client: &CudaClient,
     a: &Tensor<CudaRuntime>,
     b: &Tensor<CudaRuntime>,
-    dtype: DType,
+    out_dtype: DType,
+    kernel_dtype: DType,
     m: usize,
     k: usize,
     n: usize,
@@ -33,14 +39,14 @@ pub(crate) fn semiring_matmul_native(
         got: b.shape().to_vec(),
     })?;
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &client.device)?;
 
     unsafe {
         launch_semiring_matmul_kernel(
             &client.context,
             &client.stream,
             client.device.index,
-            dtype,
+            kernel_dtype,
             a_contig.ptr(),
             b_contig.ptr(),
             out.ptr(),
@@ -59,7 +65,8 @@ pub(crate) fn semiring_matmul_batched_native(
     client: &CudaClient,
     a: &Tensor<CudaRuntime>,
     b: &Tensor<CudaRuntime>,
-    dtype: DType,
+    out_dtype: DType,
+    kernel_dtype: DType,
     batch: usize,
     m: usize,
     k: usize,
@@ -77,14 +84,14 @@ pub(crate) fn semiring_matmul_batched_native(
     let (a_contig, b_contig) = operands.contiguous()?;
     let (a_batch, b_batch) = (operands.a_batch, operands.b_batch);
 
-    let out = Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device)?;
+    let out = Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &client.device)?;
 
     unsafe {
         launch_semiring_matmul_batched_kernel(
             &client.context,
             &client.stream,
             client.device.index,
-            dtype,
+            kernel_dtype,
             a_contig.ptr(),
             b_contig.ptr(),
             out.ptr(),

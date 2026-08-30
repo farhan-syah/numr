@@ -96,7 +96,9 @@ impl SemiringMatmulOps<CudaRuntime> for CudaClient {
 
         let op_code = semiring_op_code(op);
 
-        // Bool uses the u8 kernel (same underlying type)
+        // Bool has no kernel of its own and shares U8's, the two being one byte
+        // wide. That substitution selects the KERNEL only: the result's dtype is a
+        // function of the input's, so it stays Bool, matching CPU.
         let kernel_dtype = if dtype == DType::Bool {
             DType::U8
         } else {
@@ -104,9 +106,20 @@ impl SemiringMatmulOps<CudaRuntime> for CudaClient {
         };
 
         if batch_size > 1 {
-            semiring_matmul_batched_native(self, a, b, kernel_dtype, batch_size, m, k, n, op_code)
+            semiring_matmul_batched_native(
+                self,
+                a,
+                b,
+                dtype,
+                kernel_dtype,
+                batch_size,
+                m,
+                k,
+                n,
+                op_code,
+            )
         } else {
-            semiring_matmul_native(self, a, b, kernel_dtype, m, k, n, op_code)
+            semiring_matmul_native(self, a, b, dtype, kernel_dtype, m, k, n, op_code)
         }
     }
 }

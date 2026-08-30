@@ -3,7 +3,8 @@
 //! Equal shapes take the contiguous kernel; unequal shapes take the strided
 //! broadcast kernel, so both stay on the GPU.
 
-use crate::error::Result;
+use crate::dtype::DType;
+use crate::error::{Error, Result};
 use crate::runtime::cuda::kernels::{launch_broadcast_compare_op, launch_compare_op};
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::runtime::{compute_broadcast_shape, ensure_contiguous, validate_binary_dtypes};
@@ -22,6 +23,15 @@ pub(crate) fn native_compare_op(
     op: &'static str,
 ) -> Result<Tensor<CudaRuntime>> {
     let dtype = validate_binary_dtypes(a, b)?;
+
+    // `compare.cu` instantiates no `bool` row, so an unguarded launch would
+    // fail kernel lookup with an opaque `Error::Internal`. CPU rejects Bool
+    // here too (`dispatch_dtype!` has no Bool arm), so report the same
+    // `UnsupportedDType` CPU does instead of a symbol-not-found error.
+    if dtype == DType::Bool {
+        return Err(Error::UnsupportedDType { dtype, op });
+    }
+
     let out_shape = compute_broadcast_shape(a, b)?;
 
     // A zero-element output has nothing to compute, and an empty launch grid

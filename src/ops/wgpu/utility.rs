@@ -25,6 +25,14 @@ impl UtilityOps<WgpuRuntime> for WgpuClient {
     }
 
     fn fill(&self, shape: &[usize], value: f64, dtype: DType) -> Result<Tensor<WgpuRuntime>> {
+        // `add_scalar` only runs natively on F32/I32/U32, so a zeros-plus-add
+        // fill can't reach Bool. Route through the dtype-generic constructor
+        // instead, matching CPU/CUDA `fill` and the crate-wide Bool
+        // convention (any nonzero, NaN included, is true).
+        if dtype == DType::Bool {
+            return Tensor::<WgpuRuntime>::full_scalar(shape, dtype, value, self.device());
+        }
+
         let zeros = Tensor::zeros(shape, dtype, self.device())?;
         self.add_scalar(&zeros, value)
     }
