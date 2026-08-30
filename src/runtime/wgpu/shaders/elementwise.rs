@@ -1,7 +1,8 @@
 //! Element-wise WGSL kernel launchers
 //!
 //! Binary and broadcast-binary ops support F32, I32, U32.
-//! Unary ops: most are F32 only; neg/abs/sign support I32, abs supports U32.
+//! Unary ops: most are F32 only; neg/abs/sign and the five rounding ops
+//! (identity on an integer) support I32 and U32.
 //! Scalar ops: F32, I32, U32.
 //! Compare ops: F32, I32, U32.
 
@@ -201,7 +202,8 @@ pub fn launch_broadcast_binary_op(
 // ============================================================================
 
 /// Launch a unary operation: `out[i] = op(a[i])`.
-/// Most ops are F32 only. neg/abs/sign support I32, neg/abs support U32.
+/// Most ops are F32 only. neg/abs/sign and the five rounding ops (identity on
+/// an integer) support I32 and U32.
 pub fn launch_unary_op(
     cache: &PipelineCache,
     queue: &Queue,
@@ -212,16 +214,15 @@ pub fn launch_unary_op(
     numel: usize,
     dtype: DType,
 ) -> Result<()> {
-    // For I32, only neg, abs and sign are supported; for U32, neg and abs.
+    // For I32 and U32: neg, abs, sign, and the five rounding ops (identity on
+    // an integer) are supported.
     match dtype {
         DType::F32 => {}
-        DType::I32 => {
-            if !matches!(op, "neg" | "abs" | "sign") {
-                return Err(Error::UnsupportedDType { dtype, op });
-            }
-        }
-        DType::U32 => {
-            if !matches!(op, "neg" | "abs") {
+        DType::I32 | DType::U32 => {
+            if !matches!(
+                op,
+                "neg" | "abs" | "sign" | "floor" | "ceil" | "round" | "round_ties_even" | "trunc"
+            ) {
                 return Err(Error::UnsupportedDType { dtype, op });
             }
         }

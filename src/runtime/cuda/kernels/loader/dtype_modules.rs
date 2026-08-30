@@ -28,9 +28,10 @@ pub(crate) fn cumulative_module(dtype: DType) -> &'static str {
 
 /// The PTX module holding this dtype's unary kernels.
 ///
-/// Integer `neg`, `abs`, `sign` and `square` live in their own translation
-/// unit: they wrap in the element type rather than computing through a float
-/// register, and `unary.cu` is far past its size limit. `unary_int.cu` uses the
+/// Integer `neg`, `abs`, `sign`, `square` and the rounding family live in their
+/// own translation unit: they wrap in the element type, or are the exact
+/// identity, rather than computing through a float register, and `unary.cu` is
+/// far past its size limit. `unary_int.cu` uses the
 /// same kernel names and the same launch ABI as `unary.cu`, so this is a
 /// straight swap of module, never of kernel name.
 ///

@@ -28,3 +28,59 @@ fn abs_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
         unary_out[idx] = unary_a[idx];
     }
 }
+
+// `sign` on an unsigned dtype has no negative branch: 0 for 0, 1 otherwise.
+// This matches the CPU and CUDA backends.
+@compute @workgroup_size(256)
+fn sign_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        if (unary_a[idx] == 0u) {
+            unary_out[idx] = 0u;
+        } else {
+            unary_out[idx] = 1u;
+        }
+    }
+}
+
+// floor/ceil/round/round_ties_even/trunc are the identity on an integer: every
+// U32 value is already its own nearest integer. This matches CPU and CUDA.
+@compute @workgroup_size(256)
+fn floor_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        unary_out[idx] = unary_a[idx];
+    }
+}
+
+@compute @workgroup_size(256)
+fn ceil_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        unary_out[idx] = unary_a[idx];
+    }
+}
+
+@compute @workgroup_size(256)
+fn round_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        unary_out[idx] = unary_a[idx];
+    }
+}
+
+@compute @workgroup_size(256)
+fn round_ties_even_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        unary_out[idx] = unary_a[idx];
+    }
+}
+
+@compute @workgroup_size(256)
+fn trunc_u32(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx < unary_params.numel) {
+        unary_out[idx] = unary_a[idx];
+    }
+}

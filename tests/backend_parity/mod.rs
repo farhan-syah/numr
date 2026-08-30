@@ -34,6 +34,7 @@ pub mod indexing_advanced;
 pub mod int_accumulate_wgpu;
 pub mod int_generators_wgpu;
 pub mod int_ops_wgpu;
+pub mod int_rounding_wgpu;
 #[cfg(feature = "sparse")]
 pub mod iterative_eigen;
 #[cfg(feature = "sparse")]

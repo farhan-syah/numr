@@ -75,10 +75,11 @@ pub unsafe fn unary_op_kernel<T: Element>(op: UnaryOp, a: *const T, out: *mut T,
 /// Scalar unary operation for all Element types
 #[inline]
 unsafe fn unary_op_scalar<T: Element>(op: UnaryOp, a: *const T, out: *mut T, len: usize) {
-    // Integer neg, abs and sign WRAP and are computed in the element type. The
-    // f64 round trip below saturates and loses every bit past the 53rd, so it
-    // answers `i32::MAX` for `neg(i32::MIN)` where CUDA and WebGPU both answer
-    // `i32::MIN`. See `int::unary_int_kernel`.
+    // Integer neg, abs and sign WRAP and are computed in the element type, and
+    // the rounding family is the exact identity there. The f64 round trip below
+    // saturates and loses every bit past the 53rd, so it answers `i32::MAX` for
+    // `neg(i32::MIN)` where CUDA and WebGPU both answer `i32::MIN`, and it does
+    // not round-trip `floor(9007199254740993i64)`. See `int::unary_int_kernel`.
     if unsafe { int::unary_int_kernel(op, a, out, len) } {
         return;
     }

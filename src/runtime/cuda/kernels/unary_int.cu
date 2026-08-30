@@ -16,10 +16,16 @@
 //   abs      every integer dtype. The identity on the unsigned ones.
 //   sign     every integer dtype. -1/0/1 signed, 0/1 unsigned.
 //   square   every integer dtype.
+//   floor, ceil, round, round_ties_even, trunc
+//            every integer dtype, and all five are the IDENTITY. An integer is
+//            already a whole number, so there is nothing to round and no tie to
+//            break. CPU answers the input unchanged
+//            (`cpu/kernels/unary/int.rs`), so these do too. Without them the
+//            lookup failed with `named symbol not found`.
 //
-// The transcendentals (exp, log, sqrt, the trig and hyperbolic families) and
-// the rounding ops are float-only in this crate and have no instantiation for
-// any integer dtype in any backend.
+// The transcendentals (exp, log, sqrt, the trig and hyperbolic families) are
+// float-only in this crate and have no instantiation for any integer dtype in
+// any backend.
 //
 // Element-wise integer ops WRAP. That is the convention documented in
 // `src/runtime/cpu/kernels/wide_acc.rs`, implemented on CPU by
@@ -119,6 +125,23 @@ extern "C" __global__ void square_##SUFFIX(const T* a, T* out, unsigned int n) {
     if (idx < n) { out[idx] = numr_uint_square<T>(a[idx]); } \
 }
 
+// The rounding family. One body, five names: rounding a whole number returns
+// it, so the copy is the whole kernel and the tie rule is irrelevant. Emitted
+// for signed and unsigned alike, which is why it is its own macro rather than a
+// member of the two above.
+#define NUMR_UNARY_INT_IDENTITY(T, SUFFIX, OP) \
+extern "C" __global__ void OP##_##SUFFIX(const T* a, T* out, unsigned int n) { \
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x; \
+    if (idx < n) { out[idx] = a[idx]; } \
+}
+
+#define NUMR_UNARY_INT_ROUNDING(T, SUFFIX) \
+NUMR_UNARY_INT_IDENTITY(T, SUFFIX, floor) \
+NUMR_UNARY_INT_IDENTITY(T, SUFFIX, ceil) \
+NUMR_UNARY_INT_IDENTITY(T, SUFFIX, round) \
+NUMR_UNARY_INT_IDENTITY(T, SUFFIX, round_ties_even) \
+NUMR_UNARY_INT_IDENTITY(T, SUFFIX, trunc)
+
 NUMR_UNARY_INT_SIGNED(signed char, unsigned char, i8)
 NUMR_UNARY_INT_SIGNED(short, unsigned short, i16)
 NUMR_UNARY_INT_SIGNED(int, unsigned int, i32)
@@ -128,3 +151,12 @@ NUMR_UNARY_INT_UNSIGNED(unsigned char, u8)
 NUMR_UNARY_INT_UNSIGNED(unsigned short, u16)
 NUMR_UNARY_INT_UNSIGNED(unsigned int, u32)
 NUMR_UNARY_INT_UNSIGNED(unsigned long long, u64)
+
+NUMR_UNARY_INT_ROUNDING(signed char, i8)
+NUMR_UNARY_INT_ROUNDING(short, i16)
+NUMR_UNARY_INT_ROUNDING(int, i32)
+NUMR_UNARY_INT_ROUNDING(long long, i64)
+NUMR_UNARY_INT_ROUNDING(unsigned char, u8)
+NUMR_UNARY_INT_ROUNDING(unsigned short, u16)
+NUMR_UNARY_INT_ROUNDING(unsigned int, u32)
+NUMR_UNARY_INT_ROUNDING(unsigned long long, u64)

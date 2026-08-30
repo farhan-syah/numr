@@ -1,5 +1,5 @@
-//! Wrapping integer `neg`, `abs`, `sign` and `square` for the element-wise
-//! unary kernels.
+//! Wrapping integer `neg`, `abs`, `sign` and `square`, plus the exact integer
+//! rounding family, for the element-wise unary kernels.
 //!
 //! The generic unary path converts each element to `f64`, applies the operation
 //! and converts back. That is wrong for integers twice over:
@@ -21,6 +21,13 @@
 //! Rust's `-x`, `x.abs()` and `x * x` panic on overflow in a debug build and
 //! wrap in a release build, so none may appear here: a tensor op's answer must
 //! not depend on the build profile.
+//!
+//! `floor`, `ceil`, `round`, `round_ties_even` and `trunc` are the IDENTITY on
+//! an integer dtype: an integer is already a whole number, so there is nothing
+//! to round. The `f64` round trip below computed the right value and then threw
+//! precision away carrying it back, so `floor(9007199254740993i64)` answered
+//! `9007199254740992` and `floor(u64::MAX)` saturated. Answering with the input
+//! itself is exact for every width.
 //!
 //! `neg` on an UNSIGNED dtype wraps like every other element-wise integer op:
 //! it is `0 - a` in modular arithmetic, so `neg(1u64)` is `u64::MAX`. That is
@@ -105,12 +112,18 @@ fn elem<T: WrappingIntUnary>(op: UnaryOp, a: T) -> Option<T> {
         UnaryOp::Abs => Some(a.w_abs()),
         UnaryOp::Sign => Some(a.w_sign()),
         UnaryOp::Square => Some(a.w_square()),
+        // Rounding an integer changes nothing, whatever the tie rule.
+        UnaryOp::Floor
+        | UnaryOp::Ceil
+        | UnaryOp::Round
+        | UnaryOp::RoundTiesEven
+        | UnaryOp::Trunc => Some(a),
         _ => None,
     }
 }
 
-/// Run `neg`, `abs`, `sign` or `square` over `len` contiguous elements when `T`
-/// is an integer dtype.
+/// Run `neg`, `abs`, `sign`, `square` or one of the rounding ops over `len`
+/// contiguous elements when `T` is an integer dtype.
 ///
 /// Returns `false` for every other operation and every other dtype, leaving the
 /// caller on its generic `f64` path. The `op` match sits inside the per-dtype
@@ -129,7 +142,15 @@ pub(super) unsafe fn unary_int_kernel<T: Element>(
 ) -> bool {
     if !matches!(
         op,
-        UnaryOp::Neg | UnaryOp::Abs | UnaryOp::Sign | UnaryOp::Square
+        UnaryOp::Neg
+            | UnaryOp::Abs
+            | UnaryOp::Sign
+            | UnaryOp::Square
+            | UnaryOp::Floor
+            | UnaryOp::Ceil
+            | UnaryOp::Round
+            | UnaryOp::RoundTiesEven
+            | UnaryOp::Trunc
     ) {
         return false;
     }
@@ -213,6 +234,44 @@ mod tests {
     #[test]
     fn abs_is_the_identity_on_unsigned_dtypes() {
         assert_eq!(elem::<u32>(UnaryOp::Abs, u32::MAX), Some(u32::MAX));
+    }
+
+    #[test]
+    fn rounding_is_the_exact_identity_past_the_f64_mantissa() {
+        // 2^53 + 1 has no f64 representation, so the round trip answered
+        // 9007199254740992 here.
+        assert_eq!(
+            elem::<i64>(UnaryOp::Floor, 9007199254740993),
+            Some(9007199254740993)
+        );
+        assert_eq!(elem::<u64>(UnaryOp::Ceil, u64::MAX), Some(u64::MAX));
+        assert_eq!(elem::<i64>(UnaryOp::Round, i64::MIN), Some(i64::MIN));
+        assert_eq!(
+            elem::<i64>(UnaryOp::RoundTiesEven, i64::MAX),
+            Some(i64::MAX)
+        );
+        assert_eq!(
+            elem::<i64>(UnaryOp::Trunc, -9007199254740993),
+            Some(-9007199254740993)
+        );
+    }
+
+    #[test]
+    fn rounding_is_claimed_for_every_integer_width() {
+        for op in [
+            UnaryOp::Floor,
+            UnaryOp::Ceil,
+            UnaryOp::Round,
+            UnaryOp::RoundTiesEven,
+            UnaryOp::Trunc,
+        ] {
+            assert_eq!(elem::<i8>(op, -7), Some(-7));
+            assert_eq!(elem::<u8>(op, 200), Some(200));
+            assert_eq!(elem::<i16>(op, i16::MIN), Some(i16::MIN));
+            assert_eq!(elem::<u16>(op, u16::MAX), Some(u16::MAX));
+            assert_eq!(elem::<i32>(op, i32::MIN), Some(i32::MIN));
+            assert_eq!(elem::<u32>(op, u32::MAX), Some(u32::MAX));
+        }
     }
 
     #[test]

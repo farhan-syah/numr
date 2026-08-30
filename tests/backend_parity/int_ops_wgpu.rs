@@ -483,3 +483,31 @@ fn test_neg_u32_parity() {
         assert_parity_u32(&got.to_vec::<u32>(), &cpu.to_vec::<u32>(), "neg u32");
     });
 }
+
+// ============================================================================
+// sign on U32
+//
+// `sign` on an unsigned dtype has no negative branch: 0 for 0, 1 for everything
+// else. CPU and CUDA already answer it, so WebGPU must too. `assert_parity_u32`
+// compares integers EXACTLY, so this pins the values, not a tolerance.
+// ============================================================================
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_sign_u32_parity() {
+    let data = vec![0u32, 1, 2, 4_000_000_000, u32::MAX];
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_cpu = Tensor::<CpuRuntime>::from_slice(&data, &[5], &cpu_device).expect("cpu tensor");
+    let cpu = cpu_client.sign(&a_cpu).expect("cpu sign u32");
+    assert_parity_u32(
+        &cpu.to_vec::<u32>(),
+        &[0, 1, 1, 1, 1],
+        "sign u32 CPU vs the unsigned contract",
+    );
+
+    with_wgpu_backend_or_skip(|client, device| {
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &[5], &device).expect("wgpu tensor");
+        let got = client.sign(&a).expect("wgpu sign u32");
+        assert_parity_u32(&got.to_vec::<u32>(), &cpu.to_vec::<u32>(), "sign u32");
+    });
+}
