@@ -164,8 +164,8 @@ pub fn launch_fused_add_layer_norm(
 /// Launch fused add + RMS normalization backward kernel.
 ///
 /// Computes:
-///   d_input_residual = (grad * weight - pre_norm * coeff) * inv_rms
-///   d_weight_scratch[batch_idx * hidden + i] = grad[batch_idx * hidden + i] * pre_norm[...] / rms
+///   `d_input_residual = (grad * weight - pre_norm * coeff) * inv_rms`
+///   `d_weight_scratch[batch_idx * hidden + i] = grad[batch_idx * hidden + i] * pre_norm[...] / rms`
 ///
 /// Caller must launch reduce_sum_rows to sum d_weight_scratch across batch dimension.
 pub fn launch_fused_add_rms_norm_bwd(
@@ -235,9 +235,9 @@ pub fn launch_fused_add_rms_norm_bwd(
 /// Launch fused add + layer normalization backward kernel.
 ///
 /// Computes:
-///   d_input_residual = inv_std * (grad - mean_grad - normalized * mean_grad_normalized)
-///   d_weight_scratch[batch_idx * hidden + i] = grad[...] * normalized
-///   d_bias_scratch[batch_idx * hidden + i] = grad[...]
+///   `d_input_residual = inv_std * (grad - mean_grad - normalized * mean_grad_normalized)`
+///   `d_weight_scratch[batch_idx * hidden + i] = grad[...] * normalized`
+///   `d_bias_scratch[batch_idx * hidden + i] = grad[...]`
 ///
 /// Caller must launch reduce_sum_rows twice to sum d_weight_scratch and d_bias_scratch.
 pub fn launch_fused_add_layer_norm_bwd(
@@ -308,9 +308,9 @@ pub fn launch_fused_add_layer_norm_bwd(
 // Reduce Sum Rows (Helper for backward)
 // ============================================================================
 
-/// Launch reduce sum rows kernel to sum a [batch_size, hidden_size] array across batch dimension.
+/// Launch reduce sum rows kernel to sum a `[batch_size, hidden_size]` array across batch dimension.
 ///
-/// Reduces input [batch_size, hidden_size] to output [hidden_size] by summing across batch.
+/// Reduces input `[batch_size, hidden_size]` to output `[hidden_size]` by summing across batch.
 pub fn launch_reduce_sum_rows(
     cache: &PipelineCache,
     queue: &Queue,

@@ -251,7 +251,7 @@ impl<R: Runtime> Storage<R> {
     ///
     /// # Safety
     ///
-    /// Same as [`as_host_slice`], plus:
+    /// Same as [`Self::as_host_slice`], plus:
     /// - The storage must be uniquely owned (no other references)
     /// - The caller must ensure no aliasing
     #[inline]

@@ -1,7 +1,7 @@
-//! GEMV-BT WGSL kernel launchers: C[M,N] = A[M,K] @ B^T where B is [N,K].
+//! GEMV-BT WGSL kernel launchers: `C[M,N] = A[M,K] @ B^T` where B is `[N,K]`.
 //!
 //! Avoids the GPU-side contiguous copy of transposed weight matrices by
-//! reading B in its native [N,K] layout. Each output element is a dot product
+//! reading B in its native `[N,K]` layout. Each output element is a dot product
 //! of contiguous A and B row vectors, computed via parallel reduction.
 
 use wgpu::{Buffer, Queue};
@@ -14,7 +14,7 @@ const GEMV_BT_SHADER: &str = include_str!("gemv_bt.wgsl");
 
 /// Launch 2D GEMV-BT kernel.
 ///
-/// Computes C[M,N] = A[M,K] @ B^T where B is stored as [N,K] row-major.
+/// Computes `C[M,N] = A[M,K] @ B^T` where B is stored as `[N,K]` row-major.
 /// Dispatch: (N, M, 1) workgroups, each with 256 threads for K-reduction.
 pub fn launch_gemv_bt(
     cache: &PipelineCache,
@@ -66,7 +66,7 @@ pub fn launch_gemv_bt(
 
 /// Launch batched GEMV-BT kernel.
 ///
-/// Computes C[b,M,N] = A[b,M,K] @ B[b]^T where each B[b] is stored [N,K].
+/// Computes `C[b,M,N] = A[b,M,K] @ B[b]^T` where each `B[b]` is stored `[N,K]`.
 pub fn launch_batched_gemv_bt(
     cache: &PipelineCache,
     queue: &Queue,

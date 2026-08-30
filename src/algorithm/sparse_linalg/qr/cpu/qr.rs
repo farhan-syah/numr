@@ -162,7 +162,7 @@ pub fn sparse_qr_solve_cpu<R: Runtime<DType = DType>>(
 
 /// Solve least-squares min ||A*x - b||_2 using QR factors (overdetermined systems)
 ///
-/// For m > n: x = P * R[0:n, 0:n]^{-1} * (Q^T * b)[0:n]
+/// For m > n: `x = P * R[0:n, 0:n]^{-1} * (Q^T * b)[0:n]`
 pub fn sparse_qr_least_squares_cpu<R: Runtime<DType = DType>>(
     factors: &QrFactors<R>,
     b: &Tensor<R>,

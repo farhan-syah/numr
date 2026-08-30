@@ -175,13 +175,13 @@ pub trait Communicator: Send + Sync {
 ///
 /// # Event Lifecycle
 ///
-/// 1. Create event with [`create_event`]
-/// 2. Record on compute stream (gradient ready) with [`record_on_stream`]
-/// 3. Make comm stream wait with [`comm_stream_wait_event`]
+/// 1. Create event with [`Self::create_event`]
+/// 2. Record on compute stream (gradient ready) with [`Self::record_on_stream`]
+/// 3. Make comm stream wait with [`Self::comm_stream_wait_event`]
 /// 4. Launch allreduce (runs on comm stream)
-/// 5. Record completion on comm stream with [`record_on_comm_stream`]
-/// 6. Make compute stream wait with [`stream_wait_event`]
-/// 7. Destroy event with [`destroy_event`]
+/// 5. Record completion on comm stream with [`Self::record_on_comm_stream`]
+/// 6. Make compute stream wait with [`Self::stream_wait_event`]
+/// 7. Destroy event with [`Self::destroy_event`]
 pub trait StreamSyncOps {
     /// Create a CUDA event for synchronization.
     ///

@@ -1,9 +1,9 @@
 //! WGSL kernel launchers for sparse matrix-vector and matrix-matrix multiplication.
 //!
 //! Provides launchers for CSR format SpMV and SpMM operations:
-//! - `launch_csr_spmv` - Sparse matrix-vector multiplication: y = A * x
-//! - `launch_csr_spmm` - Sparse matrix-dense matrix multiplication: C = A * B
-//! - `launch_csr_extract_diagonal` - Extract diagonal: diag[i] = A[i,i]
+//! - `launch_csr_spmv` - Sparse matrix-vector multiplication: `y = A * x`
+//! - `launch_csr_spmm` - Sparse matrix-dense matrix multiplication: `C = A * B`
+//! - `launch_csr_extract_diagonal` - Extract diagonal: `diag[i] = A[i,i]`
 
 use wgpu::{Buffer, Queue};
 

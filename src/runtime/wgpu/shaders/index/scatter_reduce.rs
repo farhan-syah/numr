@@ -164,7 +164,7 @@ pub fn launch_scatter_reduce_count(
     Ok(())
 }
 
-/// Launch scatter_reduce_mean_div: output[i] = sum[i] / count[i].
+/// Launch scatter_reduce_mean_div: `output[i] = sum[i] / count[i]`.
 pub fn launch_scatter_reduce_mean_div(
     cache: &PipelineCache,
     queue: &Queue,
