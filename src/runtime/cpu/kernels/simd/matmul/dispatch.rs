@@ -447,34 +447,21 @@ pub unsafe fn call_microkernel_2x_f32(
     match level {
         SimdLevel::Avx512 => avx512::microkernel_6x32_f32(a, b, c, k, ldc, first_k),
         SimdLevel::Avx2Fma => avx2::microkernel_6x16_f32(a, b, c, k, ldc, first_k),
-        _ => {
-            // Fallback: call single-width twice
-            let nr = 4usize;
-            microkernel_edge_f32(a, b, c, MR, nr, k, ldc, first_k);
-            microkernel_edge_f32(a, b.add(nr * k), c.add(nr), MR, nr, k, ldc, first_k);
-        }
+        // One call over the whole block: `pack_b` interleaves a full block at
+        // `kk * nr + j`, so two half-width calls would read the wrong buffer.
+        _ => microkernel_edge_f32(a, b, c, MR, 8, k, ldc, first_k),
     }
 
     #[cfg(target_arch = "aarch64")]
     match level {
         SimdLevel::Neon | SimdLevel::NeonFp16 => {
-            // NEON: call single-width twice (4+4=8)
-            aarch64::neon::microkernel_6x4_f32(a, b, c, k, ldc, first_k);
-            aarch64::neon::microkernel_6x4_f32(a, b.add(4 * k), c.add(4), k, ldc, first_k);
+            aarch64::neon::microkernel_6x8_f32(a, b, c, k, ldc, first_k)
         }
-        _ => {
-            let nr = 4usize;
-            microkernel_edge_f32(a, b, c, MR, nr, k, ldc, first_k);
-            microkernel_edge_f32(a, b.add(nr * k), c.add(nr), MR, nr, k, ldc, first_k);
-        }
+        _ => microkernel_edge_f32(a, b, c, MR, 8, k, ldc, first_k),
     }
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        let nr = 4usize;
-        microkernel_edge_f32(a, b, c, MR, nr, k, ldc, first_k);
-        microkernel_edge_f32(a, b.add(nr * k), c.add(nr), MR, nr, k, ldc, first_k);
-    }
+    microkernel_edge_f32(a, b, c, MR, 8, k, ldc, first_k);
 }
 
 /// Dispatch to the appropriate SIMD microkernel for f64 (single-width NR)
@@ -522,32 +509,19 @@ pub unsafe fn call_microkernel_2x_f64(
     match level {
         SimdLevel::Avx512 => avx512::microkernel_6x16_f64(a, b, c, k, ldc, first_k),
         SimdLevel::Avx2Fma => avx2::microkernel_6x8_f64(a, b, c, k, ldc, first_k),
-        _ => {
-            let nr = 4usize;
-            microkernel_edge_f64(a, b, c, MR, nr, k, ldc, first_k);
-            microkernel_edge_f64(a, b.add(nr * k), c.add(nr), MR, nr, k, ldc, first_k);
-        }
+        _ => microkernel_edge_f64(a, b, c, MR, 8, k, ldc, first_k),
     }
 
     #[cfg(target_arch = "aarch64")]
     match level {
         SimdLevel::Neon | SimdLevel::NeonFp16 => {
-            aarch64::neon::microkernel_6x2_f64(a, b, c, k, ldc, first_k);
-            aarch64::neon::microkernel_6x2_f64(a, b.add(2 * k), c.add(2), k, ldc, first_k);
+            aarch64::neon::microkernel_6x4_f64(a, b, c, k, ldc, first_k)
         }
-        _ => {
-            let nr = 2usize;
-            microkernel_edge_f64(a, b, c, MR, nr, k, ldc, first_k);
-            microkernel_edge_f64(a, b.add(nr * k), c.add(nr), MR, nr, k, ldc, first_k);
-        }
+        _ => microkernel_edge_f64(a, b, c, MR, 4, k, ldc, first_k),
     }
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        let nr = 4usize;
-        microkernel_edge_f64(a, b, c, MR, nr, k, ldc, first_k);
-        microkernel_edge_f64(a, b.add(nr * k), c.add(nr), MR, nr, k, ldc, first_k);
-    }
+    microkernel_edge_f64(a, b, c, MR, 8, k, ldc, first_k);
 }
 
 // ============================================================================
