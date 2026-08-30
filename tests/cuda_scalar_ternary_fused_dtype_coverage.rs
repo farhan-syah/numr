@@ -23,7 +23,8 @@
 
 mod common;
 
-use common::{create_cpu_client, create_cuda_client};
+use common::backend_lock::with_cuda_backend;
+use common::create_cpu_client;
 use numr::dtype::DType;
 use numr::ops::{BinaryOps, ConditionalOps, ScalarOps, TypeConversionOps};
 use numr::runtime::RuntimeClient;
@@ -57,7 +58,7 @@ macro_rules! check_scalar {
         let cpu_vec: Vec<$ty> = cpu_out.to_vec::<$ty>();
         assert_eq!(cpu_vec.as_slice(), $expected, "{label}: CPU reference");
 
-        if let Some((cuda_client, cuda_device)) = create_cuda_client() {
+        with_cuda_backend(|cuda_client, cuda_device| {
             let a = Tensor::<CudaRuntime>::from_slice($a, &shape, &cuda_device)
                 .unwrap_or_else(|e| panic!("{label}: staging the CUDA input failed: {e:?}"));
             let out = cuda_client
@@ -65,7 +66,7 @@ macro_rules! check_scalar {
                 .unwrap_or_else(|e| panic!("{label}: the CUDA op failed: {e:?}"));
             let cuda_vec: Vec<$ty> = out.to_vec::<$ty>();
             assert_eq!(cuda_vec.as_slice(), $expected, "{label}: CUDA vs CPU");
-        }
+        });
     }};
 }
 
@@ -142,7 +143,6 @@ fn u32_pow_scalar_saturates_on_overflow() {
 #[test]
 fn pow_scalar_output_dtype_governs_both_backends() {
     let (cpu_client, cpu_device) = create_cpu_client();
-    let cuda = create_cuda_client();
 
     let ints: [i64; 4] = [4, 9, 1, 2];
 
@@ -164,23 +164,22 @@ fn pow_scalar_output_dtype_governs_both_backends() {
     assert_eq!(cpu_root.dtype(), DType::F64);
     assert_eq!(cpu_root.to_vec::<f64>()[0], 2.0);
 
-    let Some((client, device)) = cuda else {
-        return;
-    };
-    let a = Tensor::<CudaRuntime>::from_slice(&ints, &[4], &device)
-        .expect("staging the CUDA input must succeed");
+    with_cuda_backend(|client, device| {
+        let a = Tensor::<CudaRuntime>::from_slice(&ints, &[4], &device)
+            .expect("staging the CUDA input must succeed");
 
-    let cube = client
-        .pow_scalar(&a, 3.0)
-        .expect("the CUDA pow_scalar must succeed");
-    assert_eq!(cube.dtype(), DType::I64);
-    assert_eq!(cube.to_vec::<i64>(), vec![64, 729, 1, 8]);
+        let cube = client
+            .pow_scalar(&a, 3.0)
+            .expect("the CUDA pow_scalar must succeed");
+        assert_eq!(cube.dtype(), DType::I64);
+        assert_eq!(cube.to_vec::<i64>(), vec![64, 729, 1, 8]);
 
-    let root = client
-        .pow_scalar(&a, 0.5)
-        .expect("the CUDA pow_scalar must succeed");
-    assert_eq!(root.dtype(), DType::F64);
-    assert_eq!(root.to_vec::<f64>()[0], 2.0);
+        let root = client
+            .pow_scalar(&a, 0.5)
+            .expect("the CUDA pow_scalar must succeed");
+        assert_eq!(root.dtype(), DType::F64);
+        assert_eq!(root.to_vec::<f64>()[0], 2.0);
+    });
 }
 
 // ============================================================================
@@ -207,19 +206,18 @@ fn u32_where_matches_cpu() {
         .expect("the CPU where_cond must succeed");
     assert_eq!(cpu_out.to_vec::<u32>(), expected.to_vec());
 
-    let Some((client, device)) = create_cuda_client() else {
-        return;
-    };
-    let cond = Tensor::<CudaRuntime>::from_slice(&cond, &[4], &device)
-        .expect("staging the CUDA condition must succeed");
-    let x = Tensor::<CudaRuntime>::from_slice(&x, &[4], &device)
-        .expect("staging the CUDA lhs must succeed");
-    let y = Tensor::<CudaRuntime>::from_slice(&y, &[4], &device)
-        .expect("staging the CUDA rhs must succeed");
-    let out = client
-        .where_cond(&cond, &x, &y)
-        .expect("the CUDA where_cond must succeed");
-    assert_eq!(out.to_vec::<u32>(), expected.to_vec());
+    with_cuda_backend(|client, device| {
+        let cond = Tensor::<CudaRuntime>::from_slice(&cond, &[4], &device)
+            .expect("staging the CUDA condition must succeed");
+        let x = Tensor::<CudaRuntime>::from_slice(&x, &[4], &device)
+            .expect("staging the CUDA lhs must succeed");
+        let y = Tensor::<CudaRuntime>::from_slice(&y, &[4], &device)
+            .expect("staging the CUDA rhs must succeed");
+        let out = client
+            .where_cond(&cond, &x, &y)
+            .expect("the CUDA where_cond must succeed");
+        assert_eq!(out.to_vec::<u32>(), expected.to_vec());
+    });
 }
 
 // ============================================================================
@@ -328,7 +326,7 @@ macro_rules! check_fused {
             $mul_add_scalar
         );
 
-        if let Some((cuda_client, cuda_device)) = create_cuda_client() {
+        with_cuda_backend(|cuda_client, cuda_device| {
             check_fused_on!(
                 CudaRuntime,
                 &cuda_client,
@@ -342,7 +340,7 @@ macro_rules! check_fused {
                 $add_mul,
                 $mul_add_scalar
             );
-        }
+        });
     }};
 }
 
@@ -399,36 +397,35 @@ const COVERED_DTYPES: [DType; 10] = [
 /// resolution, not about values.
 #[test]
 fn every_dtype_resolves_a_kernel_for_every_op() {
-    let Some((client, device)) = create_cuda_client() else {
-        return;
-    };
-    let base = Tensor::<CudaRuntime>::from_slice(&[4.0f64, 3.0, 2.0, 1.0], &[4], &device)
-        .expect("staging the base tensor must succeed");
-    let base_cond = Tensor::<CudaRuntime>::from_slice(&[1u8, 0, 1, 0], &[4], &device)
-        .expect("staging the condition must succeed");
+    with_cuda_backend(|client, device| {
+        let base = Tensor::<CudaRuntime>::from_slice(&[4.0f64, 3.0, 2.0, 1.0], &[4], &device)
+            .expect("staging the base tensor must succeed");
+        let base_cond = Tensor::<CudaRuntime>::from_slice(&[1u8, 0, 1, 0], &[4], &device)
+            .expect("staging the condition must succeed");
 
-    for &dtype in COVERED_DTYPES.iter() {
-        let a = client
-            .cast(&base, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+        for &dtype in COVERED_DTYPES.iter() {
+            let a = client
+                .cast(&base, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
 
-        for (name, out) in [
-            ("add_scalar", client.add_scalar(&a, 2.0)),
-            ("sub_scalar", client.sub_scalar(&a, 2.0)),
-            ("rsub_scalar", client.rsub_scalar(&a, 2.0)),
-            ("mul_scalar", client.mul_scalar(&a, 2.0)),
-            ("div_scalar", client.div_scalar(&a, 2.0)),
-            ("pow_scalar", client.pow_scalar(&a, 2.0)),
-            (
-                "fused_mul_add_scalar",
-                client.fused_mul_add_scalar(&a, 2.0, 1.0),
-            ),
-            ("where_cond", client.where_cond(&base_cond, &a, &a)),
-            ("fused_mul_add", client.fused_mul_add(&a, &a, &a)),
-            ("fused_add_mul", client.fused_add_mul(&a, &a, &a)),
-        ] {
-            out.unwrap_or_else(|e| panic!("{name} on {dtype:?} failed: {e:?}"));
+            for (name, out) in [
+                ("add_scalar", client.add_scalar(&a, 2.0)),
+                ("sub_scalar", client.sub_scalar(&a, 2.0)),
+                ("rsub_scalar", client.rsub_scalar(&a, 2.0)),
+                ("mul_scalar", client.mul_scalar(&a, 2.0)),
+                ("div_scalar", client.div_scalar(&a, 2.0)),
+                ("pow_scalar", client.pow_scalar(&a, 2.0)),
+                (
+                    "fused_mul_add_scalar",
+                    client.fused_mul_add_scalar(&a, 2.0, 1.0),
+                ),
+                ("where_cond", client.where_cond(&base_cond, &a, &a)),
+                ("fused_mul_add", client.fused_mul_add(&a, &a, &a)),
+                ("fused_add_mul", client.fused_add_mul(&a, &a, &a)),
+            ] {
+                out.unwrap_or_else(|e| panic!("{name} on {dtype:?} failed: {e:?}"));
+            }
         }
-    }
-    client.synchronize();
+        client.synchronize();
+    });
 }

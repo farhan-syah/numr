@@ -19,7 +19,8 @@
 
 mod common;
 
-use common::{create_cpu_client, create_cuda_client};
+use common::backend_lock::with_cuda_backend;
+use common::create_cpu_client;
 use numr::dtype::{DType, Element};
 use numr::ops::TypeConversionOps;
 use numr::runtime::RuntimeClient;
@@ -66,15 +67,14 @@ where
         .unwrap_or_else(|e| panic!("{label}: CPU cast failed: {e:?}"));
     assert_eq!(cpu_out.to_vec::<D>(), expected, "{label}: CPU reference");
 
-    let Some((cuda_client, cuda_device)) = create_cuda_client() else {
-        return;
-    };
-    let cuda_in = Tensor::<CudaRuntime>::from_slice(input, &shape, &cuda_device)
-        .unwrap_or_else(|e| panic!("{label}: staging the CUDA input failed: {e:?}"));
-    let cuda_out = cuda_client
-        .cast(&cuda_in, D::DTYPE)
-        .unwrap_or_else(|e| panic!("{label}: CUDA cast failed: {e:?}"));
-    assert_eq!(cuda_out.to_vec::<D>(), expected, "{label}: CUDA vs CPU");
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let cuda_in = Tensor::<CudaRuntime>::from_slice(input, &shape, &cuda_device)
+            .unwrap_or_else(|e| panic!("{label}: staging the CUDA input failed: {e:?}"));
+        let cuda_out = cuda_client
+            .cast(&cuda_in, D::DTYPE)
+            .unwrap_or_else(|e| panic!("{label}: CUDA cast failed: {e:?}"));
+        assert_eq!(cuda_out.to_vec::<D>(), expected, "{label}: CUDA vs CPU");
+    });
 }
 
 /// The pair that blocked the parity suite: the harness stages U32 tensors by
@@ -186,24 +186,23 @@ fn cast_f64_to_bf16_drops_the_low_32_mantissa_bits() {
 /// fails here at module lookup, not months later in a caller.
 #[test]
 fn cast_matrix_covers_every_ordered_pair() {
-    let Some((client, device)) = create_cuda_client() else {
-        return;
-    };
-    let base = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 0.0, 2.0, 3.0], &[4], &device)
-        .expect("staging the base tensor must succeed");
+    with_cuda_backend(|client, device| {
+        let base = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 0.0, 2.0, 3.0], &[4], &device)
+            .expect("staging the base tensor must succeed");
 
-    for &src in CAST_DTYPES.iter() {
-        let src_tensor = client
-            .cast(&base, src)
-            .unwrap_or_else(|e| panic!("cast f64 -> {src:?} failed: {e:?}"));
-        for &dst in CAST_DTYPES.iter() {
-            if src == dst {
-                continue;
+        for &src in CAST_DTYPES.iter() {
+            let src_tensor = client
+                .cast(&base, src)
+                .unwrap_or_else(|e| panic!("cast f64 -> {src:?} failed: {e:?}"));
+            for &dst in CAST_DTYPES.iter() {
+                if src == dst {
+                    continue;
+                }
+                client
+                    .cast(&src_tensor, dst)
+                    .unwrap_or_else(|e| panic!("cast {src:?} -> {dst:?} failed: {e:?}"));
             }
-            client
-                .cast(&src_tensor, dst)
-                .unwrap_or_else(|e| panic!("cast {src:?} -> {dst:?} failed: {e:?}"));
         }
-    }
-    client.synchronize();
+        client.synchronize();
+    });
 }

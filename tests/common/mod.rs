@@ -1,6 +1,8 @@
 //! Common test utilities
 #![allow(dead_code)]
 
+pub mod backend_lock;
+
 use numr::dtype::DType;
 use numr::runtime::Runtime;
 use numr::runtime::cpu::{CpuClient, CpuDevice, CpuRuntime};

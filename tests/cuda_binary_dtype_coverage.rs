@@ -21,7 +21,8 @@
 
 mod common;
 
-use common::{create_cpu_client, create_cuda_client};
+use common::backend_lock::with_cuda_backend;
+use common::create_cpu_client;
 use numr::dtype::DType;
 use numr::ops::{BinaryOps, CompareOps, TypeConversionOps};
 use numr::runtime::RuntimeClient;
@@ -49,7 +50,7 @@ macro_rules! check_binary {
         let cpu_vec: Vec<$ty> = cpu_out.to_vec::<$ty>();
         assert_eq!(cpu_vec.as_slice(), $expected, "{label}: CPU reference");
 
-        if let Some((cuda_client, cuda_device)) = create_cuda_client() {
+        with_cuda_backend(|cuda_client, cuda_device| {
             let a = Tensor::<CudaRuntime>::from_slice($a, $a_shape, &cuda_device)
                 .unwrap_or_else(|e| panic!("{label}: staging the CUDA lhs failed: {e:?}"));
             let b = Tensor::<CudaRuntime>::from_slice($b, $b_shape, &cuda_device)
@@ -59,7 +60,7 @@ macro_rules! check_binary {
                 .unwrap_or_else(|e| panic!("{label}: the CUDA op failed: {e:?}"));
             let cuda_vec: Vec<$ty> = out.to_vec::<$ty>();
             assert_eq!(cuda_vec.as_slice(), $expected, "{label}: CUDA vs CPU");
-        }
+        });
     }};
 }
 
@@ -291,80 +292,78 @@ const BINARY_DTYPES: [DType; 10] = [
 /// kernel resolution, not about values.
 #[test]
 fn every_dtype_resolves_a_kernel_for_every_op() {
-    let Some((client, device)) = create_cuda_client() else {
-        return;
-    };
-    let base_a = Tensor::<CudaRuntime>::from_slice(&[4.0f64, 3.0, 2.0, 1.0], &[4], &device)
-        .expect("staging the lhs must succeed");
-    let base_b = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 1.0, 2.0], &[4], &device)
-        .expect("staging the rhs must succeed");
+    with_cuda_backend(|client, device| {
+        let base_a = Tensor::<CudaRuntime>::from_slice(&[4.0f64, 3.0, 2.0, 1.0], &[4], &device)
+            .expect("staging the lhs must succeed");
+        let base_b = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 1.0, 2.0], &[4], &device)
+            .expect("staging the rhs must succeed");
 
-    for &dtype in BINARY_DTYPES.iter() {
-        let a = client
-            .cast(&base_a, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
-        let b = client
-            .cast(&base_b, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+        for &dtype in BINARY_DTYPES.iter() {
+            let a = client
+                .cast(&base_a, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+            let b = client
+                .cast(&base_b, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
 
-        for (name, out) in [
-            ("add", client.add(&a, &b)),
-            ("sub", client.sub(&a, &b)),
-            ("mul", client.mul(&a, &b)),
-            ("div", client.div(&a, &b)),
-            ("pow", client.pow(&a, &b)),
-            ("maximum", client.maximum(&a, &b)),
-            ("minimum", client.minimum(&a, &b)),
-            ("eq", client.eq(&a, &b)),
-            ("ne", client.ne(&a, &b)),
-            ("lt", client.lt(&a, &b)),
-            ("le", client.le(&a, &b)),
-            ("gt", client.gt(&a, &b)),
-            ("ge", client.ge(&a, &b)),
-        ] {
-            out.unwrap_or_else(|e| panic!("{name} on {dtype:?} failed: {e:?}"));
+            for (name, out) in [
+                ("add", client.add(&a, &b)),
+                ("sub", client.sub(&a, &b)),
+                ("mul", client.mul(&a, &b)),
+                ("div", client.div(&a, &b)),
+                ("pow", client.pow(&a, &b)),
+                ("maximum", client.maximum(&a, &b)),
+                ("minimum", client.minimum(&a, &b)),
+                ("eq", client.eq(&a, &b)),
+                ("ne", client.ne(&a, &b)),
+                ("lt", client.lt(&a, &b)),
+                ("le", client.le(&a, &b)),
+                ("gt", client.gt(&a, &b)),
+                ("ge", client.ge(&a, &b)),
+            ] {
+                out.unwrap_or_else(|e| panic!("{name} on {dtype:?} failed: {e:?}"));
+            }
         }
-    }
-    client.synchronize();
+        client.synchronize();
+    });
 }
 
 /// The broadcast kernels are separate instantiations from the element-wise
 /// ones, so they need their own resolution sweep.
 #[test]
 fn every_dtype_resolves_a_broadcast_kernel() {
-    let Some((client, device)) = create_cuda_client() else {
-        return;
-    };
-    let base_a = Tensor::<CudaRuntime>::from_slice(&[4.0f64, 3.0, 2.0, 1.0], &[2, 2], &device)
-        .expect("staging the lhs must succeed");
-    let base_b = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0], &[1, 2], &device)
-        .expect("staging the rhs must succeed");
+    with_cuda_backend(|client, device| {
+        let base_a = Tensor::<CudaRuntime>::from_slice(&[4.0f64, 3.0, 2.0, 1.0], &[2, 2], &device)
+            .expect("staging the lhs must succeed");
+        let base_b = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0], &[1, 2], &device)
+            .expect("staging the rhs must succeed");
 
-    for &dtype in BINARY_DTYPES.iter() {
-        let a = client
-            .cast(&base_a, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
-        let b = client
-            .cast(&base_b, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+        for &dtype in BINARY_DTYPES.iter() {
+            let a = client
+                .cast(&base_a, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+            let b = client
+                .cast(&base_b, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
 
-        for (name, out) in [
-            ("add", client.add(&a, &b)),
-            ("sub", client.sub(&a, &b)),
-            ("mul", client.mul(&a, &b)),
-            ("div", client.div(&a, &b)),
-            ("pow", client.pow(&a, &b)),
-            ("maximum", client.maximum(&a, &b)),
-            ("minimum", client.minimum(&a, &b)),
-            ("eq", client.eq(&a, &b)),
-            ("ne", client.ne(&a, &b)),
-            ("lt", client.lt(&a, &b)),
-            ("le", client.le(&a, &b)),
-            ("gt", client.gt(&a, &b)),
-            ("ge", client.ge(&a, &b)),
-        ] {
-            out.unwrap_or_else(|e| panic!("broadcast {name} on {dtype:?} failed: {e:?}"));
+            for (name, out) in [
+                ("add", client.add(&a, &b)),
+                ("sub", client.sub(&a, &b)),
+                ("mul", client.mul(&a, &b)),
+                ("div", client.div(&a, &b)),
+                ("pow", client.pow(&a, &b)),
+                ("maximum", client.maximum(&a, &b)),
+                ("minimum", client.minimum(&a, &b)),
+                ("eq", client.eq(&a, &b)),
+                ("ne", client.ne(&a, &b)),
+                ("lt", client.lt(&a, &b)),
+                ("le", client.le(&a, &b)),
+                ("gt", client.gt(&a, &b)),
+                ("ge", client.ge(&a, &b)),
+            ] {
+                out.unwrap_or_else(|e| panic!("broadcast {name} on {dtype:?} failed: {e:?}"));
+            }
         }
-    }
-    client.synchronize();
+        client.synchronize();
+    });
 }

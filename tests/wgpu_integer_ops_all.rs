@@ -4,4 +4,8 @@
 
 #![cfg(feature = "wgpu")]
 
+// `common` carries the WebGPU device lock every test here goes through.
+// Concurrent device use loses the device and cascades into the rest of the
+// binary, so the lock is mandatory, not a convenience.
+mod common;
 mod wgpu_integer_ops;

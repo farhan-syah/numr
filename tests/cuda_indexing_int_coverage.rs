@@ -31,7 +31,8 @@
 
 mod common;
 
-use common::{create_cpu_client, create_cuda_client};
+use common::backend_lock::with_cuda_backend;
+use common::create_cpu_client;
 use numr::dtype::DType;
 use numr::ops::{IndexingOps, ScatterReduceOp, SortingOps, TypeConversionOps};
 use numr::runtime::Runtime;
@@ -241,10 +242,10 @@ macro_rules! check_case {
         let cpu_out = $case::<CpuRuntime, _>(&cpu_client, &cpu_device);
         assert_eq!(cpu_out, $expected, "{label}: CPU reference");
 
-        if let Some((cuda_client, cuda_device)) = create_cuda_client() {
+        with_cuda_backend(|cuda_client, cuda_device| {
             let cuda_out = $case::<CudaRuntime, _>(&cuda_client, &cuda_device);
             assert_eq!(cuda_out, $expected, "{label}: CUDA vs CPU");
-        }
+        });
     }};
 }
 
@@ -331,84 +332,82 @@ const INT_DTYPES: [DType; 8] = [
 /// `UnsupportedDType`. Either way the sweep names the op and the dtype.
 #[test]
 fn every_integer_dtype_resolves_every_indexing_kernel() {
-    let Some((client, device)) = create_cuda_client() else {
-        return;
-    };
+    with_cuda_backend(|client, device| {
+        // Values stay small so every dtype, U8 included, represents them exactly.
+        let base =
+            Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
+                .expect("staging the base tensor must succeed");
+        let base_flat =
+            Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], &device)
+                .expect("staging the flat base tensor must succeed");
+        let base_src = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 3.0], &[3], &device)
+            .expect("staging the scatter source must succeed");
+        let mask_full = Tensor::<CudaRuntime>::from_slice(&[1u8, 0, 1, 0, 1, 1], &[3, 2], &device)
+            .expect("staging the mask must succeed");
+        let mask_row = Tensor::<CudaRuntime>::from_slice(&[1u8, 0], &[1, 2], &device)
+            .expect("staging the broadcast mask must succeed");
+        let coords = Tensor::<CudaRuntime>::from_slice(&[2i64, 1, 0, 0], &[2, 2], &device)
+            .expect("staging the coordinates must succeed");
+        let row_idx = Tensor::<CudaRuntime>::from_slice(&[2i64, 0, 1], &[3], &device)
+            .expect("staging the row indices must succeed");
+        let scatter_idx = Tensor::<CudaRuntime>::from_slice(&[0i64, 0, 2], &[3], &device)
+            .expect("staging the scatter indices must succeed");
 
-    // Values stay small so every dtype, U8 included, represents them exactly.
-    let base =
-        Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2], &device)
-            .expect("staging the base tensor must succeed");
-    let base_flat =
-        Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0], &[6], &device)
-            .expect("staging the flat base tensor must succeed");
-    let base_src = Tensor::<CudaRuntime>::from_slice(&[1.0f64, 2.0, 3.0], &[3], &device)
-        .expect("staging the scatter source must succeed");
-    let mask_full = Tensor::<CudaRuntime>::from_slice(&[1u8, 0, 1, 0, 1, 1], &[3, 2], &device)
-        .expect("staging the mask must succeed");
-    let mask_row = Tensor::<CudaRuntime>::from_slice(&[1u8, 0], &[1, 2], &device)
-        .expect("staging the broadcast mask must succeed");
-    let coords = Tensor::<CudaRuntime>::from_slice(&[2i64, 1, 0, 0], &[2, 2], &device)
-        .expect("staging the coordinates must succeed");
-    let row_idx = Tensor::<CudaRuntime>::from_slice(&[2i64, 0, 1], &[3], &device)
-        .expect("staging the row indices must succeed");
-    let scatter_idx = Tensor::<CudaRuntime>::from_slice(&[0i64, 0, 2], &[3], &device)
-        .expect("staging the scatter indices must succeed");
+        for &dtype in INT_DTYPES.iter() {
+            let a = client
+                .cast(&base, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+            let flat = client
+                .cast(&base_flat, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+            let dst = client
+                .cast(&base_flat, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
+            let src = client
+                .cast(&base_src, dtype)
+                .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
 
-    for &dtype in INT_DTYPES.iter() {
-        let a = client
-            .cast(&base, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
-        let flat = client
-            .cast(&base_flat, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
-        let dst = client
-            .cast(&base_flat, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
-        let src = client
-            .cast(&base_src, dtype)
-            .unwrap_or_else(|e| panic!("cast f64 -> {dtype:?} failed: {e:?}"));
-
-        for (name, out) in [
-            ("masked_select", client.masked_select(&a, &mask_full)),
-            (
-                "masked_select_broadcast",
-                client.masked_select(&a, &mask_row),
-            ),
-            ("masked_fill", client.masked_fill(&a, &mask_full, 1.0)),
-            (
-                "masked_fill_broadcast",
-                client.masked_fill(&a, &mask_row, 1.0),
-            ),
-            ("gather_nd", client.gather_nd(&a, &coords)),
-            ("index_select", client.index_select(&a, 0, &row_idx)),
-            ("gather", client.gather(&a, 0, &coords)),
-            ("embedding_lookup", client.embedding_lookup(&a, &row_idx)),
-            ("unique", client.unique(&flat, true)),
-            ("nonzero", client.nonzero(&flat)),
-            (
-                "scatter_reduce_sum",
-                client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Sum, true),
-            ),
-            (
-                "scatter_reduce_prod",
-                client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Prod, true),
-            ),
-            (
-                "scatter_reduce_max",
-                client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Max, true),
-            ),
-            (
-                "scatter_reduce_min",
-                client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Min, true),
-            ),
-            (
-                "scatter_reduce_mean",
-                client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Mean, true),
-            ),
-        ] {
-            out.unwrap_or_else(|e| panic!("{name} on {dtype:?} failed: {e:?}"));
+            for (name, out) in [
+                ("masked_select", client.masked_select(&a, &mask_full)),
+                (
+                    "masked_select_broadcast",
+                    client.masked_select(&a, &mask_row),
+                ),
+                ("masked_fill", client.masked_fill(&a, &mask_full, 1.0)),
+                (
+                    "masked_fill_broadcast",
+                    client.masked_fill(&a, &mask_row, 1.0),
+                ),
+                ("gather_nd", client.gather_nd(&a, &coords)),
+                ("index_select", client.index_select(&a, 0, &row_idx)),
+                ("gather", client.gather(&a, 0, &coords)),
+                ("embedding_lookup", client.embedding_lookup(&a, &row_idx)),
+                ("unique", client.unique(&flat, true)),
+                ("nonzero", client.nonzero(&flat)),
+                (
+                    "scatter_reduce_sum",
+                    client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Sum, true),
+                ),
+                (
+                    "scatter_reduce_prod",
+                    client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Prod, true),
+                ),
+                (
+                    "scatter_reduce_max",
+                    client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Max, true),
+                ),
+                (
+                    "scatter_reduce_min",
+                    client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Min, true),
+                ),
+                (
+                    "scatter_reduce_mean",
+                    client.scatter_reduce(&dst, 0, &scatter_idx, &src, ScatterReduceOp::Mean, true),
+                ),
+            ] {
+                out.unwrap_or_else(|e| panic!("{name} on {dtype:?} failed: {e:?}"));
+            }
         }
-    }
-    client.synchronize();
+        client.synchronize();
+    });
 }
