@@ -3,6 +3,7 @@
 use crate::autograd::GradFn;
 use crate::autograd::var::Var;
 use crate::error::Result;
+use crate::ops::common::group_norm_channels_per_group;
 use crate::ops::{BinaryOps, ReduceOps, ScalarOps, TensorOps, UnaryOps};
 use crate::runtime::{Runtime, RuntimeClient};
 use crate::tensor::{Tensor, TensorId};
@@ -67,7 +68,10 @@ where
         let shape = input.shape();
         let batch = shape[0];
         let channels = shape[1];
-        let cpg = channels / self.num_groups;
+        // Shared guard: rejects `num_groups == 0` before dividing. The forward op
+        // rejects it too, but `GroupNormBackward::new` is public, so a bad group
+        // count can reach here without ever passing through the forward check.
+        let cpg = group_norm_channels_per_group(channels, self.num_groups)?;
         // Unclamped: a 2D input already products to 1 over the empty trailing slice,
         // and a zero spatial dim must stay 0 so the flattened reshape below keeps the
         // element count the empty input actually has.

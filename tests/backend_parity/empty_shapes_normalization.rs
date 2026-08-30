@@ -18,6 +18,7 @@
 //!   `act(bias)`, which that backend has no way to write without a dispatch.
 
 use numr::dtype::DType;
+use numr::error::Error;
 use numr::ops::{ActivationOps, GemmActivation, GemmEpilogueOps, NormalizationOps};
 use numr::runtime::Runtime;
 use numr::runtime::cpu::{CpuClient, CpuRuntime};
@@ -136,6 +137,33 @@ fn check_group_norm<R, C>(
             &expected,
             dtype,
             &format!("group_norm {shape:?} {backend} vs cpu"),
+        );
+    }
+}
+
+/// `group_norm` with `num_groups == 0` must be an `InvalidArgument`, not a panic.
+///
+/// Not an empty shape, but the same degenerate-divisor family:
+/// `channels.is_multiple_of(0)` answers `true` when `channels == 0`, so a zero
+/// group count used to pass validation and then divide by zero. Both channel
+/// counts are covered because only the zero one slips through `is_multiple_of`.
+fn check_group_norm_zero_groups<R, C>(client: &C, device: &R::Device, dtype: DType, backend: &str)
+where
+    R: Runtime<DType = DType>,
+    C: NormalizationOps<R>,
+{
+    for &channels in &[4usize, 0] {
+        let param = [channels];
+        let x = Tensor::<R>::zeros(&[2usize, channels, 3][..], dtype, device).expect("x");
+        let w = Tensor::<R>::zeros(&param, dtype, device).expect("weight");
+        let b = Tensor::<R>::zeros(&param, dtype, device).expect("bias");
+        let err = client.group_norm(&x, &w, &b, 0, EPS).expect_err(&format!(
+            "{backend} group_norm num_groups 0, channels {channels}, {dtype:?}: must be rejected"
+        ));
+        assert!(
+            matches!(err, Error::InvalidArgument { .. }),
+            "{backend} group_norm num_groups 0, channels {channels}: \
+             want InvalidArgument, got {err:?}"
         );
     }
 }
@@ -327,6 +355,7 @@ fn test_empty_normalization_cpu_is_self_consistent() {
     for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
         check_row_norms::<CpuRuntime, _>(&client, &device, &cpu_client, &cpu_device, dtype, "cpu");
         check_group_norm::<CpuRuntime, _>(&client, &device, &cpu_client, &cpu_device, dtype, "cpu");
+        check_group_norm_zero_groups::<CpuRuntime, _>(&client, &device, dtype, "cpu");
         check_softmax::<CpuRuntime, _>(&client, &device, &cpu_client, &cpu_device, dtype, "cpu");
         check_gemm_epilogue::<CpuRuntime, _>(
             &client,
@@ -370,6 +399,7 @@ fn test_empty_normalization_cuda_matches_cpu() {
                 dtype,
                 "cuda",
             );
+            check_group_norm_zero_groups::<CudaRuntime, _>(&client, &device, dtype, "cuda");
             check_softmax::<CudaRuntime, _>(
                 &client,
                 &device,
@@ -421,6 +451,7 @@ fn test_empty_normalization_wgpu_matches_cpu() {
                 dtype,
                 "wgpu",
             );
+            check_group_norm_zero_groups::<WgpuRuntime, _>(&client, &device, dtype, "wgpu");
             check_softmax::<WgpuRuntime, _>(
                 &client,
                 &device,

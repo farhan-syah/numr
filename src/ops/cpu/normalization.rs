@@ -2,6 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::ops::NormalizationOps;
+use crate::ops::common::group_norm_channels_per_group;
 use crate::runtime::cpu::{
     CpuClient, CpuRuntime,
     helpers::{dispatch_dtype, ensure_contiguous},
@@ -166,13 +167,10 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
 
         let batch = shape[0];
         let channels = shape[1];
-        if !channels.is_multiple_of(num_groups) {
-            return Err(Error::InvalidArgument {
-                arg: "num_groups",
-                reason: format!("channels {channels} not divisible by num_groups {num_groups}"),
-            });
-        }
-        let channels_per_group = channels / num_groups;
+        // Shared guard: rejects `num_groups == 0` before dividing. Do not inline
+        // `channels.is_multiple_of(num_groups)` here — it answers `true` for
+        // `channels == 0, num_groups == 0` and the divide then panics.
+        let channels_per_group = group_norm_channels_per_group(channels, num_groups)?;
         // Unclamped: a 2D input already products to 1 over the empty trailing slice,
         // and a zero spatial dim must stay 0 so the kernel touches nothing.
         let spatial: usize = shape[2..].iter().product();
