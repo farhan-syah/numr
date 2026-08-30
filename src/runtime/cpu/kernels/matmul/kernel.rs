@@ -69,8 +69,15 @@ pub unsafe fn matmul_kernel<T: Element>(
         return;
     }
 
-    // Dispatch to SIMD for f32/f64 on x86-64, f16/bf16 via f32 conversion
-    #[cfg(target_arch = "x86_64")]
+    // Dispatch to SIMD for f32/f64, f16/bf16 via f32 conversion.
+    //
+    // aarch64 MUST be here, not just x86_64. `matmul_bt_kernel` already gates on
+    // both, and `matmul_bt_matches_contiguous` promises the two agree bit for
+    // bit wherever the tiled path runs. Leaving ARM out sent contiguous down the
+    // scalar path while transposed ran the NEON tiled kernel: same maths, a
+    // different summation order, and a 1-ULP disagreement that broke that
+    // promise. `matmul_f32` already dispatches per architecture internally.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         use super::super::simd::matmul;
         use crate::dtype::DType;
@@ -240,8 +247,9 @@ pub unsafe fn matmul_bias_kernel<T: Element>(
         return;
     }
 
-    // Dispatch to fused SIMD for f32/f64 on x86-64, f16/bf16 via f32 conversion
-    #[cfg(target_arch = "x86_64")]
+    // Dispatch to fused SIMD for f32/f64, f16/bf16 via f32 conversion.
+    // Gated on both architectures for the reason in `matmul_kernel`.
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         use super::super::simd::matmul;
         use crate::dtype::DType;

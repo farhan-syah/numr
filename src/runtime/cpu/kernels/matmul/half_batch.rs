@@ -10,6 +10,9 @@ use crate::dtype::Element;
 #[cfg(feature = "f16")]
 #[inline]
 pub(super) unsafe fn batch_half_to_f32<T: Element>(src: *const T, dst: *mut f32, len: usize) {
+    // Only the x86_64 arms below name a `DType` variant; every other target
+    // falls through to the scalar loop, where this import would be unused.
+    #[cfg(target_arch = "x86_64")]
     use crate::dtype::DType;
     match T::DTYPE {
         #[cfg(target_arch = "x86_64")]

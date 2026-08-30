@@ -5,13 +5,13 @@
 //! # Operations
 //!
 //! Direct SIMD operations (native NEON instructions):
-//! - Neg, Abs, Sqrt, Recip, Rsqrt
+//! - Neg, Abs, Sqrt, Recip
 //! - Floor, Ceil, Round, RoundTiesEven, Trunc (AArch64 NEON has rounding modes)
 //! - Sign (comparison-based)
 //! - Square (mul x * x)
 //!
 //! Vectorized transcendentals (using math module):
-//! - Exp, Exp2, Expm1, Log, Log2, Log10, Log1p, Cbrt
+//! - Exp, Exp2, Expm1, Log, Log2, Log10, Log1p, Cbrt, Rsqrt
 //! - Sin, Cos, Tan, Asin, Acos, Atan
 //! - Sinh, Cosh, Tanh, Asinh, Acosh, Atanh
 
@@ -269,26 +269,10 @@ unsafe fn unary_sqrt_f32(a: *const f32, out: *mut f32, chunks: usize) {
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn unary_rsqrt_f32(a: *const f32, out: *mut f32, chunks: usize) {
-    // NEON provides vrsqrteq_f32 (approximate reciprocal square root)
-    // followed by Newton-Raphson refinement for full precision
     for i in 0..chunks {
         let offset = i * F32_LANES;
         let va = vld1q_f32(a.add(offset));
-
-        // Initial estimate
-        let est = vrsqrteq_f32(va);
-
-        // Newton-Raphson refinement: est = est * (3 - va * est * est) / 2
-        // NEON provides vrsqrtsq_f32 which computes (3 - a*b)/2
-        let step1 = vmulq_f32(est, va);
-        let step2 = vrsqrtsq_f32(step1, est);
-        let refined = vmulq_f32(est, step2);
-
-        // Second refinement for better accuracy
-        let step3 = vmulq_f32(refined, va);
-        let step4 = vrsqrtsq_f32(step3, refined);
-        let vr = vmulq_f32(refined, step4);
-
+        let vr = math::rsqrt_f32(va);
         vst1q_f32(out.add(offset), vr);
     }
 }
@@ -452,20 +436,7 @@ unsafe fn unary_rsqrt_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
         let va = vld1q_f64(a.add(offset));
-
-        // Initial estimate
-        let est = vrsqrteq_f64(va);
-
-        // Newton-Raphson refinement
-        let step1 = vmulq_f64(est, va);
-        let step2 = vrsqrtsq_f64(step1, est);
-        let refined = vmulq_f64(est, step2);
-
-        // Second refinement
-        let step3 = vmulq_f64(refined, va);
-        let step4 = vrsqrtsq_f64(step3, refined);
-        let vr = vmulq_f64(refined, step4);
-
+        let vr = math::rsqrt_f64(va);
         vst1q_f64(out.add(offset), vr);
     }
 }

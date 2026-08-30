@@ -25,7 +25,10 @@ pub(crate) mod tiling;
 #[cfg(target_arch = "aarch64")]
 pub(crate) mod aarch64;
 
-#[cfg(all(feature = "f16", target_arch = "x86_64"))]
+// Both SIMD architectures: `matmul_kernel` routes F16/BF16 here on each, and
+// the module itself is architecture-neutral — it converts to f32 and calls
+// `matmul_f32`, which dispatches per architecture on its own.
+#[cfg(all(feature = "f16", any(target_arch = "x86_64", target_arch = "aarch64")))]
 pub(crate) mod half_convert;
 
 pub use dispatch::{
