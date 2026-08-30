@@ -2,12 +2,13 @@
 //!
 //! Two entry points share one validation step and one histogram launch, and
 //! differ only in how the output length is obtained: `bincount` derives it from
-//! a device max reduction plus a scalar readback, `bincount_with_len` takes it
-//! from the caller and performs no device-to-host transfer at all.
+//! a device min/max reduction plus one readback of the two scalars together,
+//! `bincount_with_len` takes it from the caller and performs no device-to-host
+//! transfer at all.
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
-use crate::ops::{ReduceOps, TypeConversionOps};
+use crate::ops::{ReduceOps, ShapeOps, TypeConversionOps};
 use crate::runtime::cuda::kernels::{launch_bincount_weighted, launch_fill_with_f64};
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::runtime::ensure_contiguous;
@@ -128,6 +129,14 @@ pub fn bincount(
 ) -> Result<Tensor<CudaRuntime>> {
     let plan = bincount_validate(input, weights)?;
 
+    // An empty input holds no value at all, so it holds no negative one: the
+    // answer is `minlength` zeroed bins, which is what CPU and NumPy return.
+    // Reducing over zero elements has no maximum to report, so the sizing
+    // reduction below must not be reached.
+    if input.numel() == 0 {
+        return bincount_accumulate(client, &plan, input, weights, minlength);
+    }
+
     // Find the max value on GPU to determine output size.
     // Cast to F64 for max reduction (CUDA reduce kernels support F64 but not integer types),
     // then read the single scalar back to CPU for allocation sizing —
@@ -135,10 +144,29 @@ pub fn bincount(
     // F64 preserves full i32/i64 precision (up to 2^53), unlike F32 which loses precision past 2^24.
     // `bincount_with_len` below exists to let a caller that already knows the
     // output length skip this sizing sync entirely.
+    //
+    // The minimum rides along with the maximum. CPU rejects a negative input,
+    // and checking `max < 0` alone let a negative sitting beside a positive
+    // maximum through to the kernel, which silently dropped it. Detecting one
+    // needs the minimum, so both reductions run on device and their two scalars
+    // are concatenated into a single 2-element tensor: one extra reduction and
+    // one extra `cat`, but still exactly one device-to-host readback — the same
+    // sizing sync this path already performed.
     let input_f64 = client.cast(input, DType::F64)?;
-    let max_tensor = client.max(&input_f64, &[0], false)?;
-    let max_val = max_tensor.item::<f64>()? as i64;
-    if max_val < 0 {
+    let min_tensor = client.min(&input_f64, &[0], true)?;
+    let max_tensor = client.max(&input_f64, &[0], true)?;
+    let bounds = client.cat(&[&min_tensor, &max_tensor], 0)?;
+    let bounds = bounds.to_vec::<f64>();
+    let (min_val, max_val) = match bounds.as_slice() {
+        [lo, hi] => (*lo as i64, *hi as i64),
+        other => {
+            return Err(Error::Internal(format!(
+                "bincount: the min/max readback returned {} values, expected 2",
+                other.len()
+            )));
+        }
+    };
+    if min_val < 0 {
         return Err(Error::InvalidArgument {
             arg: "input",
             reason: "bincount requires non-negative values".to_string(),

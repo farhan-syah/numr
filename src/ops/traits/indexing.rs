@@ -478,7 +478,9 @@ pub trait IndexingOps<R: Runtime> {
     /// # Returns
     ///
     /// 1D tensor of length `` `max(max(input)+1, minlength)` `` containing counts
-    /// or weighted sums.
+    /// or weighted sums. An EMPTY input has no maximum, so the result is
+    /// `minlength` zeroed bins — NumPy's answer, and not an error: an empty
+    /// input holds no value, so it holds no negative one.
     ///
     /// # Example
     ///
@@ -496,7 +498,9 @@ pub trait IndexingOps<R: Runtime> {
     ///
     /// * `ShapeMismatch` - if input is not 1D or weights shape doesn't match input
     /// * `DTypeMismatch` - if input is not an integer type
-    /// * `InvalidValue` - if input contains negative values
+    /// * `InvalidArgument` - if input contains a negative value, on every
+    ///   backend. A negative index has no bin, so it is rejected rather than
+    ///   dropped, matching NumPy's `ValueError`.
     fn bincount(
         &self,
         input: &Tensor<R>,

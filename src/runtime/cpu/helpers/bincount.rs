@@ -148,16 +148,23 @@ pub fn bincount_impl(
 ) -> Result<Tensor<CpuRuntime>> {
     let prepared = prepare(input, weights)?;
 
-    // Find max value to determine output size
-    let max_val =
-        unsafe { kernels::max_i64_kernel(prepared.values.as_ptr(), prepared.values.len()) };
-    if max_val < 0 {
-        return Err(Error::InvalidArgument {
-            arg: "input",
-            reason: "bincount requires non-negative values".to_string(),
-        });
-    }
-    let output_len = (max_val as usize + 1).max(minlength);
+    // An empty input holds no value at all, so it holds no negative one: the
+    // answer is `minlength` zeroed bins, which is what NumPy returns. The max
+    // scan reports -1 for an empty input, so it must not reach the sign test
+    // below — that is what used to reject an empty input as negative.
+    let output_len = if prepared.values.is_empty() {
+        minlength
+    } else {
+        let max_val =
+            unsafe { kernels::max_i64_kernel(prepared.values.as_ptr(), prepared.values.len()) };
+        if max_val < 0 {
+            return Err(Error::InvalidArgument {
+                arg: "input",
+                reason: "bincount requires non-negative values".to_string(),
+            });
+        }
+        (max_val as usize + 1).max(minlength)
+    };
 
     accumulate(client, &prepared, weights, output_len, true)
 }

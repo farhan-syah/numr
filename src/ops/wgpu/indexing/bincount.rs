@@ -5,7 +5,7 @@
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
-use crate::ops::{ReduceOps, TypeConversionOps};
+use crate::ops::{ReduceOps, ShapeOps, TypeConversionOps};
 use crate::runtime::RuntimeClient;
 use crate::runtime::ensure_contiguous;
 use crate::runtime::wgpu::WgpuClient;
@@ -173,6 +173,14 @@ pub(super) fn bincount(
 ) -> Result<Tensor<WgpuRuntime>> {
     let plan = plan_bincount(client, input, weights)?;
 
+    // An empty input holds no value at all, so it holds no negative one: the
+    // answer is `minlength` zeroed bins, which is what CPU and CUDA return.
+    // WebGPU also rejects a zero-sized buffer, so the sizing reduction below
+    // must not be reached — there is nothing for it to bind to.
+    if plan.input.numel() == 0 {
+        return accumulate(client, &plan, minlength);
+    }
+
     // Determine output size: max reduction on GPU, read single scalar back.
     // This is a necessary system boundary (same as CPU/CUDA computing max first).
     //
@@ -185,11 +193,30 @@ pub(super) fn bincount(
     // this backend at all — that is WebGPU's 32-bit dtype limit, and
     // `ensure_i32_indices` in `plan_bincount` is where an I64 input narrows.
     //
+    // The minimum rides along with the maximum. Checking `max < 0` alone let a
+    // negative sitting beside a positive maximum through to the shader, which
+    // silently dropped it. Detecting one needs the minimum, so both reductions
+    // run on device and their two scalars are concatenated into a single
+    // 2-element tensor: one extra reduction and one extra `cat`, but still
+    // exactly one device-to-host readback — the same sizing sync this path
+    // already performed.
+    //
     // `bincount_with_len` below exists to let a caller that already knows the
     // output length skip this sizing sync entirely.
+    let min_tensor = client.min(&plan.input, &[0], true)?;
     let max_tensor = client.max(&plan.input, &[0], true)?;
-    let max_val = max_tensor.item::<i32>()? as i64;
-    if max_val < 0 {
+    let bounds = client.cat(&[&min_tensor, &max_tensor], 0)?;
+    let bounds = bounds.to_vec::<i32>();
+    let (min_val, max_val) = match bounds.as_slice() {
+        [lo, hi] => (*lo as i64, *hi as i64),
+        other => {
+            return Err(Error::Internal(format!(
+                "bincount: the min/max readback returned {} values, expected 2",
+                other.len()
+            )));
+        }
+    };
+    if min_val < 0 {
         return Err(Error::InvalidArgument {
             arg: "input",
             reason: "bincount requires non-negative values".to_string(),
