@@ -153,8 +153,9 @@ fn create_cpu_allocator(device: CpuDevice) -> CpuAllocator {
     DefaultAllocator::new(
         device,
         |size, _dev| {
+            // Non-null and aligned even at size 0: see `CpuRuntime::allocate`.
             if size == 0 {
-                return Ok(0);
+                return Ok(64);
             }
             let align = 64; // AVX-512 alignment
             // Fails when `size` rounded up to `align` exceeds isize::MAX — an

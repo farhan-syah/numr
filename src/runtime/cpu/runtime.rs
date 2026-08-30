@@ -25,8 +25,15 @@ impl Runtime for CpuRuntime {
     }
 
     fn allocate(size_bytes: usize, _device: &Self::Device) -> crate::error::Result<u64> {
+        // A zero-byte allocation still needs a NON-NULL, aligned address.
+        // `slice::from_raw_parts(ptr, 0)` is undefined behaviour on a null
+        // pointer, and the kernels build slices from a tensor's pointer
+        // unconditionally, so returning 0 here made every empty tensor UB.
+        // 64 is the alignment itself, which is what `NonNull::dangling()`
+        // yields for a 64-aligned type. `deallocate` skips `size_bytes == 0`,
+        // so this address is never passed to the allocator.
         if size_bytes == 0 {
-            return Ok(0);
+            return Ok(64);
         }
 
         // Use aligned allocation for SIMD compatibility

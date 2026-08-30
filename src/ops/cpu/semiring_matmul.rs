@@ -62,7 +62,8 @@ impl SemiringMatmulOps<CpuRuntime> for CpuClient {
             .iter()
             .take(out_shape.len().saturating_sub(2))
             .product();
-        let batch_size = batch_size.max(1);
+        // No `.max(1)`: an unbatched matmul takes 0 dims and already products to 1,
+        // so a clamp would only fabricate a batch for a genuinely zero batch dim.
 
         // Batch dims broadcast per dimension, so each output batch needs its own
         // source index per operand rather than a wrapping batch count.

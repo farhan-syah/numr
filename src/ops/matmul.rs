@@ -144,7 +144,9 @@ pub fn matmul_batch_indices(
     let a_batch = &a_shape[..a_shape.len().saturating_sub(2)];
     let b_batch = &b_shape[..b_shape.len().saturating_sub(2)];
 
-    let total: usize = out_batch.iter().product::<usize>().max(1);
+    // No `.max(1)`: an unbatched matmul already products to 1 over the empty slice.
+    // Clamping a zero batch dim to 1 entered the loop below and panicked on `rem % 0`.
+    let total: usize = out_batch.iter().product();
     let mut a_indices = Vec::with_capacity(total);
     let mut b_indices = Vec::with_capacity(total);
     let mut coord = vec![0usize; out_batch.len()];

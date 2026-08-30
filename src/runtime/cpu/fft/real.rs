@@ -51,8 +51,9 @@ pub(super) fn rfft_impl(
 
     let output = Tensor::<CpuRuntime>::empty(&out_shape, output_dtype, &client.device)?;
 
+    // Unclamped: rank-1 already products to 1. Clamping a zero batch dim to 1 would
+    // build a `from_raw_parts` slice longer than the zero-element allocation.
     let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-    let batch_size = batch_size.max(1);
     #[cfg(feature = "rayon")]
     let min_len = client.rayon_min_len();
 
@@ -214,8 +215,9 @@ pub(super) fn irfft_impl(
 
     let output = Tensor::<CpuRuntime>::empty(&out_shape, output_dtype, &client.device)?;
 
+    // Unclamped: rank-1 already products to 1. Clamping a zero batch dim to 1 would
+    // build a `from_raw_parts` slice longer than the zero-element allocation.
     let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-    let batch_size = batch_size.max(1);
     #[cfg(feature = "rayon")]
     let min_len = client.rayon_min_len();
 

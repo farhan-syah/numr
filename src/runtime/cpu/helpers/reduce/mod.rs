@@ -43,8 +43,8 @@ pub fn reduce_impl(
     // Fast path: reduce last dimension when contiguous (uses SIMD kernel)
     if dims.len() == 1 && dims[0] == ndim - 1 && a.is_contiguous() {
         let reduce_size = shape[ndim - 1];
+        // See the note in `single_dim.rs`: no `.max(1)`, an empty extent stays 0.
         let outer_size: usize = shape[..ndim - 1].iter().product();
-        let outer_size = outer_size.max(1);
 
         let out_shape = reduce_output_shape(shape, dims, keepdim);
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;

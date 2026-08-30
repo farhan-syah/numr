@@ -18,6 +18,8 @@ pub mod distance;
 pub mod distance_narrow_float;
 pub mod eigen;
 pub mod einsum;
+pub mod empty_shapes_elementwise;
+pub mod empty_shapes_structural;
 pub mod fft;
 #[cfg(feature = "fp8")]
 pub mod fp8_matmul;

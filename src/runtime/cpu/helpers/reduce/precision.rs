@@ -40,8 +40,8 @@ pub fn reduce_impl_with_precision(
 
     if dims.len() == 1 && dims[0] == ndim - 1 && a.is_contiguous() {
         let reduce_size = shape[ndim - 1];
+        // See the note in `single_dim.rs`: no `.max(1)`, an empty extent stays 0.
         let outer_size: usize = shape[..ndim - 1].iter().product();
-        let outer_size = outer_size.max(1);
 
         let out_shape = reduce_output_shape(shape, dims, keepdim);
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
@@ -117,9 +117,7 @@ fn reduce_single_dim_with_precision(
 
     let reduce_size = shape[dim];
     let outer_size: usize = shape[..dim].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = shape[dim + 1..].iter().product();
-    let inner_size = inner_size.max(1);
 
     let out_shape = reduce_output_shape(shape, &[dim], keepdim);
     let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
@@ -229,15 +227,29 @@ pub(super) unsafe fn reduce_non_last_dim_acc_outer<T: Element, A: Accumulator>(
     inner_size: usize,
 ) {
     for inner in 0..inner_size {
-        let first_idx = outer * reduce_size * inner_size + inner;
-        let first_val = A::acc_in((*a.add(first_idx)).to_f64());
-
-        let mut acc: A = match op {
-            ReduceOp::Sum | ReduceOp::Mean => A::ZERO,
-            ReduceOp::Prod => A::ONE,
-            ReduceOp::Max | ReduceOp::Min => first_val,
-            ReduceOp::All => A::ONE,
-            ReduceOp::Any => A::ZERO,
+        // The seed read is conditional because a zero-length reduce dimension
+        // leaves nothing to read: the input allocation is empty, and
+        // `CpuRuntime::allocate` hands back a null pointer for zero bytes, so
+        // an unconditional read here is a null dereference. `Max` and `Min` fall
+        // back to the identity of their own reduction; the other ops never used
+        // the seed.
+        let mut acc: A = if reduce_size == 0 {
+            match op {
+                ReduceOp::Sum | ReduceOp::Mean | ReduceOp::Any => A::ZERO,
+                ReduceOp::Prod | ReduceOp::All => A::ONE,
+                ReduceOp::Max => A::acc_in(T::DTYPE.min_value()),
+                ReduceOp::Min => A::acc_in(T::DTYPE.max_value()),
+            }
+        } else {
+            let first_idx = outer * reduce_size * inner_size + inner;
+            let first_val = A::acc_in((*a.add(first_idx)).to_f64());
+            match op {
+                ReduceOp::Sum | ReduceOp::Mean => A::ZERO,
+                ReduceOp::Prod => A::ONE,
+                ReduceOp::Max | ReduceOp::Min => first_val,
+                ReduceOp::All => A::ONE,
+                ReduceOp::Any => A::ZERO,
+            }
         };
 
         for r in 0..reduce_size {

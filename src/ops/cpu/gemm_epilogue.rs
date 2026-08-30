@@ -47,11 +47,12 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
         let b_contig = ensure_contiguous(b)?;
         let bias_contig = ensure_contiguous(bias)?;
 
+        // No `.max(1)`: an unbatched matmul takes 0 dims and already products to 1,
+        // so a clamp would only fabricate a batch for a genuinely zero batch dim.
         let batch_size: usize = out_shape
             .iter()
             .take(out_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+            .product();
 
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
 
@@ -168,11 +169,12 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
         let bias_contig = ensure_contiguous(bias)?;
         let residual_contig = ensure_contiguous(residual)?;
 
+        // No `.max(1)`: an unbatched matmul takes 0 dims and already products to 1,
+        // so a clamp would only fabricate a batch for a genuinely zero batch dim.
         let batch_size: usize = out_shape
             .iter()
             .take(out_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+            .product();
 
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &self.device)?;
 
@@ -276,11 +278,12 @@ impl GemmEpilogueOps<CpuRuntime> for CpuClient {
         let bias_contig = ensure_contiguous(bias)?;
         let grad_contig = ensure_contiguous(grad)?;
 
+        // No `.max(1)`: an unbatched matmul takes 0 dims and already products to 1,
+        // so a clamp would only fabricate a batch for a genuinely zero batch dim.
         let batch_size: usize = a_shape
             .iter()
             .take(a_shape.len().saturating_sub(2))
-            .product::<usize>()
-            .max(1);
+            .product();
 
         // Output gradients
         let d_a = Tensor::<CpuRuntime>::empty(a_shape, dtype, &self.device)?;

@@ -37,9 +37,10 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
             });
         }
 
-        // Compute batch_size as product of all dimensions except last
+        // Compute batch_size as product of all dimensions except last.
+        // The 1D case needs no clamp: an empty slice already products to 1. A clamp
+        // would only fire on a zero batch dim and walk past the allocation.
         let batch_size: usize = input_shape[..input_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1); // Handle 1D case
 
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
@@ -102,9 +103,10 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
             });
         }
 
-        // Compute batch_size as product of all dimensions except last
+        // Compute batch_size as product of all dimensions except last.
+        // The 1D case needs no clamp: an empty slice already products to 1. A clamp
+        // would only fire on a zero batch dim and walk past the allocation.
         let batch_size: usize = input_shape[..input_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1); // Handle 1D case
 
         let input_contig = ensure_contiguous(input)?;
         let weight_contig = ensure_contiguous(weight)?;
@@ -171,7 +173,9 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
             });
         }
         let channels_per_group = channels / num_groups;
-        let spatial: usize = shape[2..].iter().product::<usize>().max(1);
+        // Unclamped: a 2D input already products to 1 over the empty trailing slice,
+        // and a zero spatial dim must stay 0 so the kernel touches nothing.
+        let spatial: usize = shape[2..].iter().product();
 
         if weight.shape() != [channels] || bias.shape() != [channels] {
             return Err(Error::ShapeMismatch {
@@ -245,8 +249,8 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
             });
         }
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = input_shape[..input_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         let x_contig = ensure_contiguous(x)?;
         let res_contig = ensure_contiguous(residual)?;
@@ -308,8 +312,8 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
             });
         }
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = grad_shape[..grad_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         let grad_contig = ensure_contiguous(grad)?;
         let pre_norm_contig = ensure_contiguous(pre_norm)?;
@@ -380,8 +384,8 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
             });
         }
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = input_shape[..input_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         let x_contig = ensure_contiguous(x)?;
         let res_contig = ensure_contiguous(residual)?;
@@ -454,8 +458,8 @@ impl NormalizationOps<CpuRuntime> for CpuClient {
             });
         }
 
+        // Unclamped: rank-1 already products to 1, a zero batch dim must stay 0.
         let batch_size: usize = grad_shape[..grad_shape.len() - 1].iter().product();
-        let batch_size = batch_size.max(1);
 
         let grad_contig = ensure_contiguous(grad)?;
         let pre_norm_contig = ensure_contiguous(pre_norm)?;

@@ -33,10 +33,12 @@ pub(super) fn reduce_single_dim(
     }
 
     let reduce_size = shape[dim];
+    // No `.max(1)` here: `product()` of an empty slice is already 1, so the
+    // clamp only ever fires when a dimension is genuinely 0 — and then it
+    // fabricates a row the allocation does not have, so the kernel reads a
+    // null pointer. An empty extent must stay 0.
     let outer_size: usize = shape[..dim].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = shape[dim + 1..].iter().product();
-    let inner_size = inner_size.max(1);
 
     let out_shape = reduce_output_shape(shape, &[dim], keepdim);
     let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
@@ -103,6 +105,24 @@ pub(super) unsafe fn reduce_non_last_dim_outer<T: Element>(
     reduce_size: usize,
     inner_size: usize,
 ) {
+    // A zero-length reduce dimension leaves `Max` and `Min` with no element to
+    // seed from, and the loop below seeds them by reading index `inner` of an
+    // empty allocation — a null dereference, since `CpuRuntime::allocate` hands
+    // back a null pointer for zero bytes. Both are given the identity of their
+    // own reduction; every other op already starts from its identity and
+    // iterates zero times.
+    if reduce_size == 0 && matches!(op, ReduceOp::Max | ReduceOp::Min) {
+        let identity = if matches!(op, ReduceOp::Max) {
+            T::from_f64(T::DTYPE.min_value())
+        } else {
+            T::from_f64(T::DTYPE.max_value())
+        };
+        for inner in 0..inner_size {
+            *out.add(outer * inner_size + inner) = identity;
+        }
+        return;
+    }
+
     // A float narrower than F32 must not accumulate in its own dtype: the
     // running sum saturates and stalls on a constant. Widen to f32 and narrow
     // only the final result. F32, F64, and integers keep the loop below

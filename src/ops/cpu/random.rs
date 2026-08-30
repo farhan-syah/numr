@@ -231,9 +231,9 @@ impl RandomOps<CpuRuntime> for CpuClient {
             });
         }
 
-        // Compute number of distributions (product of all dims except last)
+        // Number of distributions (product of all dims except last). No `.max(1)`:
+        // 1D already products to 1, a clamp would only fabricate a zero dim's row.
         let num_distributions: usize = shape[..shape.len() - 1].iter().product();
-        let num_distributions = num_distributions.max(1); // At least 1 for 1D input
 
         // Ensure probs is contiguous
         let probs = ensure_contiguous(probs)?;

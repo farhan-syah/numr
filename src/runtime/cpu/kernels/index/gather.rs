@@ -135,11 +135,10 @@ pub unsafe fn gather_nd_kernel<T: Element>(
         out_strides[i] = out_strides[i + 1] * out_shape[i + 1];
     }
 
-    // Number of index vectors (product of indices.shape[:-1])
-    let num_indices: usize = indices_shape[..indices_ndim - 1]
-        .iter()
-        .product::<usize>()
-        .max(1);
+    // Number of index vectors (product of indices.shape[:-1]).
+    // Unclamped: a 1-D `indices` already products to 1, so clamping would only fire
+    // on a genuinely zero leading dim and read index vectors that do not exist.
+    let num_indices: usize = indices_shape[..indices_ndim - 1].iter().product();
 
     // Size of trailing dimensions from input (after the indexed dimensions)
     let trailing_size: usize = if index_depth < input_ndim {

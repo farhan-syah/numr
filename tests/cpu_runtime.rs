@@ -55,11 +55,20 @@ fn test_copy_within_device() {
     CpuRuntime::deallocate(dst, data.len(), &device);
 }
 
+/// A zero-byte allocation must be NON-NULL and aligned.
+///
+/// `slice::from_raw_parts(ptr, 0)` is undefined behaviour on a null pointer, and
+/// the CPU kernels build slices from a tensor's pointer without first checking
+/// its length — there are far more `from_raw_parts` sites than length guards. So
+/// the allocator hands back a dangling-but-aligned address instead of 0, which
+/// is what `NonNull::dangling()` yields. `deallocate` ignores a zero size, so the
+/// address is never freed.
 #[test]
 fn test_zero_allocation() {
     let device = CpuDevice::new();
     let ptr = CpuRuntime::allocate(0, &device).unwrap();
-    assert_eq!(ptr, 0);
+    assert_ne!(ptr, 0, "a zero-byte allocation must not be null");
+    assert_eq!(ptr % 64, 0, "a zero-byte allocation must stay 64-aligned");
     CpuRuntime::deallocate(ptr, 0, &device); // Should not panic
 }
 

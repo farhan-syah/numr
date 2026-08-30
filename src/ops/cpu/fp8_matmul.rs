@@ -68,7 +68,8 @@ fn validate_fp8_matmul(
         .iter()
         .take(out_shape.len().saturating_sub(2))
         .product();
-    let batch_size = batch_size.max(1);
+    // No `.max(1)`: an unbatched matmul takes 0 dims and already products to 1,
+    // so a clamp would only fabricate a batch for a genuinely zero batch dim.
 
     Ok((out_shape, batch_size, m, k, n))
 }

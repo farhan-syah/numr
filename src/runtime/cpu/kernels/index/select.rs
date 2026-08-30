@@ -36,13 +36,15 @@ pub unsafe fn index_select_kernel<T: Element>(
         return;
     }
 
-    // Compute sizes: outer * dim_size * inner
+    // Compute sizes: outer * dim_size * inner.
+    // Never clamp these with `.max(1)`: an empty slice already products to 1, so a
+    // clamp only fires on a genuinely zero dim and then indexes past the allocation.
     let outer_size: usize = shape[..dim].iter().product();
     let dim_size = shape[dim];
     let inner_size: usize = shape[dim + 1..].iter().product();
 
     // For each outer position
-    for outer in 0..outer_size.max(1) {
+    for outer in 0..outer_size {
         // For each selected index
         for (sel_idx, &idx_ptr) in std::slice::from_raw_parts(indices, index_len)
             .iter()
@@ -51,20 +53,17 @@ pub unsafe fn index_select_kernel<T: Element>(
             let idx = idx_ptr as usize;
             if idx >= dim_size {
                 // Out of bounds - fill with zeros
-                for inner in 0..inner_size.max(1) {
-                    let out_offset =
-                        outer * index_len * inner_size.max(1) + sel_idx * inner_size.max(1) + inner;
+                for inner in 0..inner_size {
+                    let out_offset = outer * index_len * inner_size + sel_idx * inner_size + inner;
                     *out.add(out_offset) = T::zero();
                 }
                 continue;
             }
 
             // Copy the entire inner slice
-            for inner in 0..inner_size.max(1) {
-                let src_offset =
-                    outer * dim_size * inner_size.max(1) + idx * inner_size.max(1) + inner;
-                let out_offset =
-                    outer * index_len * inner_size.max(1) + sel_idx * inner_size.max(1) + inner;
+            for inner in 0..inner_size {
+                let src_offset = outer * dim_size * inner_size + idx * inner_size + inner;
+                let out_offset = outer * index_len * inner_size + sel_idx * inner_size + inner;
                 *out.add(out_offset) = *a.add(src_offset);
             }
         }
@@ -104,7 +103,9 @@ pub unsafe fn index_put_kernel<T: Element>(
         return;
     }
 
-    // Compute sizes: outer * dim_size * inner
+    // Compute sizes: outer * dim_size * inner.
+    // Never clamp these with `.max(1)`: an empty slice already products to 1, so a
+    // clamp only fires on a genuinely zero dim and then indexes past the allocation.
     let outer_size: usize = shape[..dim].iter().product();
     let dim_size = shape[dim];
     let inner_size: usize = shape[dim + 1..].iter().product();
@@ -114,7 +115,7 @@ pub unsafe fn index_put_kernel<T: Element>(
     std::ptr::copy_nonoverlapping(a, out, total_size);
 
     // Now overwrite the indexed positions with src values
-    for outer in 0..outer_size.max(1) {
+    for outer in 0..outer_size {
         for (sel_idx, &idx_ptr) in std::slice::from_raw_parts(indices, index_len)
             .iter()
             .enumerate()
@@ -126,11 +127,9 @@ pub unsafe fn index_put_kernel<T: Element>(
             }
 
             // Overwrite the entire inner slice at this index
-            for inner in 0..inner_size.max(1) {
-                let out_offset =
-                    outer * dim_size * inner_size.max(1) + idx * inner_size.max(1) + inner;
-                let src_offset =
-                    outer * index_len * inner_size.max(1) + sel_idx * inner_size.max(1) + inner;
+            for inner in 0..inner_size {
+                let out_offset = outer * dim_size * inner_size + idx * inner_size + inner;
+                let src_offset = outer * index_len * inner_size + sel_idx * inner_size + inner;
                 *out.add(out_offset) = *src.add(src_offset);
             }
         }

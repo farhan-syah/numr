@@ -43,12 +43,11 @@ pub fn cumsum_impl(
     // Output has same shape as input
     let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device)?;
 
-    // Compute sizes for the scan
+    // Compute sizes for the scan. Unclamped: an empty slice already products to 1,
+    // so `.max(1)` here would only fabricate a row for a genuinely zero dimension.
     let scan_size = shape[dim_idx];
     let outer_size: usize = shape[..dim_idx].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = shape[dim_idx + 1..].iter().product();
-    let inner_size = inner_size.max(1);
 
     let a_ptr = a_contig.ptr();
     let out_ptr = out.ptr();
@@ -102,12 +101,11 @@ pub fn cumprod_impl(
     // Output has same shape as input
     let out = Tensor::<CpuRuntime>::empty(shape, dtype, &client.device)?;
 
-    // Compute sizes for the scan
+    // Compute sizes for the scan. Unclamped: an empty slice already products to 1,
+    // so `.max(1)` here would only fabricate a row for a genuinely zero dimension.
     let scan_size = shape[dim_idx];
     let outer_size: usize = shape[..dim_idx].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = shape[dim_idx + 1..].iter().product();
-    let inner_size = inner_size.max(1);
 
     let a_ptr = a_contig.ptr();
     let out_ptr = out.ptr();
@@ -172,8 +170,9 @@ pub fn logsumexp_impl(
     // For single last-dimension reduction on contiguous tensor, use fast path
     if dims.len() == 1 && dims[0] == ndim - 1 && a.is_contiguous() {
         let reduce_size = shape[ndim - 1];
+        // Unclamped: a zero leading dim must stay 0, or the kernel walks past the
+        // allocation. An empty slice already products to 1 for the rank-1 case.
         let outer_size: usize = shape[..ndim - 1].iter().product();
-        let outer_size = outer_size.max(1);
 
         let out_shape = reduce_output_shape(shape, dims, keepdim);
         let out = Tensor::<CpuRuntime>::empty(&out_shape, dtype, &client.device)?;
@@ -233,11 +232,11 @@ fn logsumexp_single_dim(
         });
     }
 
+    // Unclamped: an empty slice already products to 1, so `.max(1)` would only
+    // fabricate a row for a genuinely zero dimension and index out of bounds.
     let reduce_size = shape[dim];
     let outer_size: usize = shape[..dim].iter().product();
-    let outer_size = outer_size.max(1);
     let inner_size: usize = shape[dim + 1..].iter().product();
-    let inner_size = inner_size.max(1);
 
     // Output shape: remove the reduced dimension (or keep as 1)
     let out_shape: Vec<usize> = if keepdim {

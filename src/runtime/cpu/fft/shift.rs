@@ -42,8 +42,9 @@ fn shift_impl(
     let n = input_contig.shape()[ndim - 1];
     let output = Tensor::<CpuRuntime>::empty(input_contig.shape(), dtype, &client.device)?;
 
+    // Unclamped: rank-1 already products to 1. Clamping a zero batch dim to 1 would
+    // build a `from_raw_parts` slice longer than the zero-element allocation.
     let batch_size: usize = input_contig.shape()[..ndim - 1].iter().product();
-    let batch_size = batch_size.max(1);
     #[cfg(feature = "rayon")]
     let min_len = client.rayon_min_len();
 
