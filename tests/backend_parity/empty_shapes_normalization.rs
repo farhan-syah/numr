@@ -16,6 +16,10 @@
 //!   a read past the end of the empty allocation.
 //! - `matmul_bias_activation` with `k == 0` on WebGPU: the answer is
 //!   `act(bias)`, which that backend has no way to write without a dispatch.
+//!
+//! The BACKWARD with `k == 0` is covered on all three, including WebGPU: unlike
+//! the forward above, `d_bias` there is a reduction of the gradient, which every
+//! backend can produce without binding the zero-byte `a`/`b` operands.
 
 use numr::dtype::DType;
 use numr::error::Error;
@@ -222,6 +226,14 @@ fn check_softmax<R, C>(
 // ============================================================================
 /// One gemm-epilogue shape case: `a` shape, `b` shape, expected output shape,
 /// and the bias length.
+/// One gemm-epilogue backward case: `a`, `b`, grad and bias shapes.
+type GemmBwdCase = (
+    &'static [usize],
+    &'static [usize],
+    &'static [usize],
+    &'static [usize],
+);
+
 type GemmCase = (&'static [usize], &'static [usize], &'static [usize], usize);
 
 fn check_gemm_epilogue<R, C>(
@@ -294,11 +306,20 @@ fn check_gemm_epilogue<R, C>(
     }
 }
 
-/// The batched backward, whose zero-batch case is a separate guard: no batch
-/// contributes, so both parameter gradients stay at the additive identity.
+/// The backward over a degenerate operand, in the two cases that differ:
 ///
-/// WebGPU is not covered: its backward allocates `[batch, M, N]` scratch, which
-/// is zero-byte here, and it has no guard for that yet.
+/// - Zero batch (`[0, 2, 5] x [0, 5, 3]`): the gradient is empty, no batch
+///   contributes, and all three gradients are the additive identity.
+/// - `k == 0` with a NON-empty gradient (`[2, 0] x [0, 3]`, and its batched
+///   counterpart): `d_a` and `d_b` are empty tensors of their own shapes, but
+///   `d_bias` is a REAL reduction of `grad * act'(bias)` — the contraction adds
+///   nothing, so the pre-activation is the bias alone. `a` and `b` are zero-byte
+///   allocations that no GPU dispatch can bind, so the value has to be produced
+///   another way. CPU is the reference.
+///
+/// `bias` is 1.0 and `grad` is 2.0 so ReLU's derivative at the pre-activation is
+/// 1 and `d_bias` is a non-zero `2 * batch * M` — zeros would pass even if the
+/// reduction were skipped entirely.
 fn check_gemm_epilogue_bwd<R, C>(
     client: &C,
     device: &R::Device,
@@ -310,38 +331,60 @@ fn check_gemm_epilogue_bwd<R, C>(
     R: Runtime<DType = DType>,
     C: GemmEpilogueOps<R>,
 {
-    let a_shape: &[usize] = &[0, 2, 5];
-    let b_shape: &[usize] = &[0, 5, 3];
-    let g_shape: &[usize] = &[0, 2, 3];
-    let bias_shape: &[usize] = &[3];
+    // (a shape, b shape, grad shape, bias shape)
+    let cases: [GemmBwdCase; 3] = [
+        (&[0, 2, 5], &[0, 5, 3], &[0, 2, 3], &[3]),
+        (&[2, 0], &[0, 3], &[2, 3], &[3]),
+        (&[2, 3, 0], &[2, 0, 4], &[2, 3, 4], &[4]),
+    ];
 
-    let a_cpu = Tensor::<CpuRuntime>::zeros(a_shape, dtype, cpu_device).expect("cpu a");
-    let b_cpu = Tensor::<CpuRuntime>::zeros(b_shape, dtype, cpu_device).expect("cpu b");
-    let g_cpu = Tensor::<CpuRuntime>::zeros(g_shape, dtype, cpu_device).expect("cpu grad");
-    let bias_cpu = Tensor::<CpuRuntime>::zeros(bias_shape, dtype, cpu_device).expect("cpu bias");
-    let a = Tensor::<R>::zeros(a_shape, dtype, device).expect("a");
-    let b = Tensor::<R>::zeros(b_shape, dtype, device).expect("b");
-    let g = Tensor::<R>::zeros(g_shape, dtype, device).expect("grad");
-    let bias = Tensor::<R>::zeros(bias_shape, dtype, device).expect("bias");
+    for (a_shape, b_shape, g_shape, bias_shape) in cases {
+        let a_cpu = Tensor::<CpuRuntime>::zeros(a_shape, dtype, cpu_device).expect("cpu a");
+        let b_cpu = Tensor::<CpuRuntime>::zeros(b_shape, dtype, cpu_device).expect("cpu b");
+        let g_cpu =
+            Tensor::<CpuRuntime>::full_scalar(g_shape, dtype, 2.0, cpu_device).expect("cpu grad");
+        let bias_cpu = Tensor::<CpuRuntime>::full_scalar(bias_shape, dtype, 1.0, cpu_device)
+            .expect("cpu bias");
+        let a = Tensor::<R>::zeros(a_shape, dtype, device).expect("a");
+        let b = Tensor::<R>::zeros(b_shape, dtype, device).expect("b");
+        let g = Tensor::<R>::full_scalar(g_shape, dtype, 2.0, device).expect("grad");
+        let bias = Tensor::<R>::full_scalar(bias_shape, dtype, 1.0, device).expect("bias");
 
-    let (e_da, e_db, e_dbias) = cpu_client
-        .matmul_bias_activation_bwd(&g_cpu, &a_cpu, &b_cpu, &bias_cpu, GemmActivation::ReLU)
-        .expect("cpu matmul_bias_activation_bwd over an empty batch");
-    let (da, db, dbias) = client
-        .matmul_bias_activation_bwd(&g, &a, &b, &bias, GemmActivation::ReLU)
-        .unwrap_or_else(|e| panic!("{backend} matmul_bias_activation_bwd {dtype:?}: {e:?}"));
+        let (e_da, e_db, e_dbias) = cpu_client
+            .matmul_bias_activation_bwd(&g_cpu, &a_cpu, &b_cpu, &bias_cpu, GemmActivation::ReLU)
+            .expect("cpu matmul_bias_activation_bwd over a degenerate operand");
+        let (da, db, dbias) = client
+            .matmul_bias_activation_bwd(&g, &a, &b, &bias, GemmActivation::ReLU)
+            .unwrap_or_else(|e| {
+                panic!("{backend} matmul_bias_activation_bwd {a_shape:?} {dtype:?}: {e:?}")
+            });
 
-    assert_eq!(da.shape(), a_shape, "{backend} d_a shape");
-    assert_eq!(db.shape(), b_shape, "{backend} d_b shape");
-    assert_eq!(dbias.shape(), bias_shape, "{backend} d_bias shape");
-    assert_tensor_allclose(&da, &e_da, dtype, &format!("gemm bwd d_a {backend} vs cpu"));
-    assert_tensor_allclose(&db, &e_db, dtype, &format!("gemm bwd d_b {backend} vs cpu"));
-    assert_tensor_allclose(
-        &dbias,
-        &e_dbias,
-        dtype,
-        &format!("gemm bwd d_bias {backend} vs cpu"),
-    );
+        assert_eq!(da.shape(), a_shape, "{backend} d_a shape {a_shape:?}");
+        assert_eq!(db.shape(), b_shape, "{backend} d_b shape {a_shape:?}");
+        assert_eq!(
+            dbias.shape(),
+            bias_shape,
+            "{backend} d_bias shape {a_shape:?}"
+        );
+        assert_tensor_allclose(
+            &da,
+            &e_da,
+            dtype,
+            &format!("gemm bwd d_a {a_shape:?} {backend} vs cpu"),
+        );
+        assert_tensor_allclose(
+            &db,
+            &e_db,
+            dtype,
+            &format!("gemm bwd d_b {a_shape:?} {backend} vs cpu"),
+        );
+        assert_tensor_allclose(
+            &dbias,
+            &e_dbias,
+            dtype,
+            &format!("gemm bwd d_bias {a_shape:?} {backend} vs cpu"),
+        );
+    }
 }
 
 // ============================================================================
@@ -469,6 +512,14 @@ fn test_empty_normalization_wgpu_matches_cpu() {
                 dtype,
                 "wgpu",
                 false,
+            );
+            check_gemm_epilogue_bwd::<WgpuRuntime, _>(
+                &client,
+                &device,
+                &cpu_client,
+                &cpu_device,
+                dtype,
+                "wgpu",
             );
         }
     });

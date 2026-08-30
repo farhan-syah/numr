@@ -409,6 +409,31 @@ pub(crate) fn native_gemm_bias_activation_bwd(
         ));
     }
 
+    // A contraction with no terms over a NON-empty gradient. `d_a`/`d_b` are
+    // empty, but `d_bias` is a REAL reduction of `grad * act'(bias)`: `A @ B`
+    // adds nothing, so the pre-activation is the bias alone, as CPU computes.
+    // `a`/`b` are zero-byte allocations no dispatch can bind, so substitute a
+    // zero-filled `k == 1` contraction — same shader, plus exactly `0.0`, same
+    // `d_bias`; it recurses once. Keep after the `grad.numel() == 0` guard.
+    if k == 0 {
+        let dev = RuntimeClient::device(client);
+        let zeros = |s: &[usize]| Tensor::<WgpuRuntime>::zeros(s, dtype, dev);
+        let (a1, b1) = if a_shape.len() == 3 {
+            (vec![batch_size, m, 1], vec![batch_size, 1, n])
+        } else {
+            (vec![m, 1], vec![1, n])
+        };
+        let (_, _, d_bias) = native_gemm_bias_activation_bwd(
+            client,
+            grad,
+            &zeros(&a1)?,
+            &zeros(&b1)?,
+            bias,
+            activation,
+        )?;
+        return Ok((zeros(a_shape)?, zeros(b_shape)?, d_bias));
+    }
+
     let a_c = ensure_contiguous(a)?;
     let b_c = ensure_contiguous(b)?;
     let bias_c = ensure_contiguous(bias)?;
