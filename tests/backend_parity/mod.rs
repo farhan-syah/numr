@@ -52,6 +52,7 @@ pub mod matrix_functions_sqrtm;
 pub mod multivariate;
 pub mod normalization;
 pub mod polynomial;
+pub mod quasirandom;
 pub mod random;
 pub mod reduce;
 pub mod reduce_dim_grid;

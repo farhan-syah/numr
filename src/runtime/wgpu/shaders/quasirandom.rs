@@ -252,28 +252,38 @@ fn xorshift32(state_ptr: ptr<function, u32>) -> u32 {
     return x;
 }
 
+// Uniform in [0, 1). The shift to 24 bits keeps every value exactly
+// representable in f32: f32(x) for a full 32-bit x rounds up to 2^32 for the
+// top of the range, which would return exactly 1.0 and put a sample on the
+// upper stratum boundary.
 fn uniform_f32(state_ptr: ptr<function, u32>) -> f32 {
-    return f32(xorshift32(state_ptr)) / 4294967296.0;
+    return f32(xorshift32(state_ptr) >> 8u) / 16777216.0;
 }
 
 @compute @workgroup_size(256)
-fn latin_hypercube_f32(@builtin(global_invocation_id) gid: vec3<u32>) {
-    // Each workgroup handles one dimension
-    let dim = gid.x;
+fn latin_hypercube_f32(
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    // One workgroup per dimension; the 256 threads inside it split the samples.
+    // This MUST read the workgroup and local ids separately: a global id would
+    // conflate the two, so every thread but the first would fall out of the
+    // dimension bound and whole strata would be left unwritten.
+    let dim = wid.x;
     if (dim >= params.dimension) { return; }
 
-    // Thread-local RNG state
-    var rng_state = params.seed + dim * 1234567u + gid.y * 987654u;
+    // Thread-local RNG state. xorshift32 is stuck at zero, so a seed that lands
+    // there has to be nudged off it.
+    var rng_state = params.seed + dim * 1234567u + lid.x * 987654u;
+    if (rng_state == 0u) { rng_state = 1u; }
 
-    // Each thread in the workgroup processes multiple samples
-    let samples_per_thread = (params.n_samples + 255u) / 256u;
-    let start_sample = gid.y * samples_per_thread;
-    let end_sample = min(start_sample + samples_per_thread, params.n_samples);
-
-    for (var i = start_sample; i < end_sample; i++) {
-        // Simple linear congruential shuffle approximation
-        // For proper LHS, we'd need shared memory and synchronization
-        var interval = (i + (dim * 7919u) % params.n_samples) % params.n_samples;
+    // Strided over the workgroup so the samples are covered whatever n_samples
+    // is, including the tail when it is not a multiple of 256.
+    for (var i = lid.x; i < params.n_samples; i += 256u) {
+        // Cyclic shift of the identity permutation: a bijection over
+        // [0, n_samples), which is what stratification requires. A per-dimension
+        // shuffle would need shared memory and a barrier.
+        let interval = (i + (dim * 7919u) % params.n_samples) % params.n_samples;
 
         let lower = f32(interval) / f32(params.n_samples);
         let upper = f32(interval + 1u) / f32(params.n_samples);

@@ -52,11 +52,19 @@ pub fn compute_direction_vectors(poly: &ArchivedSobolPolynomial) -> [u32; SOBOL_
         // Start with the required terms: m_{i-s} XOR (m_{i-s} >> s)
         let mut vi = v[i - s] ^ (v[i - s] >> s);
 
-        // Add middle terms based on polynomial coefficients
-        // a encodes coefficients a_{s-1}, a_{s-2}, ..., a_1 from MSB to LSB
+        // Add middle terms based on polynomial coefficients.
+        // a encodes coefficients a_{s-1}, a_{s-2}, ..., a_1 from MSB to LSB.
+        //
+        // The middle terms are NOT shifted. Writing the recurrence over the
+        // integers m_i it is `2^k a_k m_{i-k}`, but over the direction numbers
+        // v_i = m_i / 2^i the powers of two cancel, leaving `a_k v_{i-k}`. Only
+        // the `v[i - s] >> s` term above survives the change of variable. A
+        // `>> j` here makes the leading direction-number matrix singular, which
+        // collapses the dimension: every point is then visited twice over the
+        // first 2^k draws instead of once.
         for j in 1..s {
             if (a >> (s - 1 - j)) & 1 != 0 {
-                vi ^= v[i - j] >> j;
+                vi ^= v[i - j];
             }
         }
 
