@@ -2,7 +2,8 @@
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::{
-    MatmulOps, ShapeOps, matmul_bias_output_shape, matmul_output_shape, validate_matmul_bias_dtypes,
+    BinaryOps, MatmulOps, ShapeOps, matmul_bias_output_shape, matmul_output_dtype,
+    matmul_output_shape, validate_matmul_bias_dtypes,
 };
 use crate::runtime::cuda::kernels::int_matmul_has_kernel;
 use crate::runtime::cuda::ops::helpers::{
@@ -52,6 +53,27 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             .take(out_shape.len().saturating_sub(2))
             .product();
         let batch_size = batch_size.max(1);
+
+        // A zero-element output has nothing to compute, and the matmul launchers
+        // derive their grid extents from `m`, `n` and the batch count without
+        // flooring them. A grid extent of 0 is a launch error, so the empty
+        // result is returned before any launch.
+        if out_shape.iter().product::<usize>() == 0 {
+            // I8 widens to I32, so the empty result carries the OUTPUT dtype.
+            let out_dtype = matmul_output_dtype(dtype);
+            return Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &self.device);
+        }
+
+        // A zero-length contraction leaves a NON-empty output whose every element
+        // is the sum of nothing. CPU answers zeros; the kernels would launch over
+        // empty operand buffers and read off the end, so answer it here.
+        if k == 0 {
+            return Tensor::<CudaRuntime>::zeros(
+                &out_shape,
+                matmul_output_dtype(dtype),
+                &self.device,
+            );
+        }
 
         // Native tiled CUDA kernel. The integer dtypes are gated by
         // `int_matmul_has_kernel`, which is the same predicate the launcher
@@ -184,6 +206,25 @@ impl MatmulOps<CudaRuntime> for CudaClient {
             .take(out_shape.len().saturating_sub(2))
             .product();
         let batch_size = batch_size.max(1);
+
+        // A zero-element output has nothing to compute, and the matmul launchers
+        // derive their grid extents from `m`, `n` and the batch count without
+        // flooring them. A grid extent of 0 is a launch error, so the empty
+        // result is returned before any launch.
+        if out_shape.iter().product::<usize>() == 0 {
+            // I8 widens to I32, so the empty result carries the OUTPUT dtype.
+            let out_dtype = matmul_output_dtype(dtype);
+            return Tensor::<CudaRuntime>::empty(&out_shape, out_dtype, &self.device);
+        }
+
+        // A zero-length contraction leaves a NON-empty output whose every element
+        // is just the bias. CPU seeds its accumulator with the bias and adds
+        // nothing; the kernels would read off the end of the empty operands.
+        if k == 0 {
+            let zeros =
+                Tensor::<CudaRuntime>::zeros(&out_shape, matmul_output_dtype(dtype), &self.device)?;
+            return self.add(&zeros, bias);
+        }
 
         // Native tiled CUDA kernel with fused bias. FP8 and the integers are
         // included: CPU seeds its wide accumulator with the bias, so composing

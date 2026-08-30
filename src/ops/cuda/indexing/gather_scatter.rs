@@ -206,6 +206,13 @@ pub fn index_select(
     let mut out_shape = shape.to_vec();
     out_shape[dim] = index_len;
 
+    // A zero-element output has nothing to select. The kernel derives its grid
+    // from the source's outer/inner extents, so launching it here reads off the
+    // end of an empty allocation — an illegal access, not merely a wrong answer.
+    if out_shape.iter().product::<usize>() == 0 {
+        return Tensor::<CudaRuntime>::empty(&out_shape, dtype, &client.device);
+    }
+
     // Compute dim_size for validation
     let dim_size = shape[dim];
 

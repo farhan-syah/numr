@@ -86,6 +86,14 @@ impl SemiringMatmulOps<CudaRuntime> for CudaClient {
             .product();
         let batch_size = batch_size.max(1);
 
+        // A zero-element output has nothing to compute, and the launcher derives
+        // its grid extents from `m` and `n` without flooring them. `m == 0` or
+        // `n == 0` would give a grid extent of 0, which the driver rejects
+        // outright, so the empty result is returned before any launch.
+        if out_shape.iter().product::<usize>() == 0 {
+            return Tensor::<CudaRuntime>::empty(&out_shape, dtype, &self.device);
+        }
+
         let op_code = semiring_op_code(op);
 
         // Bool uses the u8 kernel (same underlying type)
