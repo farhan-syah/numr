@@ -22,23 +22,31 @@ pub(super) fn bincount(
     weights: Option<&Tensor<WgpuRuntime>>,
     minlength: usize,
 ) -> Result<Tensor<WgpuRuntime>> {
-    // Validate input is 1D integer
+    // Validate input is 1D integer. CPU is the reference backend, so both
+    // rejections use the variant and payload it uses: a caller matching on the
+    // error must not have to special-case which backend produced it.
     if input.ndim() != 1 {
-        return Err(Error::InvalidArgument {
-            arg: "input",
-            reason: "bincount input must be 1D".to_string(),
+        return Err(Error::ShapeMismatch {
+            expected: vec![input.numel()],
+            got: input.shape().to_vec(),
         });
     }
 
     if !matches!(input.dtype(), DType::I32 | DType::I64) {
-        return Err(Error::InvalidArgument {
-            arg: "input",
-            reason: "bincount input must be integer type (I32 or I64)".to_string(),
+        return Err(Error::DTypeMismatch {
+            lhs: DType::I64,
+            rhs: input.dtype(),
         });
     }
 
     // Determine output dtype
     let output_dtype = if let Some(w) = weights {
+        if w.shape() != input.shape() {
+            return Err(Error::ShapeMismatch {
+                expected: input.shape().to_vec(),
+                got: w.shape().to_vec(),
+            });
+        }
         if !matches!(w.dtype(), DType::F32 | DType::I32 | DType::U32) {
             return Err(Error::UnsupportedDType {
                 dtype: w.dtype(),
@@ -59,9 +67,17 @@ pub(super) fn bincount(
 
     // Determine output size: max reduction on GPU, read single scalar back.
     // This is a necessary system boundary (same as CPU/CUDA computing max first).
-    let input_f32 = client.cast(&input, DType::F32)?;
-    let max_tensor = client.max(&input_f32, &[0], true)?;
-    let max_val = max_tensor.item::<f32>()? as i64;
+    //
+    // The max is taken in I32, not a float dtype. CUDA casts to F64 because its
+    // reduce kernels have no integer path, and F64's 53-bit mantissa holds every
+    // i32/i64 index exactly. WebGPU has no F64, and F32's 24-bit mantissa rounds
+    // any value above 2^24, which would size the output wrongly. WebGPU does have
+    // native I32 reduce kernels, so the max stays in the integer domain and is
+    // exact across the whole I32 range. Values beyond I32 are unrepresentable on
+    // this backend at all — that is WebGPU's 32-bit dtype limit, and
+    // `ensure_i32_indices` above is where an I64 input narrows.
+    let max_tensor = client.max(&input, &[0], true)?;
+    let max_val = max_tensor.item::<i32>()? as i64;
     if max_val < 0 {
         return Err(Error::InvalidArgument {
             arg: "input",
