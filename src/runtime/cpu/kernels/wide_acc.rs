@@ -138,6 +138,14 @@ impl WideAcc for i128 {
 /// could represent. Doing it in i128 keeps it right for the sums it could not:
 /// `mean([2_000_000_000, 2_000_000_000])` as I32 is 2_000_000_000, even though
 /// the sum needs 33 bits.
+///
+/// `count.max(1)` fixes the answer for an integer mean over ZERO elements at 0.
+/// A float answers `0 / 0`, which is NaN, and that is what every backend gives
+/// it; an integer dtype cannot represent NaN, so 0 is a choice forced by the
+/// dtype rather than a mathematical identity. CUDA's `numr128_div_u64_trunc`
+/// forces a zero divisor to 1 for the same reason, and WebGPU's
+/// `empty_reduce_identity` answers 0 for a non-float `mean`. Do not remove the
+/// clamp: without it this divides by zero and panics.
 #[inline]
 pub fn int_mean_from_sum<T: Element>(sum: i128, count: usize) -> T {
     T::from_i128_saturating(sum / count.max(1) as i128)

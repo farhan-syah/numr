@@ -14,6 +14,9 @@
 //! `argmax`/`argmin` are the exception: no index names an element of an empty
 //! dimension, so all three backends must reject it rather than invent one.
 //!
+//! `mean` is the other exception: it has no identity over an empty set at all.
+//! Floats answer `0 / 0`, which is NaN; integers cannot hold NaN and answer 0.
+//!
 //! CPU is the reference. `assert_tensor_allclose` compares integer dtypes
 //! exactly, and compares infinities by identity, so an infinite expectation is
 //! a real assertion here.
@@ -125,6 +128,44 @@ fn check_identity_reduce<R, C>(
         .prod(&a, &[1], false)
         .unwrap_or_else(|e| panic!("{backend} prod {shape:?} {dtype:?}: {e:?}"));
     assert_tensor_allclose(&got, &want, dtype, &format!("prod [3, 0] {backend} vs 1"));
+
+    // Multi-dimension fold over nothing. This takes a different CPU route than
+    // the single-dim case above, and that route used to return the output
+    // allocation UNREAD — uninitialized memory rather than the identity.
+    let multi = &[2usize, 3, 0][..];
+    let a = Tensor::<R>::empty(multi, dtype, device).expect("a multi");
+    let a_cpu = Tensor::<CpuRuntime>::empty(multi, dtype, cpu_device).expect("cpu a multi");
+
+    for (op, ident) in [("max", max_identity(dtype)), ("min", min_identity(dtype))] {
+        let want = Tensor::<CpuRuntime>::full_scalar(&[2], dtype, ident, cpu_device)
+            .expect("multi identity");
+        let cpu_got = if op == "max" {
+            cpu_client.max(&a_cpu, &[1, 2], false)
+        } else {
+            cpu_client.min(&a_cpu, &[1, 2], false)
+        }
+        .unwrap_or_else(|e| panic!("cpu {op} [2,3,0] {dtype:?}: {e:?}"));
+        assert_tensor_allclose(
+            &cpu_got,
+            &want,
+            dtype,
+            &format!("{op} [2,3,0] dims [1,2] cpu vs identity"),
+        );
+
+        let got = if op == "max" {
+            client.max(&a, &[1, 2], false)
+        } else {
+            client.min(&a, &[1, 2], false)
+        }
+        .unwrap_or_else(|e| panic!("{backend} {op} [2,3,0] {dtype:?}: {e:?}"));
+        assert_eq!(got.shape(), &[2], "{op} [2,3,0] {backend} output shape");
+        assert_tensor_allclose(
+            &got,
+            &want,
+            dtype,
+            &format!("{op} [2,3,0] dims [1,2] {backend} vs identity"),
+        );
+    }
 }
 
 /// The `[0, 5]` counterpart: the output is empty, so there is no identity to
@@ -159,6 +200,60 @@ fn check_empty_output_reduce<R, C>(
         .unwrap_or_else(|e| panic!("{backend} min {shape:?} {dtype:?}: {e:?}"));
     assert_eq!(got.shape(), &[0], "min [0, 5] {backend} output shape");
     assert_tensor_allclose(&got, &cpu_min, dtype, &format!("min [0, 5] {backend}"));
+}
+
+// ============================================================================
+// mean
+// ============================================================================
+
+/// `mean` is the one reduction with NO identity over an empty set.
+///
+/// Floats answer the honest `0 / 0`, which is NaN — what NumPy and PyTorch both
+/// report, and what CPU already computes. Integers cannot represent NaN, so they
+/// answer 0; that is a choice forced by the dtype, not a mathematical identity.
+/// Both expectations are real assertions here: `values_close` compares NaN by
+/// identity, and `assert_tensor_allclose` compares integer dtypes exactly.
+fn check_mean<R, C>(
+    client: &C,
+    device: &R::Device,
+    cpu_client: &CpuClient,
+    cpu_device: &<CpuRuntime as Runtime>::Device,
+    dtype: DType,
+    backend: &str,
+) where
+    R: Runtime<DType = DType>,
+    C: ReduceOps<R>,
+{
+    let want_value = if dtype.is_float() { f64::NAN } else { 0.0 };
+
+    let a = Tensor::<R>::empty(&FOLD_OVER_NOTHING[..], dtype, device).expect("a");
+    let a_cpu =
+        Tensor::<CpuRuntime>::empty(&FOLD_OVER_NOTHING[..], dtype, cpu_device).expect("cpu a");
+
+    let want = identity_tensor(dtype, want_value, cpu_device);
+    let cpu_got = cpu_client
+        .mean(&a_cpu, &[1], false)
+        .expect("cpu mean over a zero-length dim");
+    assert_tensor_allclose(&cpu_got, &want, dtype, "mean [3, 0] cpu vs 0/0");
+
+    let got = client
+        .mean(&a, &[1], false)
+        .unwrap_or_else(|e| panic!("{backend} mean [3, 0] {dtype:?}: {e:?}"));
+    assert_eq!(got.shape(), &[3], "mean [3, 0] {backend} output shape");
+    assert_tensor_allclose(&got, &want, dtype, &format!("mean [3, 0] {backend} vs cpu"));
+
+    // The empty-output counterpart writes nothing at all.
+    let a = Tensor::<R>::empty(&EMPTY_OUTPUT[..], dtype, device).expect("a");
+    let a_cpu = Tensor::<CpuRuntime>::empty(&EMPTY_OUTPUT[..], dtype, cpu_device).expect("cpu a");
+    let cpu_got = cpu_client
+        .mean(&a_cpu, &[1], false)
+        .expect("cpu mean with an empty output");
+    assert_eq!(cpu_got.shape(), &[0], "mean [0, 5] cpu output shape");
+    let got = client
+        .mean(&a, &[1], false)
+        .unwrap_or_else(|e| panic!("{backend} mean [0, 5] {dtype:?}: {e:?}"));
+    assert_eq!(got.shape(), &[0], "mean [0, 5] {backend} output shape");
+    assert_tensor_allclose(&got, &cpu_got, dtype, &format!("mean [0, 5] {backend}"));
 }
 
 // ============================================================================
@@ -279,6 +374,7 @@ fn test_empty_reduce_identity_cpu() {
             dtype,
             "cpu",
         );
+        check_mean::<CpuRuntime, _>(&client, &device, &cpu_client, &cpu_device, dtype, "cpu");
         check_arg_reduce::<CpuRuntime, _>(&client, &device, dtype, "cpu");
     }
     for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cpu") {
@@ -308,6 +404,7 @@ fn test_empty_reduce_identity_cuda_matches_cpu() {
                 dtype,
                 "cuda",
             );
+            check_mean::<CudaRuntime, _>(&client, &device, &cpu_client, &cpu_device, dtype, "cuda");
             check_arg_reduce::<CudaRuntime, _>(&client, &device, dtype, "cuda");
         }
         for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "cuda") {
@@ -345,6 +442,7 @@ fn test_empty_reduce_identity_wgpu_matches_cpu() {
                 dtype,
                 "wgpu",
             );
+            check_mean::<WgpuRuntime, _>(&client, &device, &cpu_client, &cpu_device, dtype, "wgpu");
             check_arg_reduce::<WgpuRuntime, _>(&client, &device, dtype, "wgpu");
         }
         for dtype in parity_dtypes(DTypeDomain::FloatsOnly, "wgpu") {

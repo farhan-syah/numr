@@ -140,7 +140,7 @@ fn reduce_max_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let inner = output_idx % inner_size;
     let base_offset = outer * reduce_size * inner_size + inner;
 
-    var max_val: f32 = -3.40282346638528859812e+38;
+    var max_val: f32 = bitcast<f32>(0xff800000u); // -inf: max's identity
     var i: u32 = tid;
     while (i < reduce_size) {
         let input_idx = base_offset + i * inner_size;
@@ -185,7 +185,7 @@ fn reduce_min_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let inner = output_idx % inner_size;
     let base_offset = outer * reduce_size * inner_size + inner;
 
-    var min_val: f32 = 3.40282346638528859812e+38;
+    var min_val: f32 = bitcast<f32>(0x7f800000u); // +inf: min's identity
     var i: u32 = tid;
     while (i < reduce_size) {
         let input_idx = base_offset + i * inner_size;
@@ -401,7 +401,7 @@ fn full_reduce_max_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let wid = group_id.x;
     let numel = full_reduce_params.numel;
 
-    var max_val: f32 = -3.40282346638528859812e+38;
+    var max_val: f32 = bitcast<f32>(0xff800000u); // -inf: max's identity
     var i: u32 = wid * WORKGROUP_SIZE + tid;
     let stride = num_groups.x * WORKGROUP_SIZE;
 
@@ -434,7 +434,7 @@ fn full_reduce_min_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let wid = group_id.x;
     let numel = full_reduce_params.numel;
 
-    var min_val: f32 = 3.40282346638528859812e+38;
+    var min_val: f32 = bitcast<f32>(0x7f800000u); // +inf: min's identity
     var i: u32 = wid * WORKGROUP_SIZE + tid;
     let stride = num_groups.x * WORKGROUP_SIZE;
 
@@ -527,7 +527,7 @@ fn argmax_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let inner = output_idx % inner_size;
     let base_offset = outer * reduce_size * inner_size + inner;
 
-    var max_val: f32 = -3.40282346638528859812e+38;
+    var max_val: f32 = bitcast<f32>(0xff800000u); // -inf: max's identity
     var max_idx: u32 = 0u;
     var i: u32 = tid;
 
@@ -578,7 +578,7 @@ fn argmin_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let inner = output_idx % inner_size;
     let base_offset = outer * reduce_size * inner_size + inner;
 
-    var min_val: f32 = 3.40282346638528859812e+38;
+    var min_val: f32 = bitcast<f32>(0x7f800000u); // +inf: min's identity
     var min_idx: u32 = 0u;
     var i: u32 = tid;
 
@@ -641,7 +641,7 @@ fn softmax_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let base_offset = batch_idx * dim_size;
 
     // Step 1: Find max for numerical stability
-    var max_val: f32 = -3.40282346638528859812e+38;
+    var max_val: f32 = bitcast<f32>(0xff800000u); // -inf: max's identity
     var i: u32 = tid;
     while (i < dim_size) {
         max_val = max(max_val, softmax_input[base_offset + i]);

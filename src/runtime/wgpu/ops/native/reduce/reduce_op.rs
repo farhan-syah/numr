@@ -124,14 +124,25 @@ fn native_int_acc_reduce(
 
 /// Value one output element takes when a reduction folds over zero inputs.
 ///
-/// `sum`/`mean`/`any` fold to 0, `prod`/`all` to 1, and `max`/`min` to the
-/// dtype's own extreme — negative/positive infinity for floats, which is what
-/// the CPU and CUDA kernels answer for the same shape.
+/// `sum`/`any` fold to 0, `prod`/`all` to 1, and `max`/`min` to the dtype's own
+/// extreme — negative/positive infinity for floats, which is what the CPU and
+/// CUDA kernels answer for the same shape.
+///
+/// `mean` is the one op with NO identity over an empty set. A float answers the
+/// honest `0 / 0`, which is NaN — the same value CPU computes and the same value
+/// NumPy and PyTorch report. An integer cannot represent NaN, so it keeps the 0
+/// that CPU's `int_mean_from_sum` lands on (it divides by `count.max(1)`); that
+/// is a choice forced by the dtype, not a mathematical identity. Do not
+/// "simplify" `mean` back into the `_ => 0.0` arm.
 fn empty_reduce_identity(op: &str, dtype: DType) -> f64 {
     match op {
         "prod" | "all" => 1.0,
         "max" => max_identity(dtype),
         "min" => min_identity(dtype),
+        // `mean` has no identity over an empty set: it is 0/0. NaN is what NumPy
+        // and PyTorch answer, and it is what CPU computes. Integers cannot hold
+        // NaN, so they take 0.
+        "mean" if dtype.is_float() => f64::NAN,
         _ => 0.0,
     }
 }

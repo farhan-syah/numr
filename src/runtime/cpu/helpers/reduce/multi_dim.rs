@@ -4,7 +4,9 @@ use super::common::{advance_coord, contiguous_strides, out_index_from_coord};
 use crate::dispatch_dtype;
 use crate::dtype::Element;
 use crate::error::Result;
-use crate::ops::{AccumulationPrecision, ReduceOp, reduce_output_shape};
+use crate::ops::{
+    AccumulationPrecision, ReduceOp, max_identity, min_identity, reduce_output_shape,
+};
 use crate::runtime::cpu::kernels::Accumulator;
 use crate::runtime::cpu::kernels::wide_acc::{WideAcc, int_mean_from_sum};
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
@@ -150,7 +152,24 @@ unsafe fn reduce_multi_dim_fused_native<T: Element>(
                 *output.add(i) = T::one();
             }
         }
-        ReduceOp::Max | ReduceOp::Min => {}
+        ReduceOp::Max | ReduceOp::Min => {
+            // A reduce set of zero elements never enters the accumulation loop
+            // below, so `initialized` stays false everywhere and the output
+            // would keep whatever the uninitialized allocation held. Seed the
+            // reduction's own identity instead — floats fold to -/+inf, other
+            // dtypes to their own extreme — which is what the single-dim kernels
+            // and the CUDA and WebGPU backends answer for the same shape.
+            if reduce_count == 0 {
+                let identity = if matches!(op, ReduceOp::Max) {
+                    T::from_f64(max_identity(T::DTYPE))
+                } else {
+                    T::from_f64(min_identity(T::DTYPE))
+                };
+                for i in 0..out_numel {
+                    *output.add(i) = identity;
+                }
+            }
+        }
     }
 
     let mut initialized = if matches!(op, ReduceOp::Max | ReduceOp::Min) {
@@ -283,6 +302,15 @@ unsafe fn reduce_multi_dim_fused_acc<T: Element, A: Accumulator>(
     reduce_count: usize,
 ) {
     let mut acc = match op {
+        // Same zero-length reduce dimension as the native path above: nothing
+        // ever initializes a `Max`/`Min` bucket, so seed the reduction's own
+        // identity rather than leaving it at zero.
+        ReduceOp::Max if reduce_count == 0 => {
+            vec![A::acc_in(max_identity(T::DTYPE)); out_numel]
+        }
+        ReduceOp::Min if reduce_count == 0 => {
+            vec![A::acc_in(min_identity(T::DTYPE)); out_numel]
+        }
         ReduceOp::Sum | ReduceOp::Mean | ReduceOp::Any | ReduceOp::Max | ReduceOp::Min => {
             vec![A::ZERO; out_numel]
         }
