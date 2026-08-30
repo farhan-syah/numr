@@ -19,6 +19,9 @@ pub mod distance_narrow_float;
 pub mod eigen;
 pub mod einsum;
 pub mod empty_shapes_elementwise;
+pub mod empty_shapes_fft;
+pub mod empty_shapes_normalization;
+pub mod empty_shapes_shape_ops;
 pub mod empty_shapes_structural;
 pub mod fft;
 #[cfg(feature = "fp8")]
