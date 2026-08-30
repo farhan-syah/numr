@@ -17,7 +17,7 @@
 #[cfg(feature = "wgpu")]
 use numr::dtype::DType;
 #[cfg(feature = "wgpu")]
-use numr::ops::{BinaryOps, ScalarOps, SortingOps, UtilityOps};
+use numr::ops::{BinaryOps, ScalarOps, SortingOps, UnaryOps, UtilityOps};
 #[cfg(feature = "wgpu")]
 use numr::runtime::cpu::CpuRuntime;
 #[cfg(feature = "wgpu")]
@@ -452,5 +452,34 @@ fn test_fused_ops_wrap_like_the_unfused_sequence() {
             &unfused_am.to_vec::<i32>(),
             "fused_add_mul vs mul(add(a, b), c) at the wrap boundary",
         );
+    });
+}
+
+// ============================================================================
+// neg on U32
+//
+// WGSL rejects `-x` on a u32, so the shader computes `0u - x`, which is defined
+// wrapping there. Element-wise integer ops wrap in this crate
+// (runtime/cpu/kernels/wide_acc.rs), so that is the contract, not a workaround:
+// neg(1u32) is u32::MAX and neg(0) is 0.
+// ============================================================================
+
+#[cfg(feature = "wgpu")]
+#[test]
+fn test_neg_u32_parity() {
+    let data = vec![0u32, 1, 4_000_000_000, u32::MAX];
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_cpu = Tensor::<CpuRuntime>::from_slice(&data, &[4], &cpu_device).expect("cpu tensor");
+    let cpu = cpu_client.neg(&a_cpu).expect("cpu neg u32");
+    assert_parity_u32(
+        &cpu.to_vec::<u32>(),
+        &[0, u32::MAX, 294_967_296, 1],
+        "neg u32 CPU vs the wrapping contract",
+    );
+
+    with_wgpu_backend_or_skip(|client, device| {
+        let a = Tensor::<WgpuRuntime>::from_slice(&data, &[4], &device).expect("wgpu tensor");
+        let got = client.neg(&a).expect("wgpu neg u32");
+        assert_parity_u32(&got.to_vec::<u32>(), &cpu.to_vec::<u32>(), "neg u32");
     });
 }

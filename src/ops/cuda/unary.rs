@@ -9,6 +9,9 @@ use crate::runtime::ensure_contiguous;
 use crate::tensor::Tensor;
 
 impl UnaryOps<CudaRuntime> for CudaClient {
+    /// `neg` on an unsigned dtype wraps: it is `0 - a` in modular arithmetic,
+    /// and element-wise integer ops wrap in this crate (`kernels::wide_acc`).
+    /// So `neg(1u32)` is `u32::MAX`, matching `sub` and NumPy.
     fn neg(&self, a: &Tensor<CudaRuntime>) -> Result<Tensor<CudaRuntime>> {
         native_unary_op(self, a, "neg")
     }

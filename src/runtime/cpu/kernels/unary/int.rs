@@ -1,4 +1,5 @@
-//! Wrapping integer `neg`, `abs` and `sign` for the element-wise unary kernels.
+//! Wrapping integer `neg`, `abs`, `sign` and `square` for the element-wise
+//! unary kernels.
 //!
 //! The generic unary path converts each element to `f64`, applies the operation
 //! and converts back. That is wrong for integers twice over:
@@ -17,9 +18,14 @@
 //! already, WGSL by definition and CUDA by two's-complement hardware, so this
 //! file is what brings CPU into line with them rather than the reverse.
 //!
-//! Rust's `-x` and `x.abs()` panic on overflow in a debug build and wrap in a
-//! release build, so neither may appear here: a tensor op's answer must not
-//! depend on the build profile.
+//! Rust's `-x`, `x.abs()` and `x * x` panic on overflow in a debug build and
+//! wrap in a release build, so none may appear here: a tensor op's answer must
+//! not depend on the build profile.
+//!
+//! `neg` on an UNSIGNED dtype wraps like every other element-wise integer op:
+//! it is `0 - a` in modular arithmetic, so `neg(1u64)` is `u64::MAX`. That is
+//! what this crate's unsigned `sub` already answers and what NumPy answers, so
+//! rejecting it would make `neg` disagree with the very next operation.
 
 use crate::dtype::{DType, Element};
 use crate::ops::UnaryOp;
@@ -29,6 +35,7 @@ trait WrappingIntUnary: Element {
     fn w_neg(self) -> Self;
     fn w_abs(self) -> Self;
     fn w_sign(self) -> Self;
+    fn w_square(self) -> Self;
 }
 
 macro_rules! impl_signed_unary {
@@ -53,6 +60,10 @@ macro_rules! impl_signed_unary {
                         0
                     }
                 }
+                #[inline]
+                fn w_square(self) -> Self {
+                    self.wrapping_mul(self)
+                }
             }
         )*
     };
@@ -74,6 +85,10 @@ macro_rules! impl_unsigned_unary {
                 fn w_sign(self) -> Self {
                     if self > 0 { 1 } else { 0 }
                 }
+                #[inline]
+                fn w_square(self) -> Self {
+                    self.wrapping_mul(self)
+                }
             }
         )*
     };
@@ -89,12 +104,13 @@ fn elem<T: WrappingIntUnary>(op: UnaryOp, a: T) -> Option<T> {
         UnaryOp::Neg => Some(a.w_neg()),
         UnaryOp::Abs => Some(a.w_abs()),
         UnaryOp::Sign => Some(a.w_sign()),
+        UnaryOp::Square => Some(a.w_square()),
         _ => None,
     }
 }
 
-/// Run `neg`, `abs` or `sign` over `len` contiguous elements when `T` is an
-/// integer dtype.
+/// Run `neg`, `abs`, `sign` or `square` over `len` contiguous elements when `T`
+/// is an integer dtype.
 ///
 /// Returns `false` for every other operation and every other dtype, leaving the
 /// caller on its generic `f64` path. The `op` match sits inside the per-dtype
@@ -111,7 +127,10 @@ pub(super) unsafe fn unary_int_kernel<T: Element>(
     out: *mut T,
     len: usize,
 ) -> bool {
-    if !matches!(op, UnaryOp::Neg | UnaryOp::Abs | UnaryOp::Sign) {
+    if !matches!(
+        op,
+        UnaryOp::Neg | UnaryOp::Abs | UnaryOp::Sign | UnaryOp::Square
+    ) {
         return false;
     }
 
@@ -179,6 +198,16 @@ mod tests {
         assert_eq!(elem::<i16>(UnaryOp::Sign, i16::MIN), Some(-1));
         assert_eq!(elem::<u8>(UnaryOp::Sign, 0), Some(0));
         assert_eq!(elem::<u8>(UnaryOp::Sign, 200), Some(1));
+    }
+
+    #[test]
+    fn square_wraps_rather_than_saturating() {
+        // The f64 round trip answered i8::MAX (127) for 100 * 100 and
+        // u8::MAX (255) for 16 * 16. CUDA's square_i32 already wrapped.
+        assert_eq!(elem::<i8>(UnaryOp::Square, 100), Some(16));
+        assert_eq!(elem::<u8>(UnaryOp::Square, 16), Some(0));
+        assert_eq!(elem::<i32>(UnaryOp::Square, 100_000), Some(1_410_065_408));
+        assert_eq!(elem::<i16>(UnaryOp::Square, -7), Some(49));
     }
 
     #[test]

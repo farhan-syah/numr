@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use super::loader::{
     BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module, kernel_name,
-    kernel_names, launch_config, launch_unary_kernel,
+    kernel_names, launch_config, launch_unary_kernel, unary_module,
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -64,7 +64,7 @@ pub unsafe fn launch_unary_op(
             context,
             stream,
             device_index,
-            kernel_names::UNARY_MODULE,
+            unary_module(dtype),
             op,
             dtype,
             a_ptr,

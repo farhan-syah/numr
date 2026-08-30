@@ -12,6 +12,9 @@ use crate::tensor::Tensor;
 
 /// UnaryOps implementation for CPU runtime.
 impl UnaryOps<CpuRuntime> for CpuClient {
+    /// `neg` on an unsigned dtype wraps: it is `0 - a` in modular arithmetic,
+    /// and element-wise integer ops wrap in this crate (`kernels::wide_acc`).
+    /// So `neg(1u32)` is `u32::MAX`, matching `sub` and NumPy.
     fn neg(&self, a: &Tensor<CpuRuntime>) -> Result<Tensor<CpuRuntime>> {
         unary_op_impl(self, UnaryOp::Neg, a, "neg")
     }

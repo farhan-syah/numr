@@ -19,7 +19,7 @@ mod module_cache;
 mod names;
 mod semiring_matmul;
 
-pub(crate) use dtype_modules::{cumulative_module, reduce_module};
+pub(crate) use dtype_modules::{cumulative_module, reduce_module, unary_module};
 pub use elementwise::{launch_binary_kernel, launch_unary_kernel};
 pub use gemv::{launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr};
 pub use launch_dims::{

@@ -11,6 +11,9 @@ pub mod kernel_names {
     pub const BINARY_MODULE: &str = "binary";
     /// Unary operations (one tensor input)
     pub const UNARY_MODULE: &str = "unary";
+    /// Integer unary operations, which wrap in the dtype instead of computing
+    /// in a float register
+    pub const UNARY_INT_MODULE: &str = "unary_int";
     /// Scalar operations (tensor + scalar input)
     pub const SCALAR_MODULE: &str = "scalar";
     /// Reduction operations (sum, max, min)

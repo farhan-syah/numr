@@ -87,6 +87,7 @@ fn compile_cuda_kernels() {
         "strided_copy.cu",
         "ternary.cu",
         "unary.cu",
+        "unary_int.cu",
         "utility.cu",
         "utility_random.cu",
         "gemm_epilogue.cu",

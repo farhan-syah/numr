@@ -14,8 +14,11 @@
 //                     IEEE roundTiesToEven (matches np.round and torch.round)
 //   Special:     clamp, isnan, isinf
 //
-// Types: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, i32, i64, u8 (bool)
-//        neg, abs and sign also cover i8 and i16
+// Types: f32, f64, f16, bf16, fp8_e4m3, fp8_e5m2, u8 (bool)
+//        Every INTEGER dtype lives in `unary_int.cu` instead, which the module
+//        selector `unary_module` routes to. Only the clamp_i32/clamp_i64
+//        kernels stay here: clamp has its own launcher and never goes through
+//        that selector.
 //
 // Notes:
 //   - Clamp operation: clamp(x, min_scalar, max_scalar) = min(max(x, lo), hi)
@@ -83,36 +86,6 @@ __device__ __forceinline__ numr_fp8_e5m2 clamp_impl(numr_fp8_e5m2 val, numr_fp8_
     float minf = fp8_e5m2_to_f32(min_val.data);
     float maxf = fp8_e5m2_to_f32(max_val.data);
     return numr_fp8_e5m2(f32_to_fp8_e5m2(fminf(fmaxf(vf, minf), maxf)));
-}
-
-// ============================================================================
-// Integer neg/abs/sign Helper Device Functions (Templated - outside extern "C")
-// ============================================================================
-//
-// Element-wise integer ops WRAP. That is the convention documented in
-// src/runtime/cpu/kernels/wide_acc.rs and mirrored by binary_ops.cuh, so
-// neg and abs of the type's minimum answer the minimum itself rather than
-// saturating to the maximum. WebGPU's unary_i32.wgsl answers the same by
-// WGSL's own definition.
-//
-// Signed overflow is undefined behaviour in C++, so both run in the dtype's
-// unsigned counterpart and convert back. That conversion is modulo 2^N, which
-// is exactly what Rust's wrapping_neg and wrapping_abs produce. A bare `-a` or
-// `abs(a)` is UB on the minimum instead.
-
-template<typename T, typename U>
-__device__ __forceinline__ T numr_int_neg(T a) {
-    return (T)(U)((U)0 - (U)a);
-}
-
-template<typename T, typename U>
-__device__ __forceinline__ T numr_int_abs(T a) {
-    return (a < (T)0) ? (T)(U)((U)0 - (U)a) : a;
-}
-
-template<typename T>
-__device__ __forceinline__ T numr_int_sign(T a) {
-    return (a > (T)0) ? (T)1 : ((a < (T)0) ? (T)(-1) : (T)0);
 }
 
 extern "C" {
@@ -1023,108 +996,6 @@ __global__ void atanh_bf16(const __nv_bfloat16* a, __nv_bfloat16* out, unsigned 
 }
 
 // ============================================================================
-// I32 Unary Operations
-// ============================================================================
-
-__global__ void neg_i32(const int* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_neg<int, unsigned int>(a[idx]);
-    }
-}
-
-__global__ void abs_i32(const int* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_abs<int, unsigned int>(a[idx]);
-    }
-}
-
-__global__ void square_i32(const int* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        int val = a[idx];
-        out[idx] = val * val;
-    }
-}
-
-// ============================================================================
-// I64 Unary Operations
-// ============================================================================
-
-__global__ void neg_i64(const long long* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_neg<long long, unsigned long long>(a[idx]);
-    }
-}
-
-__global__ void abs_i64(const long long* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_abs<long long, unsigned long long>(a[idx]);
-    }
-}
-
-__global__ void square_i64(const long long* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        long long val = a[idx];
-        out[idx] = val * val;
-    }
-}
-
-// ============================================================================
-// I8 / I16 Unary Operations
-//
-// Only neg, abs and sign. The narrow signed dtypes carry no transcendental
-// kernels, and these three are the ops backend_parity/unary_signed_int.rs
-// sweeps over every signed width.
-// ============================================================================
-
-__global__ void neg_i8(const signed char* a, signed char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_neg<signed char, unsigned char>(a[idx]);
-    }
-}
-
-__global__ void abs_i8(const signed char* a, signed char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_abs<signed char, unsigned char>(a[idx]);
-    }
-}
-
-__global__ void sign_i8(const signed char* a, signed char* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_sign<signed char>(a[idx]);
-    }
-}
-
-__global__ void neg_i16(const short* a, short* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_neg<short, unsigned short>(a[idx]);
-    }
-}
-
-__global__ void abs_i16(const short* a, short* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_abs<short, unsigned short>(a[idx]);
-    }
-}
-
-__global__ void sign_i16(const short* a, short* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_sign<short>(a[idx]);
-    }
-}
-
-// ============================================================================
 // FP8 E4M3 Unary Operations
 // All computation done in F32, stored back as FP8
 // Uses Hopper PTX intrinsics on SM 8.9+, software emulation on SM 8.0+
@@ -1723,20 +1594,6 @@ __global__ void sign_bf16(const __nv_bfloat16* a, __nv_bfloat16* out, unsigned i
     if (idx < n) {
         float val = __bfloat162float(a[idx]);
         out[idx] = __float2bfloat16((val > 0.0f) ? 1.0f : ((val < 0.0f) ? -1.0f : 0.0f));
-    }
-}
-
-__global__ void sign_i32(const int* a, int* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_sign<int>(a[idx]);
-    }
-}
-
-__global__ void sign_i64(const long long* a, long long* out, unsigned int n) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = numr_int_sign<long long>(a[idx]);
     }
 }
 

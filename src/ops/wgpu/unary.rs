@@ -9,6 +9,9 @@ use crate::runtime::wgpu::ops::native::{native_cast_op, native_unary_op};
 use crate::tensor::Tensor;
 
 impl UnaryOps<WgpuRuntime> for WgpuClient {
+    /// `neg` on an unsigned dtype wraps: it is `0 - a` in modular arithmetic,
+    /// and element-wise integer ops wrap in this crate (`kernels::wide_acc`).
+    /// So `neg(1u32)` is `u32::MAX`, matching `sub` and NumPy.
     fn neg(&self, a: &Tensor<WgpuRuntime>) -> Result<Tensor<WgpuRuntime>> {
         native_unary_op(self, "neg", a)
     }
