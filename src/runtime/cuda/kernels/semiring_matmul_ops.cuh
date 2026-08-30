@@ -49,7 +49,7 @@ __device__ __forceinline__ unsigned char numr_sr_max(unsigned char a, unsigned c
 
 // `combine` for MinPlus/MaxPlus and `reduce` for PlusMax are one elementwise
 // addition each, so they WRAP rather than saturate - the CPU reference is
-// `SemiringOp::combine`, whose `a + b` is Rust's plain `+` on the element type.
+// `SemiringOp::combine`, which adds through `wrapping_add` on I32 and I64.
 // The integer overloads add in the unsigned type of the same width, where
 // wrapping is defined, and cast back.
 __device__ __forceinline__ float numr_sr_add(float a, float b) { return a + b; }

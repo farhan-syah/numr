@@ -17,9 +17,12 @@
 //!   through `Element::from_f64`, which is Rust's saturating `as` cast: a
 //!   negative value on an unsigned dtype becomes 0, and anything past the
 //!   maximum clamps to the maximum.
-//! * A semiring's `combine` is elementwise, so it WRAPS — `SemiringOp::combine`
-//!   uses Rust's plain `+`. No case below overflows, because the CPU reference
-//!   panics rather than wraps in a debug build.
+//! * A semiring's `combine` is elementwise, so it WRAPS rather than saturating.
+//!   `SemiringOp::combine` adds through `wrapping_add` for MinPlus and MaxPlus,
+//!   and `SemiringOp::reduce` does the same for PlusMax's sum
+//!   (`src/ops/semiring.rs`). The CUDA kernel adds in the unsigned type of the
+//!   same width, where wrapping is defined, so both backends agree.
+//!   `i64_semiring_min_plus_wraps_past_the_signed_bound` pins that.
 //!
 //! Run: cargo test --features cuda --test cuda_integer_dtype_coverage
 
@@ -27,7 +30,8 @@
 
 mod common;
 
-use common::{create_cpu_client, create_cuda_client};
+use common::backend_lock::with_cuda_backend;
+use common::create_cpu_client;
 use numr::dtype::DType;
 use numr::ops::{CumulativeOps, SemiringMatmulOps, SemiringOp, UtilityOps};
 use numr::runtime::cpu::CpuRuntime;
@@ -52,7 +56,7 @@ macro_rules! check_scan {
         let cpu_vec: Vec<$ty> = cpu_out.to_vec::<$ty>();
         assert_eq!(cpu_vec.as_slice(), $expected, "{label}: CPU reference");
 
-        if let Some((cuda_client, cuda_device)) = create_cuda_client() {
+        with_cuda_backend(|cuda_client, cuda_device| {
             let input = Tensor::<CudaRuntime>::from_slice($input, $shape, &cuda_device)
                 .unwrap_or_else(|e| panic!("{label}: staging the CUDA input failed: {e:?}"));
             let out = cuda_client
@@ -60,7 +64,7 @@ macro_rules! check_scan {
                 .unwrap_or_else(|e| panic!("{label}: the CUDA op failed: {e:?}"));
             let cuda_vec: Vec<$ty> = out.to_vec::<$ty>();
             assert_eq!(cuda_vec.as_slice(), $expected, "{label}: CUDA vs CPU");
-        }
+        });
     }};
 }
 
@@ -77,13 +81,13 @@ macro_rules! check_creation {
         let cpu_vec: Vec<$ty> = cpu_out.to_vec::<$ty>();
         assert_eq!(cpu_vec.as_slice(), $expected, "{label}: CPU reference");
 
-        if let Some((cuda_client, _cuda_device)) = create_cuda_client() {
+        with_cuda_backend(|cuda_client, _cuda_device| {
             let out = cuda_client
                 .$method($($arg),*)
                 .unwrap_or_else(|e| panic!("{label}: the CUDA op failed: {e:?}"));
             let cuda_vec: Vec<$ty> = out.to_vec::<$ty>();
             assert_eq!(cuda_vec.as_slice(), $expected, "{label}: CUDA vs CPU");
-        }
+        });
     }};
 }
 
@@ -258,14 +262,19 @@ fn u16_eye_is_square_by_default() {
 const SEMIRING_A: [i64; 4] = [0, 3, 7, 1];
 const SEMIRING_B: [i64; 4] = [0, 2, 5, 0];
 
-/// Run one semiring product on both backends, asserting both equal `expected`.
+/// Run one semiring product on both backends over the shared operands.
 fn check_semiring_i64(op: SemiringOp, expected: &[i64; 4]) {
+    check_semiring_i64_on(&SEMIRING_A, &SEMIRING_B, op, expected);
+}
+
+/// Run one semiring product on both backends, asserting both equal `expected`.
+fn check_semiring_i64_on(a: &[i64; 4], b: &[i64; 4], op: SemiringOp, expected: &[i64; 4]) {
     let label = format!("semiring_matmul i64 {op}");
 
     let (cpu_client, cpu_device) = create_cpu_client();
-    let cpu_a = Tensor::<CpuRuntime>::from_slice(&SEMIRING_A, &[2, 2], &cpu_device)
+    let cpu_a = Tensor::<CpuRuntime>::from_slice(a, &[2, 2], &cpu_device)
         .unwrap_or_else(|e| panic!("{label}: staging the CPU lhs failed: {e:?}"));
-    let cpu_b = Tensor::<CpuRuntime>::from_slice(&SEMIRING_B, &[2, 2], &cpu_device)
+    let cpu_b = Tensor::<CpuRuntime>::from_slice(b, &[2, 2], &cpu_device)
         .unwrap_or_else(|e| panic!("{label}: staging the CPU rhs failed: {e:?}"));
     let cpu_out = cpu_client
         .semiring_matmul(&cpu_a, &cpu_b, op)
@@ -276,20 +285,20 @@ fn check_semiring_i64(op: SemiringOp, expected: &[i64; 4]) {
         "{label}: CPU reference"
     );
 
-    if let Some((cuda_client, cuda_device)) = create_cuda_client() {
-        let a = Tensor::<CudaRuntime>::from_slice(&SEMIRING_A, &[2, 2], &cuda_device)
+    with_cuda_backend(|cuda_client, cuda_device| {
+        let cuda_a = Tensor::<CudaRuntime>::from_slice(a, &[2, 2], &cuda_device)
             .unwrap_or_else(|e| panic!("{label}: staging the CUDA lhs failed: {e:?}"));
-        let b = Tensor::<CudaRuntime>::from_slice(&SEMIRING_B, &[2, 2], &cuda_device)
+        let cuda_b = Tensor::<CudaRuntime>::from_slice(b, &[2, 2], &cuda_device)
             .unwrap_or_else(|e| panic!("{label}: staging the CUDA rhs failed: {e:?}"));
         let out = cuda_client
-            .semiring_matmul(&a, &b, op)
+            .semiring_matmul(&cuda_a, &cuda_b, op)
             .unwrap_or_else(|e| panic!("{label}: the CUDA op failed: {e:?}"));
         assert_eq!(
             out.to_vec::<i64>().as_slice(),
             expected,
             "{label}: CUDA vs CPU"
         );
-    }
+    });
 }
 
 /// Shortest paths: min(0+0, 3+5) = 0, min(0+2, 3+0) = 2, and so on.
@@ -320,6 +329,22 @@ fn i64_semiring_min_max() {
 #[test]
 fn i64_semiring_plus_max() {
     check_semiring_i64(SemiringOp::PlusMax, &[5, 5, 12, 8]);
+}
+
+/// MinPlus's combine is one elementwise add, so it WRAPS. `i64::MAX + 10` is
+/// `i64::MIN + 9`, and min then picks it over the other term's 0. A saturating
+/// combine would answer `i64::MAX` for that term, so the cell would read 0.
+///
+///   A = [[i64::MAX, 0],   B = [[10, 0],
+///        [0,        0]]        [ 0, 0]]
+#[test]
+fn i64_semiring_min_plus_wraps_past_the_signed_bound() {
+    check_semiring_i64_on(
+        &[i64::MAX, 0, 0, 0],
+        &[10, 0, 0, 0],
+        SemiringOp::MinPlus,
+        &[i64::MIN + 9, 0, 0, 0],
+    );
 }
 
 // ============================================================================
