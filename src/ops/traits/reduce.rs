@@ -128,7 +128,10 @@ pub trait ReduceOps<R: Runtime> {
     ///
     /// # Arguments
     ///
-    /// * `a` - Input tensor of any supported dtype
+    /// * `a` - Input tensor of any numeric dtype. NOT `Bool`: this crate carries
+    ///   boolean data in `U8`, and `Bool` reduces to `Err(UnsupportedDType)` on
+    ///   every backend. Pass the `U8` mask that `eq`/`lt`/`logical_and` already
+    ///   return.
     /// * `dims` - Dimensions to reduce over (empty = reduce over all dimensions)
     /// * `keepdim` - If true, reduced dimensions are kept with size 1
     ///
@@ -214,7 +217,10 @@ pub trait ReduceOps<R: Runtime> {
     ///
     /// # Arguments
     ///
-    /// * `a` - Input tensor of any supported dtype
+    /// * `a` - Input tensor of any numeric dtype. NOT `Bool`: this crate carries
+    ///   boolean data in `U8`, and `Bool` reduces to `Err(UnsupportedDType)` on
+    ///   every backend. Pass the `U8` mask that `eq`/`lt`/`logical_and` already
+    ///   return.
     /// * `dims` - Dimensions to reduce over (empty = reduce over all dimensions)
     /// * `keepdim` - If true, reduced dimensions are kept with size 1
     ///
