@@ -50,6 +50,10 @@ jobs:
         if: always()
         run: cargo test --doc --features f16,sparse --no-fail-fast
 
+      - name: Release verifier tests
+        if: always()
+        run: bash scripts/ci/test_release_verifiers.sh
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

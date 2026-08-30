@@ -1,0 +1,125 @@
+# Tag gate for a releasable crate. Pushing a v* tag validates the tag, runs the
+# full CI + benchmark suite, and packages the crate once.
+#
+# The manual `Release` workflow then consumes THIS run's crate artifact by run
+# ID for crates.io and the GitHub Release, so a failure in the publish or
+# release stage can be fixed and retried without repeating the tests or the
+# packaging.
+#
+# The artifact is retained 14 days: that is the window in which a `Release` run
+# can still resume from this prepare run.
+
+name: Release Prepare
+run-name: Release Prepare ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-prepare-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate-version:
+    uses: ./.github/workflows/release-validate.yml
+    with:
+      ref: ${{ github.ref_name }}
+
+  # Reuses benchmark.yml, which chains test.yml and the regression check —
+  # numr's existing release.yml already reuses it for that reason.
+  ci:
+    name: CI + Benchmark
+    needs: validate-version
+    uses: ./.github/workflows/benchmark.yml
+
+  package:
+    name: Package crate
+    needs: [validate-version, ci]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-package
+
+      - name: Set version from tag
+        run: bash scripts/ci/stamp_version.sh "${{ needs.validate-version.outputs.version }}"
+
+      - name: Package
+        run: cargo package --allow-dirty
+
+      # cargo package only verifies the file LIST, not whether every source a
+      # non-default feature needs made it in. This is where a missing .cu file
+      # would otherwise surface — silently, on the first downstream
+      # `--features cuda` build instead of here.
+      - name: Verify package contents
+        run: |
+          bash scripts/ci/verify_package_contents.sh \
+            "target/package/numr-${{ needs.validate-version.outputs.version }}.crate"
+
+      # Two verifying dry runs, because default features and non-default
+      # features exercise different parts of build.rs.
+      #
+      # The default-feature run is the baseline: no CUDA, no WGPU, just the
+      # CPU backend.
+      #
+      # The second run adds wgpu — which is what actually compiles the WGSL
+      # shaders bundled in the tarball, catching a shader that `cargo package`
+      # listed but never builds. `f16` and `fp8` ride along since they gate
+      # real source, not just cfg flags.
+      #
+      # `cuda` is deliberately NOT dry-run here: build.rs invokes nvcc for it,
+      # and no GitHub runner has the CUDA toolkit installed. That gap is why
+      # verify_package_contents.sh exists — it is the only check this pipeline
+      # has for the CUDA kernel sources.
+      - name: Dry-run publish (default features)
+        run: cargo publish --dry-run --allow-dirty
+
+      - name: Dry-run publish (wgpu, f16, fp8, sparse)
+        run: cargo publish --dry-run --allow-dirty --features wgpu,f16,fp8,sparse
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: crate-package
+          path: target/package/numr-${{ needs.validate-version.outputs.version }}.crate
+          if-no-files-found: error
+          retention-days: 14
+
+  summary:
+    name: Release instructions
+    needs: [validate-version, package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write summary
+        env:
+          VERSION: ${{ needs.validate-version.outputs.version }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          {
+            echo "## Prepared v${VERSION}"
+            echo
+            echo "CI passed and the crate is packaged. Publish with:"
+            echo
+            echo '```sh'
+            echo "gh workflow run release.yml -R ${REPO} \\"
+            echo "  -f tag=v${VERSION} \\"
+            echo "  -f prepare_run_id=${RUN_ID}"
+            echo '```'
+            echo
+            echo "If one stage fails, re-run the same command with only the"
+            echo "remaining stage enabled (e.g. \`-f publish_crate=false\`)."
+            echo "Nothing is recompiled."
+          } >> "$GITHUB_STEP_SUMMARY"

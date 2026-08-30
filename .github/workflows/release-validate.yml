@@ -1,0 +1,91 @@
+# Reusable tag/version validation. Called by release-prepare.yml (from the
+# pushed tag) and release.yml (from the dispatched tag), so the two entry
+# points can never disagree about what a tag means.
+
+name: Release Validate
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to validate (a v* tag)"
+        required: true
+        type: string
+    outputs:
+      version:
+        description: "Tag version without the leading v"
+        value: ${{ jobs.validate.outputs.version }}
+      is_full_release:
+        description: "true when the version carries no prerelease suffix"
+        value: ${{ jobs.validate.outputs.is_full_release }}
+      base_version:
+        description: "Tag version with any prerelease suffix stripped — the CHANGELOG heading"
+        value: ${{ jobs.validate.outputs.base_version }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Version Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_full_release: ${{ steps.version.outputs.is_full_release }}
+      base_version: ${{ steps.version.outputs.base_version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate tag against Cargo.toml
+        id: version
+        env:
+          TAG: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${TAG#v}"
+
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version=1 \
+            | jq -r '.packages[] | select(.name == "numr") | .version')
+          CARGO_BASE=$(echo "$CARGO_VERSION" | grep -oP '^\d+\.\d+\.\d+')
+
+          echo "Tag version:        $TAG_VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "Cargo.toml base:    $CARGO_BASE"
+
+          if [[ ! "$TAG_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-[a-zA-Z]+\.[0-9]+)?$ ]]; then
+            echo "::error::Invalid tag format '$TAG'. Expected: vX.Y.Z or vX.Y.Z-label.N"
+            exit 1
+          fi
+
+          TAG_BASE="${BASH_REMATCH[1]}"
+
+          if [[ "$TAG_BASE" != "$CARGO_BASE" ]]; then
+            echo "::error::Base version mismatch! Tag '$TAG_BASE' != Cargo.toml '$CARGO_BASE'"
+            exit 1
+          fi
+
+          # Full release = no hyphen suffix (v0.7.0, not v0.7.0-beta.1)
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            echo "is_full_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_full_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "base_version=$TAG_BASE" >> "$GITHUB_OUTPUT"
+
+      # A release with no changelog entry is a release nobody can read. The gate
+      # lives here, in the shared validator, so the tag push and the dispatched
+      # publish cannot disagree about whether it was satisfied — and so it fails
+      # at the tag, before the suite runs, rather than after publishing.
+      #
+      # A prerelease is checked against its base version: `v0.7.0-beta.1` needs
+      # the `## [0.7.0]` section it is a candidate for, so the notes are written
+      # once and rehearsed by every beta.
+      - name: Require a changelog section
+        run: bash scripts/ci/changelog_section.sh "${{ steps.version.outputs.base_version }}"
