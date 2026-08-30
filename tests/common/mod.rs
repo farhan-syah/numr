@@ -296,6 +296,9 @@ pub fn assert_allclose_for_dtype(actual: &[f64], expected: &[f64], dtype: DType,
 ///
 /// The two tensors must carry the same dtype. A dtype divergence between
 /// backends is itself a parity failure, and it is reported as one.
+///
+/// Tolerance applies to float results only. An integer result is compared
+/// exactly, whatever `dtype` the test was parameterised on.
 pub fn assert_tensor_allclose<R1: Runtime<DType = DType>, R2: Runtime<DType = DType>>(
     actual: &numr::tensor::Tensor<R1>,
     expected: &numr::tensor::Tensor<R2>,
@@ -347,6 +350,38 @@ pub fn assert_tensor_allclose<R1: Runtime<DType = DType>, R2: Runtime<DType = DT
         }};
     }
 
+    /// Integers are compared EXACTLY. They carry no rounding error, so any
+    /// difference is a real divergence, and a relative tolerance would hide a
+    /// large one: `1e-5` of a value near `i64::MAX` is ~9.2e13. The `as f64`
+    /// conversion is itself lossy past 2^53, where distinct integers land on
+    /// the same float and cannot be told apart at all.
+    macro_rules! compare_int_exact {
+        ($T:ty) => {{
+            let a_vec = actual.to_vec::<$T>();
+            let e_vec = expected.to_vec::<$T>();
+            assert_eq!(
+                a_vec.len(),
+                e_vec.len(),
+                "{}: dtype={:?}: length mismatch ({} vs {})",
+                msg,
+                result_dtype,
+                a_vec.len(),
+                e_vec.len()
+            );
+            for (i, (a, e)) in a_vec.iter().zip(e_vec.iter()).enumerate() {
+                assert!(
+                    a == e,
+                    "{}: dtype={:?}: element {} differs: {} vs {}",
+                    msg,
+                    result_dtype,
+                    i,
+                    a,
+                    e
+                );
+            }
+        }};
+    }
+
     match result_dtype {
         DType::F64 => compare_native!(f64),
         DType::F32 => compare_native!(f32),
@@ -358,14 +393,14 @@ pub fn assert_tensor_allclose<R1: Runtime<DType = DType>, R2: Runtime<DType = DT
         DType::FP8E4M3 => compare_native!(numr::dtype::FP8E4M3),
         #[cfg(feature = "fp8")]
         DType::FP8E5M2 => compare_native!(numr::dtype::FP8E5M2),
-        DType::I64 => compare_native!(i64),
-        DType::I32 => compare_native!(i32),
-        DType::I16 => compare_native!(i16),
-        DType::I8 => compare_native!(i8),
-        DType::U64 => compare_native!(u64),
-        DType::U32 => compare_native!(u32),
-        DType::U16 => compare_native!(u16),
-        DType::U8 | DType::Bool => compare_native!(u8),
+        DType::I64 => compare_int_exact!(i64),
+        DType::I32 => compare_int_exact!(i32),
+        DType::I16 => compare_int_exact!(i16),
+        DType::I8 => compare_int_exact!(i8),
+        DType::U64 => compare_int_exact!(u64),
+        DType::U32 => compare_int_exact!(u32),
+        DType::U16 => compare_int_exact!(u16),
+        DType::U8 | DType::Bool => compare_int_exact!(u8),
         other => panic!("assert_tensor_allclose: unsupported result dtype {other:?}"),
     }
 }

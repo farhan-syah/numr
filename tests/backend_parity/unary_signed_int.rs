@@ -91,11 +91,27 @@ fn stored(v: f64, dtype: DType) -> i128 {
     (v as i128).clamp(min, max)
 }
 
-fn expected(op: &str, dtype: DType) -> Vec<f64> {
+/// The contract's answer for every element, as exact integers.
+///
+/// These deliberately do NOT travel through `f64`: `-i64::MAX` is not
+/// representable there and rounds to `i64::MIN`, which would assert the wrong
+/// answer for `neg(i64::MAX)`.
+fn expected_ints(op: &str, dtype: DType) -> Vec<i128> {
     extremes(dtype)
         .into_iter()
-        .map(|v| expected_elem(op, stored(v, dtype), dtype) as f64)
+        .map(|v| expected_elem(op, stored(v, dtype), dtype))
         .collect()
+}
+
+/// Read a signed-integer tensor back as exact `i128` values.
+fn read_ints<R: Runtime>(t: &Tensor<R>, dtype: DType) -> Vec<i128> {
+    match dtype {
+        DType::I8 => t.to_vec::<i8>().into_iter().map(i128::from).collect(),
+        DType::I16 => t.to_vec::<i16>().into_iter().map(i128::from).collect(),
+        DType::I32 => t.to_vec::<i32>().into_iter().map(i128::from).collect(),
+        DType::I64 => t.to_vec::<i64>().into_iter().map(i128::from).collect(),
+        other => panic!("read_ints: not a signed integer dtype: {other:?}"),
+    }
 }
 
 fn apply<R: Runtime>(
@@ -119,7 +135,7 @@ fn test_signed_int_parity(op: &str) {
     for dtype in signed_int_dtypes() {
         let data = extremes(dtype);
         let shape = vec![data.len()];
-        let want = expected(op, dtype);
+        let want = expected_ints(op, dtype);
 
         let (cpu_client, cpu_device) = create_cpu_client();
         let cpu_input = tensor_from_f64(&data, &shape, dtype, &cpu_device, &cpu_client)
@@ -127,13 +143,10 @@ fn test_signed_int_parity(op: &str) {
         let cpu_result = apply(&cpu_client, op, &cpu_input)
             .unwrap_or_else(|e| panic!("CPU {op} failed for {dtype:?}: {e}"));
 
-        let cpu_want = tensor_from_f64(&want, &shape, dtype, &cpu_device, &cpu_client)
-            .unwrap_or_else(|e| panic!("CPU tensor_from_f64 failed for {dtype:?}: {e}"));
-        assert_tensor_allclose(
-            &cpu_result,
-            &cpu_want,
-            dtype,
-            &format!("{op} CPU vs wrapping contract [{dtype:?}]"),
+        assert_eq!(
+            read_ints(&cpu_result, dtype),
+            want,
+            "{op} CPU vs wrapping contract [{dtype:?}]"
         );
 
         #[cfg(feature = "cuda")]
