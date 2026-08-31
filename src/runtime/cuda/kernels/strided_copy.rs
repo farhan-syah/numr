@@ -86,7 +86,7 @@ pub unsafe fn launch_strided_copy(
         let module = get_or_load_module(context, device_index, STRIDED_COPY_MODULE)?;
         let func = get_kernel_function(&module, "strided_copy")?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -150,7 +150,7 @@ pub unsafe fn launch_strided_copy_2d(
         let module = get_or_load_module(context, device_index, STRIDED_COPY_MODULE)?;
         let func = get_kernel_function(&module, "strided_copy_2d")?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

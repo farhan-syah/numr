@@ -154,7 +154,7 @@ pub unsafe fn launch_fill(
     let func_name = kernel_name("fill", value.kernel_dtype());
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -340,7 +340,7 @@ pub unsafe fn launch_rand(
     let func_name = kernel_name("rand", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -396,7 +396,7 @@ pub unsafe fn launch_randn(
 
     // Box-Muller processes pairs, so we launch half the threads (rounded up)
     let thread_count = (numel + 1) / 2;
-    let grid = elementwise_launch_config(thread_count);
+    let grid = elementwise_launch_config(thread_count)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -454,7 +454,7 @@ pub unsafe fn launch_randint(
     let func_name = kernel_name("randint", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -514,7 +514,7 @@ pub unsafe fn launch_arange(
     let func_name = kernel_name("arange", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -600,7 +600,7 @@ pub unsafe fn launch_linspace(
     let func_name = kernel_name("linspace", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(steps);
+    let grid = elementwise_launch_config(steps)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = steps as u32;
     let cfg = launch_config(grid, block, 0);
@@ -681,7 +681,7 @@ pub unsafe fn launch_eye(
     let func = get_kernel_function(&module, &func_name)?;
 
     let numel = n * m;
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n_u32 = n as u32;
     let m_u32 = m as u32;
@@ -749,7 +749,7 @@ pub unsafe fn launch_multinomial_with_replacement(
     let func = get_kernel_function(&module, &func_name)?;
 
     let total = num_distributions * num_samples;
-    let grid = elementwise_launch_config(total);
+    let grid = elementwise_launch_config(total)?;
     let block = (BLOCK_SIZE, 1, 1);
     let cfg = launch_config(grid, block, 0);
 

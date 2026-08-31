@@ -225,7 +225,7 @@ pub unsafe fn launch_scale_complex(
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, FFT_MODULE)?;
 
-    let grid = elementwise_launch_config(n);
+    let grid = elementwise_launch_config(n)?;
     let block = (BLOCK_SIZE, 1, 1);
     let cfg = launch_config(grid, block, 0);
 
@@ -738,7 +738,7 @@ pub unsafe fn launch_copy_complex(
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, FFT_MODULE)?;
 
-    let grid = elementwise_launch_config(n);
+    let grid = elementwise_launch_config(n)?;
     let block = (BLOCK_SIZE, 1, 1);
     let cfg = launch_config(grid, block, 0);
 

@@ -133,7 +133,7 @@ pub unsafe fn launch_conv1d(
             );
             launch_config(grid, (block_x, block_y, 1), 0)
         } else {
-            let grid = elementwise_launch_config(total);
+            let grid = elementwise_launch_config(total)?;
             launch_config(grid, (BLOCK_SIZE, 1, 1), 0)
         };
 
@@ -224,7 +224,7 @@ pub unsafe fn launch_conv_transpose1d(
         let func_name = kernel_name("conv_transpose1d", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
+        let grid = elementwise_launch_config(total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -324,7 +324,7 @@ pub unsafe fn launch_conv2d(
         let func_name = kernel_name("conv2d", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
+        let grid = elementwise_launch_config(total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -431,7 +431,7 @@ pub unsafe fn launch_depthwise_conv2d(
         let func_name = kernel_name("depthwise_conv2d", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
+        let grid = elementwise_launch_config(total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

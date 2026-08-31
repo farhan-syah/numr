@@ -112,7 +112,7 @@ pub unsafe fn launch_isnan_op(
         let func_name = kernel_name("isnan", input_dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -171,7 +171,7 @@ pub unsafe fn launch_isinf_op(
         let func_name = kernel_name("isinf", input_dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -223,7 +223,7 @@ pub unsafe fn launch_logical_not_op(
         let func_name = "logical_not_u8";
         let func = get_kernel_function(&module, func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 

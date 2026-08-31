@@ -98,7 +98,7 @@ pub unsafe fn launch_fused_mul_add_scalar(
     let func_name = kernel_name("fused_mul_add_scalar", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -203,7 +203,7 @@ unsafe fn launch_ternary_kernel(
     let func_name = kernel_name(op, dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);

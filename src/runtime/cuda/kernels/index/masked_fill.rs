@@ -99,7 +99,7 @@ pub unsafe fn launch_masked_fill(
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -160,7 +160,7 @@ pub unsafe fn launch_masked_fill_broadcast(
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

@@ -47,7 +47,7 @@ pub unsafe fn launch_embedding_lookup(
         );
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(num_indices);
+        let grid = elementwise_launch_config(num_indices)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -117,7 +117,7 @@ pub unsafe fn launch_bincount_weighted(
 
         let func = get_kernel_function(&module, func_name)?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

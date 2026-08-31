@@ -52,7 +52,7 @@ pub(crate) unsafe fn launch_unary_special(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 
@@ -93,7 +93,7 @@ pub(crate) unsafe fn launch_binary_special(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 
@@ -136,7 +136,7 @@ pub(crate) unsafe fn launch_ternary_special(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 
@@ -183,7 +183,7 @@ pub(crate) unsafe fn launch_unary_special_with_int(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 
@@ -226,7 +226,7 @@ pub(crate) unsafe fn launch_unary_special_with_two_ints(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 
@@ -271,7 +271,7 @@ pub(crate) unsafe fn launch_binary_special_with_two_ints(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 
@@ -316,7 +316,7 @@ pub(crate) unsafe fn launch_unary_special_with_2f64(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 
@@ -369,7 +369,7 @@ pub(crate) unsafe fn launch_unary_special_with_3f64(
     let module = get_or_load_module(ctx, device_index, SPECIAL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let cfg = launch_config(grid, (256, 1, 1), 0);
     let n = numel as u32;
 

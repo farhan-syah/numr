@@ -107,7 +107,7 @@ pub unsafe fn launch_cast(
         );
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 

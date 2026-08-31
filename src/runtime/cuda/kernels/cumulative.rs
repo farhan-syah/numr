@@ -53,7 +53,7 @@ pub unsafe fn launch_cumsum(
     let func_name = kernel_name("cumsum", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(outer_size);
+    let grid = elementwise_launch_config(outer_size)?;
     let block = (BLOCK_SIZE, 1, 1);
     let scan_size_u32 = scan_size as u32;
     let outer_size_u32 = outer_size as u32;
@@ -104,7 +104,7 @@ pub unsafe fn launch_cumsum_strided(
     let func = get_kernel_function(&module, &func_name)?;
 
     let total_inner = outer_size * inner_size;
-    let grid = elementwise_launch_config(total_inner);
+    let grid = elementwise_launch_config(total_inner)?;
     let block = (BLOCK_SIZE, 1, 1);
     let scan_size_u32 = scan_size as u32;
     let outer_size_u32 = outer_size as u32;
@@ -156,7 +156,7 @@ pub unsafe fn launch_cumprod(
     let func_name = kernel_name("cumprod", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(outer_size);
+    let grid = elementwise_launch_config(outer_size)?;
     let block = (BLOCK_SIZE, 1, 1);
     let scan_size_u32 = scan_size as u32;
     let outer_size_u32 = outer_size as u32;
@@ -203,7 +203,7 @@ pub unsafe fn launch_cumprod_strided(
     let func = get_kernel_function(&module, &func_name)?;
 
     let total_inner = outer_size * inner_size;
-    let grid = elementwise_launch_config(total_inner);
+    let grid = elementwise_launch_config(total_inner)?;
     let block = (BLOCK_SIZE, 1, 1);
     let scan_size_u32 = scan_size as u32;
     let outer_size_u32 = outer_size as u32;
@@ -261,7 +261,7 @@ pub unsafe fn launch_logsumexp(
     let func_name = kernel_name("logsumexp", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(outer_size);
+    let grid = elementwise_launch_config(outer_size)?;
     let block = (BLOCK_SIZE, 1, 1);
     let reduce_size_u32 = reduce_size as u32;
     let outer_size_u32 = outer_size as u32;
@@ -315,7 +315,7 @@ pub unsafe fn launch_logsumexp_strided(
     let func = get_kernel_function(&module, &func_name)?;
 
     let total_inner = outer_size * inner_size;
-    let grid = elementwise_launch_config(total_inner);
+    let grid = elementwise_launch_config(total_inner)?;
     let block = (BLOCK_SIZE, 1, 1);
     let reduce_size_u32 = reduce_size as u32;
     let outer_size_u32 = outer_size as u32;

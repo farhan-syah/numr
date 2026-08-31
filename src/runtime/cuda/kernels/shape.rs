@@ -70,7 +70,7 @@ pub unsafe fn launch_cat_copy(
         let func_name = kernel_name("cat_copy", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total_elements);
+        let grid = elementwise_launch_config(total_elements)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -181,7 +181,7 @@ pub unsafe fn launch_repeat(
         let func_name = kernel_name("repeat", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total_elements);
+        let grid = elementwise_launch_config(total_elements)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -310,7 +310,7 @@ pub unsafe fn launch_pad(
         let func_name = kernel_name("pad", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total_elements);
+        let grid = elementwise_launch_config(total_elements)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -414,7 +414,7 @@ pub unsafe fn launch_roll(
         let func_name = kernel_name("roll", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total_elements);
+        let grid = elementwise_launch_config(total_elements)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

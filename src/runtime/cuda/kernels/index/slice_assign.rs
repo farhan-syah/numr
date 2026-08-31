@@ -47,7 +47,7 @@ pub unsafe fn launch_slice_assign(
         );
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
+        let grid = elementwise_launch_config(total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

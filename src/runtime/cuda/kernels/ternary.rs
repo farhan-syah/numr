@@ -54,7 +54,7 @@ pub unsafe fn launch_where_op(
         let func_name = kernel_name("where", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -150,7 +150,7 @@ pub unsafe fn launch_where_broadcast_op(
     let func = get_kernel_function(&module, &func_name)?;
 
     // Launch kernel
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let ndim_u32 = ndim as u32;
@@ -231,7 +231,7 @@ pub unsafe fn launch_where_generic_op(
                 op: "where_cond (condition dtype)",
             })?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -334,7 +334,7 @@ pub unsafe fn launch_where_broadcast_generic_op(
     })?;
 
     // Launch kernel
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let ndim_u32 = ndim as u32;

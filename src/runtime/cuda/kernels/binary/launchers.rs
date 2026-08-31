@@ -112,7 +112,7 @@ pub unsafe fn launch_logical_and_op(
         let func_name = "logical_and_u8";
         let func = get_kernel_function(&module, func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -164,7 +164,7 @@ pub unsafe fn launch_logical_or_op(
         let func_name = "logical_or_u8";
         let func = get_kernel_function(&module, func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -216,7 +216,7 @@ pub unsafe fn launch_logical_xor_op(
         let func_name = "logical_xor_u8";
         let func = get_kernel_function(&module, func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -305,7 +305,7 @@ pub unsafe fn launch_broadcast_binary_op(
 
     let module = get_or_load_module(context, device_index, kernel_names::BINARY_MODULE)?;
     let dtype_str = kernel_name("", dtype).trim_start_matches('_').to_owned();
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);

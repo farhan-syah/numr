@@ -40,7 +40,7 @@ pub unsafe fn launch_trace(
 
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(n);
+    let grid = elementwise_launch_config(n)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n_u32 = n as u32;
     let stride_u32 = stride as u32;
@@ -88,7 +88,7 @@ pub unsafe fn launch_diag(
 
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(min_dim);
+    let grid = elementwise_launch_config(min_dim)?;
     let block = (BLOCK_SIZE, 1, 1);
     let min_dim_u32 = min_dim as u32;
     let n_cols_u32 = n_cols as u32;
@@ -139,7 +139,7 @@ pub unsafe fn launch_diagflat(
     let func = get_kernel_function(&module, func_name)?;
 
     let total = n * n;
-    let grid = elementwise_launch_config(total);
+    let grid = elementwise_launch_config(total)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n_u32 = n as u32;
 
@@ -187,7 +187,7 @@ pub unsafe fn launch_matrix_copy(
 
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(n);
+    let grid = elementwise_launch_config(n)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n_u32 = n as u32;
 
@@ -237,7 +237,7 @@ pub unsafe fn launch_scatter_column(
 
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(n);
+    let grid = elementwise_launch_config(n)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n_u32 = n as u32;
     let col_u32 = col as u32;
@@ -287,7 +287,7 @@ pub unsafe fn launch_create_identity(
     let func = get_kernel_function(&module, func_name)?;
 
     let total = n * n;
-    let grid = elementwise_launch_config(total);
+    let grid = elementwise_launch_config(total)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n_u32 = n as u32;
 
@@ -341,7 +341,7 @@ pub unsafe fn launch_extract_column(
 
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(m);
+    let grid = elementwise_launch_config(m)?;
     let block = (BLOCK_SIZE, 1, 1);
     let m_u32 = m as u32;
     let n_cols_u32 = n_cols as u32;
@@ -454,7 +454,7 @@ pub unsafe fn launch_kron(
     let func = get_kernel_function(&module, func_name)?;
 
     let total = m_a * m_b * n_a * n_b;
-    let grid = elementwise_launch_config(total);
+    let grid = elementwise_launch_config(total)?;
     let block = (BLOCK_SIZE, 1, 1);
 
     let m_a_u32 = m_a as u32;
@@ -515,7 +515,7 @@ pub unsafe fn launch_khatri_rao(
     let func = get_kernel_function(&module, func_name)?;
 
     let total = m * n * k;
-    let grid = elementwise_launch_config(total);
+    let grid = elementwise_launch_config(total)?;
     let block = (BLOCK_SIZE, 1, 1);
 
     let m_u32 = m as u32;

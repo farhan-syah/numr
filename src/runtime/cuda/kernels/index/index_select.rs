@@ -47,7 +47,7 @@ pub unsafe fn launch_index_select(
         );
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
+        let grid = elementwise_launch_config(total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -104,7 +104,7 @@ pub unsafe fn launch_index_put(
         let func_name = format!("index_put_{}", index_dtype_suffix(dtype, "index_put")?);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
+        let grid = elementwise_launch_config(total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -156,7 +156,7 @@ pub unsafe fn launch_validate_indices(
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
         let func = get_kernel_function(&module, "validate_indices_kernel")?;
 
-        let grid = elementwise_launch_config(index_len);
+        let grid = elementwise_launch_config(index_len)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

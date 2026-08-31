@@ -160,7 +160,7 @@ pub unsafe fn launch_broadcast_compare_op(
     let func = get_kernel_function(&module, &func_name)?;
 
     // Launch kernel
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let ndim_u32 = ndim as u32;

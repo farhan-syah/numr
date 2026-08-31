@@ -50,7 +50,7 @@ pub unsafe fn launch_conj(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -107,7 +107,7 @@ pub unsafe fn launch_real(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -164,7 +164,7 @@ pub unsafe fn launch_imag(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -222,7 +222,7 @@ pub unsafe fn launch_angle(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -278,7 +278,7 @@ pub unsafe fn launch_angle_real(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -336,7 +336,7 @@ pub unsafe fn launch_from_real_imag(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -396,7 +396,7 @@ pub unsafe fn launch_complex_mul_real(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -456,7 +456,7 @@ pub unsafe fn launch_complex_div_real(
         let module = get_or_load_module(context, device_index, COMPLEX_MODULE)?;
         let func = get_kernel_function(&module, kernel_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 

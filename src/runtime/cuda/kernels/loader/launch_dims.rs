@@ -5,19 +5,41 @@
 
 pub use cudarc::driver::safe::LaunchConfig;
 
+use crate::error::{Error, Result};
+
 /// Block size for element-wise operations (256 threads is optimal for most GPUs)
 pub const BLOCK_SIZE: u32 = 256;
 
 /// Calculate optimal grid dimensions for element-wise operations.
 ///
 /// Uses a 1D grid with blocks of `BLOCK_SIZE` threads each.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidArgument`] when `numel` needs more than
+/// `MAX_GRID_DIM_X` blocks. The kernels this config drives decode a flat
+/// `idx < n` index with no `y`/`z` component, so spreading the excess into
+/// another grid axis would compute the wrong elements silently — rejecting
+/// the launch is the only correct outcome. Computing the grid size in `u64`
+/// keeps this check exact instead of wrapping through a truncating `as u32`
+/// cast for `numel > u32::MAX`.
 #[inline]
-pub fn elementwise_launch_config(numel: usize) -> (u32, u32, u32) {
+pub fn elementwise_launch_config(numel: usize) -> Result<(u32, u32, u32)> {
     // Floored at 1: a grid extent of 0 is itself a launch error, even though
     // `numel == 0` needs no work. Callers that reach this helper with an
     // empty tensor rely on the kernel's own bounds guard (`idx < n`) to no-op.
-    let grid_size = (((numel as u32) + BLOCK_SIZE - 1) / BLOCK_SIZE).max(1);
-    (grid_size, 1, 1)
+    let grid_size = ((numel as u64) + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64;
+    let grid_size = grid_size.max(1);
+    if grid_size > MAX_GRID_DIM_X as u64 {
+        return Err(Error::InvalidArgument {
+            arg: "numel",
+            reason: format!(
+                "{numel} elements need a 1-D grid of {grid_size} blocks, exceeding the \
+                 CUDA max grid extent of {MAX_GRID_DIM_X}"
+            ),
+        });
+    }
+    Ok((grid_size as u32, 1, 1))
 }
 
 /// Calculate launch configuration for global reduction kernels.
@@ -104,5 +126,63 @@ pub fn launch_config(
         grid_dim: grid,
         block_dim: block,
         shared_mem_bytes: shared_mem,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_numel_floors_to_one_block() {
+        assert_eq!(elementwise_launch_config(0).unwrap(), (1, 1, 1));
+    }
+
+    #[test]
+    fn one_numel_needs_one_block() {
+        assert_eq!(elementwise_launch_config(1).unwrap(), (1, 1, 1));
+    }
+
+    #[test]
+    fn numel_at_block_size_minus_one_needs_one_block() {
+        assert_eq!(
+            elementwise_launch_config(BLOCK_SIZE as usize - 1).unwrap(),
+            (1, 1, 1)
+        );
+    }
+
+    #[test]
+    fn numel_at_block_size_needs_one_block() {
+        assert_eq!(
+            elementwise_launch_config(BLOCK_SIZE as usize).unwrap(),
+            (1, 1, 1)
+        );
+    }
+
+    #[test]
+    fn numel_at_block_size_plus_one_needs_two_blocks() {
+        assert_eq!(
+            elementwise_launch_config(BLOCK_SIZE as usize + 1).unwrap(),
+            (2, 1, 1)
+        );
+    }
+
+    #[test]
+    fn numel_past_1d_grid_capacity_is_rejected_not_truncated() {
+        // One past what a 1-D grid of MAX_GRID_DIM_X blocks can cover.
+        let numel = (MAX_GRID_DIM_X as u64) * (BLOCK_SIZE as u64) + 1;
+        let result = elementwise_launch_config(numel as usize);
+        assert!(
+            result.is_err(),
+            "numel beyond 1-D grid capacity must error, not silently truncate the grid"
+        );
+    }
+
+    #[test]
+    fn numel_at_1d_grid_capacity_still_fits() {
+        let numel = (MAX_GRID_DIM_X as u64) * (BLOCK_SIZE as u64);
+        let (grid_x, grid_y, grid_z) = elementwise_launch_config(numel as usize).unwrap();
+        assert_eq!(grid_x, MAX_GRID_DIM_X);
+        assert_eq!((grid_y, grid_z), (1, 1));
     }
 }

@@ -88,7 +88,7 @@ pub unsafe fn launch_cdist(
         let func = get_kernel_function(&module, &func_name)?;
 
         let numel = n * m;
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -159,7 +159,7 @@ pub unsafe fn launch_pdist(
         let func = get_kernel_function(&module, &func_name)?;
 
         let numel = n * (n - 1) / 2;
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -222,7 +222,7 @@ pub unsafe fn launch_squareform(
         let func = get_kernel_function(&module, &func_name)?;
 
         let numel = n * n;
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -273,7 +273,7 @@ pub unsafe fn launch_squareform_inverse(
         let func = get_kernel_function(&module, &func_name)?;
 
         let numel = n * (n - 1) / 2;
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

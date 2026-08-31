@@ -84,7 +84,7 @@ pub unsafe fn launch_gather(
         let func_name = format!("gather_{}", index_dtype_suffix(dtype, "gather")?);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total_elements);
+        let grid = elementwise_launch_config(total_elements)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -184,7 +184,7 @@ pub unsafe fn launch_gather_nd(
         let func_name = format!("gather_nd_{}", index_dtype_suffix(dtype, "gather_nd")?);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total);
+        let grid = elementwise_launch_config(total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -249,7 +249,7 @@ pub unsafe fn launch_gather_2d(
         let func_name = format!("gather_2d_{}", index_dtype_suffix(dtype, "gather_2d")?);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(num_indices);
+        let grid = elementwise_launch_config(num_indices)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

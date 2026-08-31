@@ -35,7 +35,7 @@ pub unsafe fn launch_sparse_24_prune(
     let func = get_kernel_function(&module, &func_name)?;
 
     let total_groups = (m * (k / 4)) as u32;
-    let grid = elementwise_launch_config(total_groups as usize);
+    let grid = elementwise_launch_config(total_groups as usize)?;
     let block = (BLOCK_SIZE, 1, 1);
     let cfg = launch_config(grid, block, 0);
 
@@ -77,7 +77,7 @@ pub unsafe fn launch_sparse_24_decompress(
     let func = get_kernel_function(&module, &func_name)?;
 
     let total_groups = (m * (k / 4)) as u32;
-    let grid = elementwise_launch_config(total_groups as usize);
+    let grid = elementwise_launch_config(total_groups as usize)?;
     let block = (BLOCK_SIZE, 1, 1);
     let cfg = launch_config(grid, block, 0);
 

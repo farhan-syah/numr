@@ -50,7 +50,7 @@ pub unsafe fn launch_unary_kernel(
         let func_name = kernel_name(op, dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -108,7 +108,7 @@ pub unsafe fn launch_binary_kernel(
         let func_name = kernel_name(op, dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 

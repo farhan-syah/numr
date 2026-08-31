@@ -83,7 +83,7 @@ pub unsafe fn launch_scatter(
         let func_name = format!("scatter_{}", index_dtype_suffix(dtype, "scatter")?);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(src_total);
+        let grid = elementwise_launch_config(src_total)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -148,7 +148,7 @@ pub unsafe fn launch_copy(
         let func_name = format!("copy_{}", index_dtype_suffix(dtype, "copy")?);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

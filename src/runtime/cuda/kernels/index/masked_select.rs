@@ -35,7 +35,7 @@ pub unsafe fn launch_masked_count(
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
         let func = get_kernel_function(&module, "masked_count_kernel")?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -130,7 +130,7 @@ pub unsafe fn launch_masked_select(
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -182,7 +182,7 @@ pub unsafe fn launch_masked_count_broadcast(
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
         let func = get_kernel_function(&module, "masked_count_broadcast_kernel")?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 
@@ -293,7 +293,7 @@ pub unsafe fn launch_masked_select_broadcast(
         let module = get_or_load_module(context, device_index, INDEX_MODULE)?;
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(n);
+        let grid = elementwise_launch_config(n)?;
         let block = (BLOCK_SIZE, 1, 1);
         let cfg = launch_config(grid, block, 0);
 

@@ -54,7 +54,7 @@ pub unsafe fn launch_bluestein_premultiply(
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, FFT_BLUESTEIN_MODULE)?;
     let cfg = launch_config(
-        elementwise_launch_config(batch_size * m),
+        elementwise_launch_config(batch_size * m)?,
         (BLOCK_SIZE, 1, 1),
         0,
     );
@@ -110,7 +110,7 @@ pub unsafe fn launch_bluestein_pointwise_mul(
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, FFT_BLUESTEIN_MODULE)?;
     let cfg = launch_config(
-        elementwise_launch_config(batch_size * m),
+        elementwise_launch_config(batch_size * m)?,
         (BLOCK_SIZE, 1, 1),
         0,
     );
@@ -171,7 +171,7 @@ pub unsafe fn launch_bluestein_postmultiply(
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, FFT_BLUESTEIN_MODULE)?;
     let cfg = launch_config(
-        elementwise_launch_config(batch_size * out_n),
+        elementwise_launch_config(batch_size * out_n)?,
         (BLOCK_SIZE, 1, 1),
         0,
     );

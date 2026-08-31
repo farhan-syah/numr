@@ -39,7 +39,7 @@ pub unsafe fn launch_sobol_f32(
     let func_name = "sobol_f32";
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(n_points);
+    let grid = elementwise_launch_config(n_points)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = n_points as u32;
     let dim = dimension as u32;
@@ -93,7 +93,7 @@ pub unsafe fn launch_sobol_f64(
     let func_name = "sobol_f64";
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(n_points);
+    let grid = elementwise_launch_config(n_points)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = n_points as u32;
     let dim = dimension as u32;
@@ -133,7 +133,7 @@ pub unsafe fn launch_halton_f32(
     let func_name = "halton_f32";
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(n_points);
+    let grid = elementwise_launch_config(n_points)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = n_points as u32;
     let dim = dimension as u32;
@@ -172,7 +172,7 @@ pub unsafe fn launch_halton_f64(
     let func_name = "halton_f64";
     let func = get_kernel_function(&module, func_name)?;
 
-    let grid = elementwise_launch_config(n_points);
+    let grid = elementwise_launch_config(n_points)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = n_points as u32;
     let dim = dimension as u32;

@@ -10,19 +10,52 @@ use std::sync::Arc;
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
+use crate::runtime::Device;
+use crate::runtime::cuda::CudaDevice;
 
 /// Module name for sort kernels
 pub const SORT_MODULE: &str = "sort";
 
-/// Calculate shared memory size for sort operations
-fn sort_shared_mem_size(sort_size: usize, elem_size: usize) -> u32 {
+/// Calculate shared memory size for sort operations.
+///
+/// Computed in `u64` so a huge `sort_size` cannot overflow before the
+/// `u32::MAX` check below — `next_power_of_two` and the final byte total can
+/// each exceed 32 bits long before they exceed real device shared memory.
+fn sort_shared_mem_size(sort_size: usize, elem_size: usize) -> Result<u32> {
     // Need space for values and indices
     // Pad to next power of 2 for bitonic sort
-    let n = sort_size.next_power_of_two();
-    let vals_bytes = n * elem_size;
+    let n = (sort_size as u64).next_power_of_two();
+    let vals_bytes = n * elem_size as u64;
     // Align to 8 bytes for long long indices (matches kernel alignment logic)
     let aligned_offset = (vals_bytes + 7) & !7;
-    (aligned_offset + n * 8) as u32
+    let total = aligned_offset + n * 8;
+    u32::try_from(total).map_err(|_| Error::BackendLimitation {
+        backend: "cuda",
+        operation: "sort",
+        reason: format!(
+            "sort dimension of size {sort_size} needs {total} bytes of shared memory, \
+             which overflows the u32 launch config field"
+        ),
+    })
+}
+
+/// Check a computed shared-memory request against the device's actual
+/// per-block budget before launching. `CudaDevice::new` is a free index
+/// wrapper and `profile()` is served from a per-index cache, so this is an
+/// atomic load, not a driver query.
+fn check_shared_mem_fits(device_index: usize, shared_mem: u32, sort_size: usize) -> Result<()> {
+    let limit = CudaDevice::new(device_index).profile().shared_mem_per_block;
+    if shared_mem > limit {
+        return Err(Error::BackendLimitation {
+            backend: "cuda",
+            operation: "sort",
+            reason: format!(
+                "sort dimension of size {sort_size} needs {shared_mem} bytes of shared \
+                 memory, exceeding this device's {limit}-byte per-block limit"
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Launch sort kernel with indices
@@ -49,7 +82,8 @@ pub unsafe fn launch_sort(
     let func = get_kernel_function(&module, &kname)?;
 
     let elem_size = dtype.size_in_bytes();
-    let shared_mem = sort_shared_mem_size(sort_size, elem_size);
+    let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
+    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
 
     // 2D grid: (outer, inner)
     let grid = (outer_size as u32, inner_size as u32, 1);
@@ -104,7 +138,8 @@ pub unsafe fn launch_sort_values_only(
     let func = get_kernel_function(&module, &kname)?;
 
     let elem_size = dtype.size_in_bytes();
-    let shared_mem = sort_shared_mem_size(sort_size, elem_size);
+    let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
+    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
 
     let grid = (outer_size as u32, inner_size as u32, 1);
     let block = (BLOCK_SIZE.min(sort_size as u32).max(1), 1, 1);
@@ -160,7 +195,8 @@ pub unsafe fn launch_argsort(
     let func = get_kernel_function(&module, &kname)?;
 
     let elem_size = dtype.size_in_bytes();
-    let shared_mem = sort_shared_mem_size(sort_size, elem_size);
+    let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
+    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
 
     let grid = (outer_size as u32, inner_size as u32, 1);
     let block = (BLOCK_SIZE.min(sort_size as u32).max(1), 1, 1);
@@ -216,7 +252,8 @@ pub unsafe fn launch_topk(
     let func = get_kernel_function(&module, &kname)?;
 
     let elem_size = dtype.size_in_bytes();
-    let shared_mem = sort_shared_mem_size(sort_size, elem_size);
+    let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
+    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
 
     let grid = (outer_size as u32, inner_size as u32, 1);
     let block = (BLOCK_SIZE.min(sort_size as u32).max(1), 1, 1);
@@ -270,7 +307,7 @@ pub unsafe fn launch_count_nonzero(
     let kname = kernel_name("count_nonzero", dtype);
     let func = get_kernel_function(&module, &kname)?;
 
-    let (grid_size, _, _) = elementwise_launch_config(numel);
+    let (grid_size, _, _) = elementwise_launch_config(numel)?;
     let grid = (grid_size.min(256), 1, 1); // Limit grid size for atomic efficiency
     let block = (BLOCK_SIZE, 1, 1);
 
@@ -312,7 +349,7 @@ pub unsafe fn launch_gather_nonzero(
     let kname = kernel_name("gather_nonzero", dtype);
     let func = get_kernel_function(&module, &kname)?;
 
-    let (grid_size, _, _) = elementwise_launch_config(numel);
+    let (grid_size, _, _) = elementwise_launch_config(numel)?;
     let grid = (grid_size.min(256), 1, 1);
     let block = (BLOCK_SIZE, 1, 1);
 
@@ -354,7 +391,7 @@ pub unsafe fn launch_flat_to_multi_index(
     let module = get_or_load_module(context, device_index, SORT_MODULE)?;
     let func = get_kernel_function(&module, "flat_to_multi_index")?;
 
-    let (grid_size, _, _) = elementwise_launch_config(nnz);
+    let (grid_size, _, _) = elementwise_launch_config(nnz)?;
     let cfg = launch_config((grid_size, 1, 1), (BLOCK_SIZE, 1, 1), 0);
 
     let nnz_u32 = nnz as u32;
@@ -402,7 +439,7 @@ pub unsafe fn launch_searchsorted(
     let kname = kernel_name("searchsorted", dtype);
     let func = get_kernel_function(&module, &kname)?;
 
-    let (grid_size, _, _) = elementwise_launch_config(num_values);
+    let (grid_size, _, _) = elementwise_launch_config(num_values)?;
     let cfg = launch_config((grid_size, 1, 1), (BLOCK_SIZE, 1, 1), 0);
 
     let seq_len_u32 = seq_len as u32;
@@ -446,7 +483,7 @@ pub unsafe fn launch_count_unique(
     let kname = kernel_name("count_unique", dtype);
     let func = get_kernel_function(&module, &kname)?;
 
-    let (grid_size, _, _) = elementwise_launch_config(numel);
+    let (grid_size, _, _) = elementwise_launch_config(numel)?;
     let grid = (grid_size.min(256), 1, 1);
     let cfg = launch_config(grid, (BLOCK_SIZE, 1, 1), 0);
     let n = numel as u32;
@@ -486,7 +523,7 @@ pub unsafe fn launch_extract_unique(
     let kname = kernel_name("extract_unique", dtype);
     let func = get_kernel_function(&module, &kname)?;
 
-    let (grid_size, _, _) = elementwise_launch_config(numel);
+    let (grid_size, _, _) = elementwise_launch_config(numel)?;
     let grid = (grid_size.min(256), 1, 1);
     let cfg = launch_config(grid, (BLOCK_SIZE, 1, 1), 0);
     let n = numel as u32;
@@ -525,7 +562,7 @@ pub unsafe fn launch_bincount(
     let module = get_or_load_module(context, device_index, SORT_MODULE)?;
     let func = get_kernel_function(&module, "bincount")?;
 
-    let (grid_size, _, _) = elementwise_launch_config(numel);
+    let (grid_size, _, _) = elementwise_launch_config(numel)?;
     let grid = (grid_size.min(256), 1, 1);
     let cfg = launch_config(grid, (BLOCK_SIZE, 1, 1), 0);
 
@@ -546,4 +583,49 @@ pub unsafe fn launch_bincount(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fits_a_typical_shared_mem_budget() {
+        // 2048 f32 values + indices, well under a typical 48KB per-block budget.
+        let bytes = sort_shared_mem_size(2048, 4).unwrap();
+        assert!(bytes < 48 * 1024, "expected < 48KiB, got {bytes}");
+    }
+
+    #[test]
+    fn rejects_when_computation_overflows_u32() {
+        // next_power_of_two(2^28) * 8 (f64) already exceeds u32::MAX, and the
+        // check must catch it instead of wrapping the final `as u32` cast.
+        let result = sort_shared_mem_size(1 << 28, 8);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn does_not_overflow_near_u32_max_sort_size() {
+        // A sort_size whose next_power_of_two is right at the u32 boundary
+        // must be handled in u64 without panicking or wrapping.
+        let result = sort_shared_mem_size(u32::MAX as usize, 1);
+        assert!(result.is_err(), "this size cannot fit in a u32 byte count");
+    }
+
+    #[test]
+    fn small_size_computation_is_exact() {
+        // n = 8 (already a power of 2), elem_size = 4: vals_bytes = 32,
+        // aligned_offset = 32 (already 8-aligned), + n*8 = 64 => 96 total.
+        let bytes = sort_shared_mem_size(8, 4).unwrap();
+        assert_eq!(bytes, 96);
+    }
+
+    #[test]
+    fn device_limit_rejects_oversized_request() {
+        let result = check_shared_mem_fits(0, u32::MAX, 1 << 20);
+        // No CUDA device is guaranteed present in unit tests; either the
+        // profile query reports a real limit (rejects) or falls back to
+        // `unknown()` with limit 0 (also rejects). Both paths return Err.
+        assert!(result.is_err());
+    }
 }

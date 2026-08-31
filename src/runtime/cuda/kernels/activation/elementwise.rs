@@ -164,7 +164,7 @@ pub unsafe fn launch_leaky_relu(
         let func_name = kernel_name("leaky_relu", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 
@@ -206,7 +206,7 @@ pub unsafe fn launch_elu(
         let func_name = kernel_name("elu", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(numel);
+        let grid = elementwise_launch_config(numel)?;
         let block = (BLOCK_SIZE, 1, 1);
         let n = numel as u32;
 

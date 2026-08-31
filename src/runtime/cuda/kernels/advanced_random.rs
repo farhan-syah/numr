@@ -44,7 +44,7 @@ pub unsafe fn launch_philox_uniform(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -85,7 +85,7 @@ pub unsafe fn launch_philox_randn(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -130,7 +130,7 @@ pub unsafe fn launch_threefry_uniform(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -171,7 +171,7 @@ pub unsafe fn launch_threefry_randn(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -216,7 +216,7 @@ pub unsafe fn launch_pcg64_uniform(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -257,7 +257,7 @@ pub unsafe fn launch_pcg64_randn(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -301,7 +301,7 @@ pub unsafe fn launch_xoshiro256_uniform(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -340,7 +340,7 @@ pub unsafe fn launch_xoshiro256_randn(
     let module = get_or_load_module(context, device_index, kernel_names::ADVANCED_RANDOM_MODULE)?;
     let func = get_kernel_function(&module, &kernel_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);

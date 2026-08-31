@@ -27,7 +27,7 @@ pub unsafe fn launch_bernoulli(
     let func_name = kernel_name("bernoulli", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -69,7 +69,7 @@ pub unsafe fn launch_beta_dist(
     let func_name = kernel_name("beta", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -112,7 +112,7 @@ pub unsafe fn launch_gamma_dist(
     let func_name = kernel_name("gamma", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -154,7 +154,7 @@ pub unsafe fn launch_exponential(
     let func_name = kernel_name("exponential", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -195,7 +195,7 @@ pub unsafe fn launch_poisson(
     let func_name = kernel_name("poisson", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -237,7 +237,7 @@ pub unsafe fn launch_binomial(
     let func_name = kernel_name("binomial", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let count = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -280,7 +280,7 @@ pub unsafe fn launch_laplace(
     let func_name = kernel_name("laplace", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -322,7 +322,7 @@ pub unsafe fn launch_chi_squared(
     let func_name = kernel_name("chi_squared", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -363,7 +363,7 @@ pub unsafe fn launch_student_t(
     let func_name = kernel_name("student_t", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
@@ -405,7 +405,7 @@ pub unsafe fn launch_f_distribution(
     let func_name = kernel_name("f_distribution", dtype);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid = elementwise_launch_config(numel);
+    let grid = elementwise_launch_config(numel)?;
     let block = (BLOCK_SIZE, 1, 1);
     let n = numel as u32;
     let cfg = launch_config(grid, block, 0);
