@@ -138,7 +138,12 @@ fn cuda_matmul(b: &mut Bencher, size: usize) {
     let client = CudaRuntime::default_client(&device);
     let a = rand_cuda(&[size, size], &device);
     let bm = rand_cuda(&[size, size], &device);
-    b.iter(|| black_box(client.matmul(&a, &bm).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -148,7 +153,12 @@ fn cuda_f64_512x512(b: &mut Bencher) {
     let client = CudaRuntime::default_client(&device);
     let a = rand_cuda_f64(&[512, 512], &device);
     let bm = rand_cuda_f64(&[512, 512], &device);
-    b.iter(|| black_box(client.matmul(&a, &bm).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -158,7 +168,12 @@ fn cuda_batch8_64x64(b: &mut Bencher) {
     let client = CudaRuntime::default_client(&device);
     let a = rand_cuda(&[8, 64, 64], &device);
     let bm = rand_cuda(&[8, 64, 64], &device);
-    b.iter(|| black_box(client.matmul(&a, &bm).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -169,7 +184,12 @@ fn cuda_bias_512x512(b: &mut Bencher) {
     let a = rand_cuda(&[512, 512], &device);
     let bm = rand_cuda(&[512, 512], &device);
     let bias = rand_cuda(&[512], &device);
-    b.iter(|| black_box(client.matmul_bias(&a, &bm, &bias).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +210,12 @@ fn cuda_attn_scores_qkt(b: &mut Bencher) {
     // A [64, 512, 64], B [64, 64, 512] → C [64, 512, 512]
     let a = rand_cuda(&[64, 512, 64], &device);
     let bm = rand_cuda(&[64, 64, 512], &device);
-    b.iter(|| black_box(client.matmul(&a, &bm).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 /// Context: attn@V — M=512, N=64, K=512, batch=64
@@ -202,7 +227,12 @@ fn cuda_attn_context(b: &mut Bencher) {
     // A [64, 512, 512], B [64, 512, 64] → C [64, 512, 64]
     let a = rand_cuda(&[64, 512, 512], &device);
     let bm = rand_cuda(&[64, 512, 64], &device);
-    b.iter(|| black_box(client.matmul(&a, &bm).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +258,12 @@ fn cuda_wmma_attn_scores(b: &mut Bencher) {
     let client = CudaRuntime::default_client(&device);
     let a = rand_cuda_f16(&[64, 512, 64], &device);
     let bm = rand_cuda_f16(&[64, 64, 512], &device);
-    b.iter(|| black_box(client.matmul(&a, &bm).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 /// WMMA context: attn@V — [64, 512, 512] @ [64, 512, 64] → [64, 512, 64]
@@ -239,7 +274,12 @@ fn cuda_wmma_attn_context(b: &mut Bencher) {
     let client = CudaRuntime::default_client(&device);
     let a = rand_cuda_f16(&[64, 512, 512], &device);
     let bm = rand_cuda_f16(&[64, 512, 64], &device);
-    b.iter(|| black_box(client.matmul(&a, &bm).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 // ---------------------------------------------------------------------------

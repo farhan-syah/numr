@@ -148,7 +148,12 @@ fn cuda_cat_10x_256x64(b: &mut Bencher) {
     let client = CudaRuntime::default_client(&device);
     let tensors: Vec<_> = (0..10).map(|_| rand_cuda(&[256, 64], &device)).collect();
     let refs: Vec<&Tensor<CudaRuntime>> = tensors.iter().collect();
-    b.iter(|| black_box(client.cat(&refs, 0).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.cat(&refs, 0).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -157,7 +162,12 @@ fn cuda_repeat_256x256_2x2(b: &mut Bencher) {
     let device = CudaDevice::new(0);
     let client = CudaRuntime::default_client(&device);
     let t = rand_cuda(&[256, 256], &device);
-    b.iter(|| black_box(client.repeat(&t, &[2, 2]).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.repeat(&t, &[2, 2]).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -167,7 +177,12 @@ fn cuda_stack_8x_1000(b: &mut Bencher) {
     let client = CudaRuntime::default_client(&device);
     let tensors: Vec<_> = (0..8).map(|_| rand_cuda(&[1000], &device)).collect();
     let refs: Vec<&Tensor<CudaRuntime>> = tensors.iter().collect();
-    b.iter(|| black_box(client.stack(&refs, 0).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.stack(&refs, 0).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 // ---------------------------------------------------------------------------

@@ -175,7 +175,12 @@ fn cuda_index_select_100k(b: &mut Bencher) {
     let (device, client) = cuda_setup();
     let t = rand_cuda(&[100_000, 128], &device);
     let idx = rand_cuda_indices(10_000, 100_000, &device);
-    b.iter(|| black_box(client.index_select(&t, 0, &idx).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.index_select(&t, 0, &idx).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -184,7 +189,12 @@ fn cuda_embedding_32k_vocab(b: &mut Bencher) {
     let (device, client) = cuda_setup();
     let embeddings = rand_cuda(&[32_000, 128], &device);
     let idx = rand_cuda_indices(512, 32_000, &device);
-    b.iter(|| black_box(client.embedding_lookup(&embeddings, &idx).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.embedding_lookup(&embeddings, &idx).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -198,7 +208,12 @@ fn cuda_gather_100k(b: &mut Bencher) {
         let c = CudaRuntime::default_client(&device);
         c.repeat(&idx, &[1, 64]).unwrap()
     };
-    b.iter(|| black_box(client.gather(&t, 0, &idx).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.gather(&t, 0, &idx).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 // ---------------------------------------------------------------------------

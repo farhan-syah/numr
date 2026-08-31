@@ -4,6 +4,17 @@ Comprehensive performance benchmarks for numr operations across CPU and CUDA bac
 
 ## 📊 Benchmark Results
 
+> **CUDA timing defect (fixed after 2026-02-11):** every CUDA number recorded on or
+> before 2026-02-11 was measured without a device synchronize inside the timed
+> `b.iter` closure. CUDA kernel launches are asynchronous, so those numbers measure
+> launch overhead only, not kernel execution time — e.g. the recorded 2.91ms for
+> Matmul 1024×1024 CUDA implies ~740 GFLOP/s, unrealistic for an RTX 3060 (~13
+> TFLOP/s FP32 peak, so a correct number is on the order of 170µs+ for this shape,
+> not faster than the CPU/ndarray figures next to it). All CUDA benches now call
+> `client.synchronize()` inside `b.iter`. The CUDA figures below are marked
+> **[PRE-FIX, INVALID]** and must not be compared against numbers produced after the
+> fix — re-run `cargo bench --features cuda` to get valid CUDA timings.
+
 **Date:** 2026-02-11
 **Version:** numr 0.4.0
 **Branch:** 0.4.0
@@ -25,15 +36,15 @@ Comprehensive performance benchmarks for numr operations across CPU and CUDA bac
 
 ### Performance Summary
 
-| Operation                | numr (CPU) | numr (CUDA) | ndarray |
-| ------------------------ | ---------- | ----------- | ------- |
-| **Matmul 512×512**       | 2.45µs     | 2.68µs      | 2.46µs  |
-| **Matmul 1024×1024**     | 17.57ms    | 2.91ms      | 21.39ms |
-| **Sum 1M elements**      | 624µs      | 2.7µs       | 631µs   |
-| **Sum rows 1024×1024**   | 53µs       | 2.6µs       | 85µs    |
-| **Cat 10×1K tensors**    | 747ns      | -           | 784ns   |
-| **Cat 10×256×64**        | 15.4µs     | 18.1µs      | 15.3µs  |
-| **Embedding lookup 32K** | 12.2µs     | 6.7µs       | -       |
+| Operation                | numr (CPU) | numr (CUDA) [PRE-FIX, INVALID] | ndarray |
+| ------------------------ | ---------- | ------------------------------- | ------- |
+| **Matmul 512×512**       | 2.45µs     | 2.68µs                          | 2.46µs  |
+| **Matmul 1024×1024**     | 17.57ms    | 2.91ms                          | 21.39ms |
+| **Sum 1M elements**      | 624µs      | 2.7µs                            | 631µs   |
+| **Sum rows 1024×1024**   | 53µs       | 2.6µs                            | 85µs    |
+| **Cat 10×1K tensors**    | 747ns      | -                                | 784ns   |
+| **Cat 10×256×64**        | 15.4µs     | 18.1µs                           | 15.3µs  |
+| **Embedding lookup 32K** | 12.2µs     | 6.7µs                            | -       |
 
 ### Verification Status
 
@@ -168,7 +179,7 @@ numr_cat_10x_1000 / ndarray_cat_10x_1000 < 1.1        (must be 91%+ of ndarray s
 numr_cat_10x_256x64 / ndarray_cat_10x_256x64 < 1.1
 ```
 
-**Performance Insight:** CUDA overhead dominates for small tensors (18µs vs 15µs CPU for cat), but amortizes across larger operations.
+**Performance Insight [PRE-FIX, INVALID]:** CUDA overhead dominates for small tensors (18µs vs 15µs CPU for cat), but amortizes across larger operations. This claim is built on the unsynced pre-fix CUDA numbers above and must be re-verified after re-running with the sync fix.
 
 ---
 

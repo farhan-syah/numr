@@ -109,7 +109,12 @@ fn cuda_sum(b: &mut Bencher, n: usize) {
     let device = CudaDevice::new(0);
     let client = CudaRuntime::default_client(&device);
     let t = rand_cuda(&[n], &device);
-    b.iter(|| black_box(client.sum(&t, &[0], false).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.sum(&t, &[0], false).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -118,7 +123,12 @@ fn cuda_sum_rows_1024x1024(b: &mut Bencher) {
     let device = CudaDevice::new(0);
     let client = CudaRuntime::default_client(&device);
     let t = rand_cuda(&[1024, 1024], &device);
-    b.iter(|| black_box(client.sum(&t, &[1], false).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.sum(&t, &[1], false).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -127,7 +137,12 @@ fn cuda_mean_1m(b: &mut Bencher) {
     let device = CudaDevice::new(0);
     let client = CudaRuntime::default_client(&device);
     let t = rand_cuda(&[1_000_000], &device);
-    b.iter(|| black_box(client.mean(&t, &[0], false).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.mean(&t, &[0], false).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 #[cfg(feature = "cuda")]
@@ -136,7 +151,12 @@ fn cuda_max_1m(b: &mut Bencher) {
     let device = CudaDevice::new(0);
     let client = CudaRuntime::default_client(&device);
     let t = rand_cuda(&[1_000_000], &device);
-    b.iter(|| black_box(client.max(&t, &[0], false).unwrap()));
+    b.iter(|| {
+        let r = black_box(client.max(&t, &[0], false).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
 }
 
 // ---------------------------------------------------------------------------
