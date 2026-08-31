@@ -151,6 +151,11 @@ const NARROW_FLOATS: &[DType] = &[DType::F16, DType::BF16];
 
 /// Read a single-element result back as f64. Both narrow floats widen to f64
 /// exactly, so nothing is lost on the way out.
+// Both match arms that read `tensor` are `f16`-gated, so the parameter is
+// genuinely unused when that feature is off. Gate the allow the same way
+// rather than renaming the parameter, which would hide a real unused
+// argument if the body ever stops reading it.
+#[cfg_attr(not(feature = "f16"), allow(unused_variables))]
 fn read_scalar<R: Runtime<DType = DType>>(tensor: &Tensor<R>, dtype: DType) -> f64 {
     match dtype {
         #[cfg(feature = "f16")]
