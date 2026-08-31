@@ -53,4 +53,4 @@ pub use cuda::NcclCommunicator;
 pub use captured_graph::CapturedGraph;
 
 // Trait re-exports
-pub use traits::{Device, Runtime, RuntimeClient};
+pub use traits::{Device, DeviceArch, DeviceCaps, DeviceProfile, Runtime, RuntimeClient};

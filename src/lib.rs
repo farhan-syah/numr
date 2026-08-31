@@ -100,7 +100,10 @@ pub mod prelude {
     pub use crate::tensor::{Layout, Shape, Strides, Tensor};
 
     // Runtime traits and graph types
-    pub use crate::runtime::{CapturedGraph, Device, Graph, NoOpGraph, Runtime, RuntimeClient};
+    pub use crate::runtime::{
+        CapturedGraph, Device, DeviceArch, DeviceCaps, DeviceProfile, Graph, NoOpGraph, Runtime,
+        RuntimeClient,
+    };
 
     // Operation traits (same API across all backends)
     pub use crate::ops::{
