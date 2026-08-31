@@ -64,7 +64,9 @@ pub fn matmul_batched_launch_config(
 
 /// Get default tile configuration for a dtype.
 ///
-/// These are reasonable defaults; can be overridden via autotuning.
+/// Fixed defaults for the generic runtime-parameter GEMM kernels (matmul,
+/// matmul_bias, gemm_epilogue). Not tuned per shape or architecture; no
+/// autotuning mechanism selects between alternatives.
 #[inline]
 pub fn default_tile_config(dtype: DType) -> TileConfig {
     match dtype {

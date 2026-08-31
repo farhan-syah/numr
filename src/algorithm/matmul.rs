@@ -68,7 +68,9 @@ pub struct TileConfig {
 }
 
 impl TileConfig {
-    /// CUDA-optimized configuration (Ampere/Ada architecture)
+    /// Single default configuration applied to every CUDA architecture
+    /// (Turing through Blackwell). Tuned on Ampere consumer hardware; no
+    /// per-architecture branch selects a different tile.
     ///
     /// - 128×128 block tiles fit well in shared memory
     /// - 8×8 register tiles maximize occupancy

@@ -5,10 +5,9 @@ use cudarc::driver::safe::{CudaContext, CudaStream};
 use std::sync::Arc;
 
 use super::super::loader::{
-    get_kernel_function, get_or_load_module, kernel_name, matmul_batched_launch_config,
-    matmul_launch_config,
+    default_tile_config, get_kernel_function, get_or_load_module, kernel_name,
+    matmul_batched_launch_config, matmul_launch_config,
 };
-use crate::algorithm::TileConfig;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::GemmActivation;
@@ -23,25 +22,6 @@ fn activation_to_u32(activation: GemmActivation) -> u32 {
         GemmActivation::SiLU => 3,
         GemmActivation::Sigmoid => 4,
         GemmActivation::Tanh => 5,
-    }
-}
-
-fn default_tile_config(dtype: DType) -> TileConfig {
-    match dtype {
-        DType::F64 => TileConfig {
-            block_m: 32,
-            block_n: 32,
-            block_k: 8,
-            thread_m: 4,
-            thread_n: 4,
-        },
-        _ => TileConfig {
-            block_m: 64,
-            block_n: 64,
-            block_k: 8,
-            thread_m: 8,
-            thread_n: 8,
-        },
     }
 }
 
