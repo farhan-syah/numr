@@ -6,6 +6,8 @@
 pub use cudarc::driver::safe::LaunchConfig;
 
 use crate::error::{Error, Result};
+use crate::runtime::Device;
+use crate::runtime::cuda::CudaDevice;
 
 /// Block size for element-wise operations (256 threads is optimal for most GPUs)
 pub const BLOCK_SIZE: u32 = 256;
@@ -115,6 +117,38 @@ pub fn softmax_dim_launch_config(outer: usize, inner: usize) -> ((u32, u32, u32)
     (grid, block)
 }
 
+/// Check a computed dynamic shared-memory request against the device's actual
+/// per-block budget before launching. `CudaDevice::new` is a free index
+/// wrapper and `profile()` is served from a per-index cache, so this is an
+/// atomic load, not a driver query.
+///
+/// `operation` names the failing op for [`Error::BackendLimitation`];
+/// `context` describes what was being sized (e.g. `"sort dimension of size
+/// 4096"`, `"128x128 matmul tile"`) so the message is actionable without this
+/// helper knowing about sorts or tiles. `context` is a closure rather than a
+/// `&str` so the (often `format!`-built) description is only allocated on the
+/// error path, not on every launch.
+pub fn check_shared_mem_fits(
+    device_index: usize,
+    shared_mem: u32,
+    operation: &'static str,
+    context: impl FnOnce() -> String,
+) -> Result<()> {
+    let limit = CudaDevice::new(device_index).profile().shared_mem_per_block;
+    if shared_mem > limit {
+        let context = context();
+        return Err(Error::BackendLimitation {
+            backend: "cuda",
+            operation,
+            reason: format!(
+                "{context} needs {shared_mem} bytes of shared memory, exceeding this \
+                 device's {limit}-byte per-block limit"
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Create a launch configuration from grid, block, and shared memory sizes.
 #[inline]
 pub fn launch_config(
@@ -184,5 +218,39 @@ mod tests {
         let (grid_x, grid_y, grid_z) = elementwise_launch_config(numel as usize).unwrap();
         assert_eq!(grid_x, MAX_GRID_DIM_X);
         assert_eq!((grid_y, grid_z), (1, 1));
+    }
+
+    #[test]
+    fn shared_mem_check_accepts_a_typical_request() {
+        // No CUDA device is guaranteed present in unit tests; `profile()` then
+        // falls back to `unknown()`, whose `shared_mem_per_block` is 0, so a
+        // strictly-positive request cannot be asserted to fit here. Zero bytes
+        // always fits regardless of the device's reported budget.
+        let result = check_shared_mem_fits(0, 0, "matmul", || "128x128 matmul tile".to_string());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn shared_mem_check_rejects_an_oversized_request() {
+        let result =
+            check_shared_mem_fits(0, u32::MAX, "matmul", || "128x128 matmul tile".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn shared_mem_check_error_names_request_limit_and_context() {
+        let err =
+            check_shared_mem_fits(0, u32::MAX, "matmul", || "128x128 matmul tile".to_string())
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err.contains("128x128 matmul tile"),
+            "missing context: {err}"
+        );
+        assert!(
+            err.contains(&u32::MAX.to_string()),
+            "missing requested bytes: {err}"
+        );
+        assert!(err.contains("byte per-block limit"), "missing limit: {err}");
     }
 }

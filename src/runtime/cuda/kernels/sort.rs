@@ -1,8 +1,8 @@
 //! CUDA kernel launchers for sorting and search operations
 
 use super::loader::{
-    BLOCK_SIZE, dtype_suffix, elementwise_launch_config, get_kernel_function, get_or_load_module,
-    kernel_name, launch_config,
+    BLOCK_SIZE, check_shared_mem_fits, dtype_suffix, elementwise_launch_config,
+    get_kernel_function, get_or_load_module, kernel_name, launch_config,
 };
 use cudarc::driver::PushKernelArg;
 use cudarc::driver::safe::{CudaContext, CudaStream};
@@ -10,8 +10,6 @@ use std::sync::Arc;
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
-use crate::runtime::Device;
-use crate::runtime::cuda::CudaDevice;
 
 /// Module name for sort kernels
 pub const SORT_MODULE: &str = "sort";
@@ -39,25 +37,6 @@ fn sort_shared_mem_size(sort_size: usize, elem_size: usize) -> Result<u32> {
     })
 }
 
-/// Check a computed shared-memory request against the device's actual
-/// per-block budget before launching. `CudaDevice::new` is a free index
-/// wrapper and `profile()` is served from a per-index cache, so this is an
-/// atomic load, not a driver query.
-fn check_shared_mem_fits(device_index: usize, shared_mem: u32, sort_size: usize) -> Result<()> {
-    let limit = CudaDevice::new(device_index).profile().shared_mem_per_block;
-    if shared_mem > limit {
-        return Err(Error::BackendLimitation {
-            backend: "cuda",
-            operation: "sort",
-            reason: format!(
-                "sort dimension of size {sort_size} needs {shared_mem} bytes of shared \
-                 memory, exceeding this device's {limit}-byte per-block limit"
-            ),
-        });
-    }
-    Ok(())
-}
-
 /// Launch sort kernel with indices
 ///
 /// # Safety
@@ -83,7 +62,9 @@ pub unsafe fn launch_sort(
 
     let elem_size = dtype.size_in_bytes();
     let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
-    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
+    check_shared_mem_fits(device_index, shared_mem, "sort", || {
+        format!("sort dimension of size {sort_size}")
+    })?;
 
     // 2D grid: (outer, inner)
     let grid = (outer_size as u32, inner_size as u32, 1);
@@ -139,7 +120,9 @@ pub unsafe fn launch_sort_values_only(
 
     let elem_size = dtype.size_in_bytes();
     let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
-    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
+    check_shared_mem_fits(device_index, shared_mem, "sort", || {
+        format!("sort dimension of size {sort_size}")
+    })?;
 
     let grid = (outer_size as u32, inner_size as u32, 1);
     let block = (BLOCK_SIZE.min(sort_size as u32).max(1), 1, 1);
@@ -196,7 +179,9 @@ pub unsafe fn launch_argsort(
 
     let elem_size = dtype.size_in_bytes();
     let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
-    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
+    check_shared_mem_fits(device_index, shared_mem, "sort", || {
+        format!("sort dimension of size {sort_size}")
+    })?;
 
     let grid = (outer_size as u32, inner_size as u32, 1);
     let block = (BLOCK_SIZE.min(sort_size as u32).max(1), 1, 1);
@@ -253,7 +238,9 @@ pub unsafe fn launch_topk(
 
     let elem_size = dtype.size_in_bytes();
     let shared_mem = sort_shared_mem_size(sort_size, elem_size)?;
-    check_shared_mem_fits(device_index, shared_mem, sort_size)?;
+    check_shared_mem_fits(device_index, shared_mem, "sort", || {
+        format!("sort dimension of size {sort_size}")
+    })?;
 
     let grid = (outer_size as u32, inner_size as u32, 1);
     let block = (BLOCK_SIZE.min(sort_size as u32).max(1), 1, 1);
@@ -622,7 +609,9 @@ mod tests {
 
     #[test]
     fn device_limit_rejects_oversized_request() {
-        let result = check_shared_mem_fits(0, u32::MAX, 1 << 20);
+        let result = check_shared_mem_fits(0, u32::MAX, "sort", || {
+            format!("sort dimension of size {}", 1 << 20)
+        });
         // No CUDA device is guaranteed present in unit tests; either the
         // profile query reports a real limit (rejects) or falls back to
         // `unknown()` with limit 0 (also rejects). Both paths return Err.

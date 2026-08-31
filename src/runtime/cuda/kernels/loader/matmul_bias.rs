@@ -12,6 +12,7 @@ use crate::algorithm::TileConfig;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
+use super::launch_dims::check_shared_mem_fits;
 use super::matmul_config::{
     default_tile_config, matmul_batched_launch_config, matmul_launch_config,
 };
@@ -139,6 +140,12 @@ pub unsafe fn launch_matmul_bias_kernel_with_config(
     };
 
     let cfg = matmul_launch_config(m, n, tile_cfg, shared_elem_size);
+    check_shared_mem_fits(device_index, cfg.shared_mem_bytes, "matmul", || {
+        format!(
+            "{}x{}x{} {dtype} matmul_bias tile",
+            tile_cfg.block_m, tile_cfg.block_n, tile_cfg.block_k
+        )
+    })?;
     let m_u32 = m as u32;
     let n_u32 = n as u32;
     let k_u32 = k as u32;
@@ -293,6 +300,12 @@ pub unsafe fn launch_matmul_bias_batched_kernel_with_config(
     };
 
     let cfg = matmul_batched_launch_config(batch, m, n, tile_cfg, shared_elem_size);
+    check_shared_mem_fits(device_index, cfg.shared_mem_bytes, "matmul", || {
+        format!(
+            "{}x{}x{} {dtype} batched matmul_bias tile",
+            tile_cfg.block_m, tile_cfg.block_n, tile_cfg.block_k
+        )
+    })?;
     let batch_u32 = batch as u32;
     let m_u32 = m as u32;
     let n_u32 = n as u32;

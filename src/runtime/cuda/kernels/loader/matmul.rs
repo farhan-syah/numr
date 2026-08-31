@@ -16,7 +16,7 @@ use crate::runtime::Device;
 use crate::runtime::cuda::CudaDevice;
 
 use super::gemv::launch_gemv_kernel;
-use super::launch_dims::LaunchConfig;
+use super::launch_dims::{LaunchConfig, check_shared_mem_fits};
 use super::matmul_config::{
     default_tile_config, f32_batched_tile_config, matmul_batched_launch_config,
     matmul_launch_config,
@@ -206,8 +206,15 @@ pub unsafe fn launch_matmul_kernel_with_config(
     let smem_factor: u32 = if dtype == DType::F32 { 2 } else { 1 };
 
     let base_cfg = matmul_launch_config(m, n, tile_cfg, shared_elem_size);
+    let shared_mem_bytes = base_cfg.shared_mem_bytes * smem_factor;
+    check_shared_mem_fits(device_index, shared_mem_bytes, "matmul", || {
+        format!(
+            "{}x{}x{} {dtype} matmul tile",
+            tile_cfg.block_m, tile_cfg.block_n, tile_cfg.block_k
+        )
+    })?;
     let cfg = LaunchConfig {
-        shared_mem_bytes: base_cfg.shared_mem_bytes * smem_factor,
+        shared_mem_bytes,
         ..base_cfg
     };
     let m_u32 = m as u32;
@@ -409,8 +416,15 @@ pub unsafe fn launch_matmul_batched_kernel_with_config(
     let smem_factor: u32 = if dtype == DType::F32 { 2 } else { 1 };
 
     let base_cfg = matmul_batched_launch_config(batch, m, n, tile_cfg, shared_elem_size);
+    let shared_mem_bytes = base_cfg.shared_mem_bytes * smem_factor;
+    check_shared_mem_fits(device_index, shared_mem_bytes, "matmul", || {
+        format!(
+            "{}x{}x{} {dtype} batched matmul tile",
+            tile_cfg.block_m, tile_cfg.block_n, tile_cfg.block_k
+        )
+    })?;
     let cfg = LaunchConfig {
-        shared_mem_bytes: base_cfg.shared_mem_bytes * smem_factor,
+        shared_mem_bytes,
         ..base_cfg
     };
     let batch_u32 = batch as u32;

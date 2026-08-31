@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::algorithm::TileConfig;
 use crate::error::{Error, Result};
 
-use super::launch_dims::LaunchConfig;
+use super::launch_dims::{LaunchConfig, check_shared_mem_fits};
 use super::matmul_config::matmul_launch_config;
 use super::module_cache::{get_kernel_function, get_or_load_module};
 use super::names::kernel_names;
@@ -108,8 +108,15 @@ pub(super) unsafe fn launch_matmul_f32_tiled(
         let elem_size = 4usize; // f32
         let smem_factor: u32 = 2; // double-buffered
         let base_cfg = matmul_launch_config(m, n, tile_cfg, elem_size);
+        let shared_mem_bytes = base_cfg.shared_mem_bytes * smem_factor;
+        check_shared_mem_fits(device_index, shared_mem_bytes, "matmul", || {
+            format!(
+                "{}x{}x{} F32 matmul tile",
+                tile_cfg.block_m, tile_cfg.block_n, tile_cfg.block_k
+            )
+        })?;
         let cfg = LaunchConfig {
-            shared_mem_bytes: base_cfg.shared_mem_bytes * smem_factor,
+            shared_mem_bytes,
             ..base_cfg
         };
         let m_u32 = m as u32;
