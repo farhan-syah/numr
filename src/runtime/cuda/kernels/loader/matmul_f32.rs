@@ -12,7 +12,7 @@ use crate::algorithm::TileConfig;
 use crate::error::{Error, Result};
 
 use super::launch_dims::{LaunchConfig, check_shared_mem_fits};
-use super::matmul_config::matmul_launch_config;
+use super::matmul_config::{f32_tiled_launch_config, f32_tiled_suffix, matmul_launch_config};
 use super::module_cache::{get_kernel_function, get_or_load_module};
 use super::names::kernel_names;
 
@@ -44,42 +44,22 @@ pub(super) unsafe fn launch_matmul_f32_tiled(
     tile_cfg: &TileConfig,
 ) -> Result<()> {
     // Map tile config to a specialised extern "C" kernel name.
-    let specialized: Option<&'static str> = match (
-        tile_cfg.block_m,
-        tile_cfg.block_n,
-        tile_cfg.block_k,
-        tile_cfg.thread_m,
-        tile_cfg.thread_n,
-    ) {
-        (128, 128, 8, 8, 8) => Some("matmul_f32_tiled_128x128x8_8x8"),
-        (64, 64, 32, 8, 4) => Some("matmul_f32_tiled_64x64x32_8x4"),
-        _ => None,
-    };
+    let specialized: Option<String> =
+        f32_tiled_suffix(tile_cfg).map(|suffix| format!("matmul_f32_tiled_{suffix}"));
 
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_MODULE)?;
 
     if let Some(kernel_fn_name) = specialized {
-        let func = get_kernel_function(&module, kernel_fn_name)?;
+        let func = get_kernel_function(&module, &kernel_fn_name)?;
 
         // Grid: (ceil(N/BN), ceil(M/BM), 1)   Block: (BN/TN, BM/TM, 1)
-        let bm = tile_cfg.block_m as u32;
-        let bn = tile_cfg.block_n as u32;
-        let tn = tile_cfg.thread_n as u32;
-        let tm = tile_cfg.thread_m as u32;
-        let grid_x = ((n as u32) + bn - 1) / bn;
-        let grid_y = ((m as u32) + bm - 1) / bm;
         // The specialized tiled kernels (matmul_f32_tiled_*) use ONLY static
-        // __shared__ arrays (no extern __shared__).  Dynamic shared memory must
-        // be 0; setting it to the static-tile formula would add unused dynamic
-        // smem on top of the existing static pool, pushing the per-block total
-        // past the 48 KB default hardware limit and causing a silent launch
-        // failure on sm_86 (Ampere) for the 64×64×32 config (32 KB static +
-        // 32 KB dynamic = 64 KB > 48 KB).
-        let cfg = LaunchConfig {
-            grid_dim: (grid_x, grid_y, 1),
-            block_dim: (bn / tn, bm / tm, 1),
-            shared_mem_bytes: 0,
-        };
+        // __shared__ arrays (no extern __shared__), so f32_tiled_launch_config
+        // sets shared_mem_bytes to 0: dynamic smem would stack on top of the
+        // static pool, pushing the per-block total past the 48 KB default
+        // hardware limit and causing a silent launch failure on sm_86 (Ampere)
+        // for the 64×64×32 config (32 KB static + 32 KB dynamic = 64 KB).
+        let cfg = f32_tiled_launch_config(m, n, 1, tile_cfg);
 
         let m_u32 = m as u32;
         let n_u32 = n as u32;

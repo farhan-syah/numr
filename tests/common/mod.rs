@@ -236,6 +236,46 @@ pub fn tolerance_for_dtype(dtype: DType) -> (f64, f64) {
     }
 }
 
+/// Accumulation-aware tolerance for long-K GEMM parity tests.
+///
+/// `tolerance_for_dtype`'s bound (`atol + rtol * |output|`) scales to the
+/// OUTPUT magnitude. That is the right instrument for an elementwise op,
+/// where rounding error is bounded by the ULP of the result itself. It is
+/// the WRONG instrument for a length-K dot product: each of the K
+/// multiply-accumulate steps rounds to the ULP of ITS OWN running partial
+/// sum, not to the ULP of the final value. With O(1)-scale operands those
+/// partial sums grow like a random walk, reaching magnitude
+/// `~sqrt(K) * operand_scale`, regardless of what the terms eventually sum
+/// to. When the true result CANCELS down to something small — e.g. K=500,
+/// output~0.066, but partial sums pass through ~sqrt(500)*1.0 ~ 22 — an
+/// output-relative bound massively underestimates the achievable error,
+/// because it was computed against a value ~300x smaller than what the
+/// rounding actually tracked. This is not specific to one kernel: two
+/// numerically correct backends that fold a bias into the FMA chain at a
+/// different point (seed-then-accumulate vs accumulate-then-add, see
+/// `matmul_bias_tiled_f32` vs `MatmulEpilogueBias::apply`) reassociate the
+/// sum and can each land on either side of the true value by this amount —
+/// neither is wrong, and no amount of "fixing" either kernel removes it.
+///
+/// Do NOT simplify this back to `tolerance_for_dtype`: that was tried, and
+/// it is what produced `matmul_bias_f32_128_tile_ragged_large_match_cpu` and
+/// `gemm_bias_act_f32_128_tile_all_activations_match_cpu` failing by ~1e-6
+/// on a bound of ~1.7e-6 at K=500 — a real, reproducible cancellation effect
+/// confirmed against an f64 ground truth (see `gemm_long_k_tolerance` call
+/// sites), not test flakiness.
+///
+/// `operand_scale` is the observed max `|value|` among the GEMM's operands
+/// (data-driven, not a hardcoded constant) — pass the larger of A's and B's
+/// max abs value.
+pub fn gemm_long_k_tolerance(dtype: DType, k: usize, operand_scale: f64) -> (f64, f64) {
+    let (rtol, atol) = tolerance_for_dtype(dtype);
+    let bound = atol + rtol * (k as f64).sqrt() * operand_scale.max(1.0);
+    // Pure absolute bound: the whole point is that this tolerance must NOT
+    // scale with |output| (that is exactly what output-relative tolerance
+    // gets wrong here), so `rtol` is 0 and everything lives in `bound`.
+    (0.0, bound)
+}
+
 /// Compare one pair of values with dtype tolerance, treating non-finite values
 /// by identity.
 ///
@@ -308,13 +348,27 @@ pub fn assert_tensor_allclose<R1: Runtime<DType = DType>, R2: Runtime<DType = DT
     msg: &str,
 ) {
     let (rtol, atol) = tolerance_for_dtype(dtype);
+    assert_tensor_allclose_tol(actual, expected, rtol, atol, msg);
+}
+
+/// Same as [`assert_tensor_allclose`], but with an explicit `(rtol, atol)`
+/// pair instead of one derived from `tolerance_for_dtype`.
+///
+/// Use [`gemm_long_k_tolerance`] to compute an accumulation-aware `(rtol,
+/// atol)` pair for long-K GEMM parity tests.
+pub fn assert_tensor_allclose_tol<R1: Runtime<DType = DType>, R2: Runtime<DType = DType>>(
+    actual: &numr::tensor::Tensor<R1>,
+    expected: &numr::tensor::Tensor<R2>,
+    rtol: f64,
+    atol: f64,
+    msg: &str,
+) {
     let result_dtype = actual.dtype();
     assert_eq!(
         result_dtype,
         expected.dtype(),
-        "{}: input dtype={:?}: result dtype divergence: {:?} vs {:?}",
+        "{}: result dtype divergence: {:?} vs {:?}",
         msg,
-        dtype,
         result_dtype,
         expected.dtype()
     );

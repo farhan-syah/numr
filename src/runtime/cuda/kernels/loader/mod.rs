@@ -10,6 +10,7 @@ mod gemv;
 mod launch_dims;
 mod matmul;
 mod matmul_bias;
+mod matmul_bias_f32;
 mod matmul_config;
 mod matmul_f32;
 mod matmul_fp8;
@@ -28,7 +29,10 @@ pub use launch_dims::{
 };
 pub use matmul::{launch_matmul_batched_kernel, launch_matmul_kernel};
 pub use matmul_bias::{launch_matmul_bias_batched_kernel, launch_matmul_bias_kernel};
-pub use matmul_config::{default_tile_config, matmul_batched_launch_config, matmul_launch_config};
+pub use matmul_config::{
+    default_tile_config, f32_batched_tile_config, f32_tiled_launch_config, f32_tiled_suffix,
+    matmul_batched_launch_config, matmul_launch_config,
+};
 pub use matmul_int::{int_matmul_has_kernel, int_matmul_output_dtype};
 pub(crate) use matmul_wmma::use_wmma_after_padding;
 pub use module_cache::{get_kernel_function, get_or_load_module, preload_modules};

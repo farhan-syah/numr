@@ -13,8 +13,13 @@ use crate::dtype::DType;
 use crate::error::{Error, Result};
 
 use super::launch_dims::check_shared_mem_fits;
+use super::matmul_bias_f32::{
+    launch_matmul_bias_batched_f32_tiled, launch_matmul_bias_f32_tiled,
+    matmul_bias_batched_f32_tiled_name, matmul_bias_f32_tiled_name,
+};
 use super::matmul_config::{
-    default_tile_config, matmul_batched_launch_config, matmul_launch_config,
+    default_tile_config, f32_batched_tile_config, matmul_batched_launch_config,
+    matmul_launch_config,
 };
 use super::matmul_fp8::launch_matmul_fp8_tiled;
 use super::matmul_int::{int_matmul_has_kernel, launch_matmul_int_tiled};
@@ -91,6 +96,12 @@ pub unsafe fn launch_matmul_bias_kernel(
             );
         }
     }
+    // F32 uses the same shape-aware tiles as plain matmul so both reach a
+    // compile-time-tiled kernel; every other dtype keeps its fixed default.
+    let tile_cfg = match dtype {
+        DType::F32 => f32_batched_tile_config(m, n, k),
+        _ => default_tile_config(dtype),
+    };
     unsafe {
         launch_matmul_bias_kernel_with_config(
             context,
@@ -104,7 +115,7 @@ pub unsafe fn launch_matmul_bias_kernel(
             m,
             n,
             k,
-            &default_tile_config(dtype),
+            &tile_cfg,
         )
     }
 }
@@ -128,6 +139,30 @@ pub unsafe fn launch_matmul_bias_kernel_with_config(
     k: usize,
     tile_cfg: &TileConfig,
 ) -> Result<()> {
+    // F32 with a specialised tile: compile-time-tiled kernel, unrolled
+    // micro-kernel, accumulators in registers. Any other tile or dtype falls
+    // through to the generic runtime-parameter kernel below.
+    if dtype == DType::F32
+        && let Some(kernel_fn_name) = matmul_bias_f32_tiled_name(tile_cfg)
+    {
+        unsafe {
+            return launch_matmul_bias_f32_tiled(
+                context,
+                stream,
+                device_index,
+                &kernel_fn_name,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                c_ptr,
+                m,
+                n,
+                k,
+                tile_cfg,
+            );
+        }
+    }
+
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_MODULE)?;
     let func_name = kernel_name("matmul_bias", dtype);
     let func = get_kernel_function(&module, &func_name)?;
@@ -246,6 +281,10 @@ pub unsafe fn launch_matmul_bias_batched_kernel(
             );
         }
     }
+    let tile_cfg = match dtype {
+        DType::F32 => f32_batched_tile_config(m, n, k),
+        _ => default_tile_config(dtype),
+    };
     unsafe {
         launch_matmul_bias_batched_kernel_with_config(
             context,
@@ -260,7 +299,7 @@ pub unsafe fn launch_matmul_bias_batched_kernel(
             m,
             n,
             k,
-            &default_tile_config(dtype),
+            &tile_cfg,
             a_batch,
             b_batch,
         )
@@ -289,6 +328,32 @@ pub unsafe fn launch_matmul_bias_batched_kernel_with_config(
     a_batch: usize,
     b_batch: usize,
 ) -> Result<()> {
+    // F32 with a specialised tile: same compile-time-tiled dispatch as the
+    // non-batched entry point above.
+    if dtype == DType::F32
+        && let Some(kernel_fn_name) = matmul_bias_batched_f32_tiled_name(tile_cfg)
+    {
+        unsafe {
+            return launch_matmul_bias_batched_f32_tiled(
+                context,
+                stream,
+                device_index,
+                &kernel_fn_name,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                c_ptr,
+                batch,
+                m,
+                n,
+                k,
+                a_batch,
+                b_batch,
+                tile_cfg,
+            );
+        }
+    }
+
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_MODULE)?;
     let func_name = kernel_name("matmul_bias_batched", dtype);
     let func = get_kernel_function(&module, &func_name)?;

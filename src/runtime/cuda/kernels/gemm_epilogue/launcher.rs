@@ -5,14 +5,17 @@ use cudarc::driver::safe::{CudaContext, CudaStream};
 use std::sync::Arc;
 
 use super::super::loader::{
-    default_tile_config, get_kernel_function, get_or_load_module, kernel_name,
-    matmul_batched_launch_config, matmul_launch_config,
+    default_tile_config, f32_batched_tile_config, get_kernel_function, get_or_load_module,
+    kernel_name, matmul_batched_launch_config, matmul_launch_config,
+};
+use super::tiled_f32::{
+    launch_gemm_bias_act_f32_tiled, launch_gemm_bias_residual_f32_tiled, tiled_f32_kernel_name,
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::GemmActivation;
 
-const GEMM_EPILOGUE_MODULE: &str = "gemm_epilogue";
+pub(super) const GEMM_EPILOGUE_MODULE: &str = "gemm_epilogue";
 
 fn activation_to_u32(activation: GemmActivation) -> u32 {
     match activation {
@@ -44,7 +47,36 @@ pub unsafe fn launch_gemm_bias_act_kernel(
     k: usize,
     activation: GemmActivation,
 ) -> Result<()> {
-    let tile_cfg = default_tile_config(dtype);
+    // F32 uses the same shape-aware tiles as plain matmul so it reaches a
+    // compile-time-tiled kernel; every other dtype keeps its fixed default.
+    let tile_cfg = match dtype {
+        DType::F32 => f32_batched_tile_config(m, n, k),
+        _ => default_tile_config(dtype),
+    };
+    let act_u32 = activation_to_u32(activation);
+    if dtype == DType::F32
+        && let Some(name) = tiled_f32_kernel_name("gemm_bias_act", &tile_cfg)
+    {
+        unsafe {
+            return launch_gemm_bias_act_f32_tiled(
+                context,
+                stream,
+                device_index,
+                &name,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                c_ptr,
+                None,
+                m,
+                n,
+                k,
+                act_u32,
+                &tile_cfg,
+            );
+        }
+    }
+
     let module = get_or_load_module(context, device_index, GEMM_EPILOGUE_MODULE)?;
     let func_name = kernel_name("gemm_bias_act", dtype);
     let func = get_kernel_function(&module, &func_name)?;
@@ -59,7 +91,6 @@ pub unsafe fn launch_gemm_bias_act_kernel(
     let m_u32 = m as u32;
     let n_u32 = n as u32;
     let k_u32 = k as u32;
-    let act_u32 = activation_to_u32(activation);
     let block_m = tile_cfg.block_m as u32;
     let block_n = tile_cfg.block_n as u32;
     let block_k = tile_cfg.block_k as u32;
@@ -110,7 +141,36 @@ pub unsafe fn launch_gemm_bias_act_batched_kernel(
     k: usize,
     activation: GemmActivation,
 ) -> Result<()> {
-    let tile_cfg = default_tile_config(dtype);
+    // F32 uses the same shape-aware tiles as plain matmul so it reaches a
+    // compile-time-tiled kernel; every other dtype keeps its fixed default.
+    let tile_cfg = match dtype {
+        DType::F32 => f32_batched_tile_config(m, n, k),
+        _ => default_tile_config(dtype),
+    };
+    let act_u32 = activation_to_u32(activation);
+    if dtype == DType::F32
+        && let Some(name) = tiled_f32_kernel_name("gemm_bias_act_batched", &tile_cfg)
+    {
+        unsafe {
+            return launch_gemm_bias_act_f32_tiled(
+                context,
+                stream,
+                device_index,
+                &name,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                c_ptr,
+                Some(batch),
+                m,
+                n,
+                k,
+                act_u32,
+                &tile_cfg,
+            );
+        }
+    }
+
     let module = get_or_load_module(context, device_index, GEMM_EPILOGUE_MODULE)?;
     let func_name = kernel_name("gemm_bias_act_batched", dtype);
     let func = get_kernel_function(&module, &func_name)?;
@@ -126,7 +186,6 @@ pub unsafe fn launch_gemm_bias_act_batched_kernel(
     let m_u32 = m as u32;
     let n_u32 = n as u32;
     let k_u32 = k as u32;
-    let act_u32 = activation_to_u32(activation);
     let block_m = tile_cfg.block_m as u32;
     let block_n = tile_cfg.block_n as u32;
     let block_k = tile_cfg.block_k as u32;
@@ -180,7 +239,35 @@ pub unsafe fn launch_gemm_bias_residual_kernel(
     n: usize,
     k: usize,
 ) -> Result<()> {
-    let tile_cfg = default_tile_config(dtype);
+    // F32 uses the same shape-aware tiles as plain matmul so it reaches a
+    // compile-time-tiled kernel; every other dtype keeps its fixed default.
+    let tile_cfg = match dtype {
+        DType::F32 => f32_batched_tile_config(m, n, k),
+        _ => default_tile_config(dtype),
+    };
+    if dtype == DType::F32
+        && let Some(name) = tiled_f32_kernel_name("gemm_bias_residual", &tile_cfg)
+    {
+        unsafe {
+            return launch_gemm_bias_residual_f32_tiled(
+                context,
+                stream,
+                device_index,
+                &name,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                residual_ptr,
+                c_ptr,
+                None,
+                m,
+                n,
+                k,
+                &tile_cfg,
+            );
+        }
+    }
+
     let module = get_or_load_module(context, device_index, GEMM_EPILOGUE_MODULE)?;
     let func_name = kernel_name("gemm_bias_residual", dtype);
     let func = get_kernel_function(&module, &func_name)?;
@@ -248,7 +335,35 @@ pub unsafe fn launch_gemm_bias_residual_batched_kernel(
     n: usize,
     k: usize,
 ) -> Result<()> {
-    let tile_cfg = default_tile_config(dtype);
+    // F32 uses the same shape-aware tiles as plain matmul so it reaches a
+    // compile-time-tiled kernel; every other dtype keeps its fixed default.
+    let tile_cfg = match dtype {
+        DType::F32 => f32_batched_tile_config(m, n, k),
+        _ => default_tile_config(dtype),
+    };
+    if dtype == DType::F32
+        && let Some(name) = tiled_f32_kernel_name("gemm_bias_residual_batched", &tile_cfg)
+    {
+        unsafe {
+            return launch_gemm_bias_residual_f32_tiled(
+                context,
+                stream,
+                device_index,
+                &name,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                residual_ptr,
+                c_ptr,
+                Some(batch),
+                m,
+                n,
+                k,
+                &tile_cfg,
+            );
+        }
+    }
+
     let module = get_or_load_module(context, device_index, GEMM_EPILOGUE_MODULE)?;
     let func_name = kernel_name("gemm_bias_residual_batched", dtype);
     let func = get_kernel_function(&module, &func_name)?;

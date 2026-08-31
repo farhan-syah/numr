@@ -6,6 +6,7 @@
 
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
+#include "matmul_f32_tiled.cuh"
 
 // ============================================================================
 // Activation helpers (device functions)
@@ -1393,4 +1394,184 @@ extern "C" __global__ void gemm_bias_residual_batched_bf16(
             }
         }
     }
+}
+
+// ============================================================================
+// Compile-Time-Tiled FP32 epilogues
+// ============================================================================
+//
+// Same GEMM core as matmul_f32_tiled_128x128x8_8x8 (matmul_f32_tiled.cuh),
+// with the epilogue supplied as a compile-time functor.  The generic kernels
+// above stay as the fallback for tiles and dtypes without an instantiation.
+//
+// The epilogue runs only for in-range (row, col) pairs, so bias[col] and
+// residual[idx] are never read past the end on a ragged tile.
+//
+// Configs dispatched from Rust (gemm_epilogue/tiled_f32.rs):
+//   128x128x8_8x8   BM=128 BN=128 BK=8  TM=8 TN=8 -> 256 threads
+//   64x64x32_8x4    BM=64  BN=64  BK=32 TM=8 TN=4 -> 128 threads
+// ============================================================================
+
+// C = activation(A @ B + bias).  Same activation codes and same math as the
+// generic gemm_bias_act_f32 kernel: both call apply_activation_f32.
+struct GemmEpilogueBiasAct {
+    const float* __restrict__ bias;
+    unsigned int activation_type;
+
+    __device__ __forceinline__ float apply(float acc, unsigned int, unsigned int col) const {
+        return apply_activation_f32(acc + bias[col], activation_type);
+    }
+};
+
+// C = A @ B + bias + residual.  The residual is elementwise over the output,
+// indexed by the flat output offset, matching gemm_bias_residual_f32.
+struct GemmEpilogueBiasResidual {
+    const float* __restrict__ bias;
+    const float* __restrict__ residual;
+
+    __device__ __forceinline__ float apply(float acc, unsigned int idx, unsigned int col) const {
+        return acc + bias[col] + residual[idx];
+    }
+};
+
+// The activation epilogue costs registers: without a bound ptxas gives the
+// 128x128 tile 149 registers, and 256 threads x 149 exceeds half the 65 536
+// registers per SM, so only one block resides at a time. __launch_bounds__
+// caps it at 128 registers with no spill (verified with ptxas -v), restoring
+// two resident blocks. The 64x64x32 tile fits without a bound.
+extern "C" __global__ __launch_bounds__(256, 2) void gemm_bias_act_f32_tiled_128x128x8_8x8(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    float* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int activation_type
+) {
+    GemmEpilogueBiasAct epi{bias, activation_type};
+    matmul_f32_tiled_impl<128, 128, 8, 8, 8>(A, B, C, M, N, K, epi);
+}
+
+extern "C" __global__ void gemm_bias_act_f32_tiled_64x64x32_8x4(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    float* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int activation_type
+) {
+    GemmEpilogueBiasAct epi{bias, activation_type};
+    matmul_f32_tiled_impl<64, 64, 32, 8, 4>(A, B, C, M, N, K, epi);
+}
+
+// Batched: blockIdx.z selects the batch.  A, B and C advance by one full
+// matrix per batch (no broadcast operand in this path, matching
+// gemm_bias_act_batched_f32); the bias is shared by every batch.
+extern "C" __global__ __launch_bounds__(256, 2) void gemm_bias_act_batched_f32_tiled_128x128x8_8x8(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    float* __restrict__ C,
+    unsigned int batch_count,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int activation_type
+) {
+    const unsigned int batch = blockIdx.z;
+    if (batch >= batch_count) return;
+
+    GemmEpilogueBiasAct epi{bias, activation_type};
+    matmul_f32_tiled_impl<128, 128, 8, 8, 8>(
+        A + batch * (M * K), B + batch * (K * N), C + batch * (M * N), M, N, K, epi);
+}
+
+extern "C" __global__ void gemm_bias_act_batched_f32_tiled_64x64x32_8x4(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    float* __restrict__ C,
+    unsigned int batch_count,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int activation_type
+) {
+    const unsigned int batch = blockIdx.z;
+    if (batch >= batch_count) return;
+
+    GemmEpilogueBiasAct epi{bias, activation_type};
+    matmul_f32_tiled_impl<64, 64, 32, 8, 4>(
+        A + batch * (M * K), B + batch * (K * N), C + batch * (M * N), M, N, K, epi);
+}
+
+extern "C" __global__ void gemm_bias_residual_f32_tiled_128x128x8_8x8(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    const float* __restrict__ residual,
+    float* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K
+) {
+    GemmEpilogueBiasResidual epi{bias, residual};
+    matmul_f32_tiled_impl<128, 128, 8, 8, 8>(A, B, C, M, N, K, epi);
+}
+
+extern "C" __global__ void gemm_bias_residual_f32_tiled_64x64x32_8x4(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    const float* __restrict__ residual,
+    float* __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K
+) {
+    GemmEpilogueBiasResidual epi{bias, residual};
+    matmul_f32_tiled_impl<64, 64, 32, 8, 4>(A, B, C, M, N, K, epi);
+}
+
+// Batched: the residual advances one full M×N matrix per batch, matching
+// gemm_bias_residual_batched_f32.
+extern "C" __global__ void gemm_bias_residual_batched_f32_tiled_128x128x8_8x8(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    const float* __restrict__ residual,
+    float* __restrict__ C,
+    unsigned int batch_count,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K
+) {
+    const unsigned int batch = blockIdx.z;
+    if (batch >= batch_count) return;
+
+    GemmEpilogueBiasResidual epi{bias, residual + batch * (M * N)};
+    matmul_f32_tiled_impl<128, 128, 8, 8, 8>(
+        A + batch * (M * K), B + batch * (K * N), C + batch * (M * N), M, N, K, epi);
+}
+
+extern "C" __global__ void gemm_bias_residual_batched_f32_tiled_64x64x32_8x4(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    const float* __restrict__ bias,
+    const float* __restrict__ residual,
+    float* __restrict__ C,
+    unsigned int batch_count,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K
+) {
+    const unsigned int batch = blockIdx.z;
+    if (batch >= batch_count) return;
+
+    GemmEpilogueBiasResidual epi{bias, residual + batch * (M * N)};
+    matmul_f32_tiled_impl<64, 64, 32, 8, 4>(
+        A + batch * (M * K), B + batch * (K * N), C + batch * (M * N), M, N, K, epi);
 }

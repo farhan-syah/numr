@@ -12,7 +12,8 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
+    DTypeDomain, assert_tensor_allclose, assert_tensor_allclose_tol, create_cpu_client,
+    gemm_long_k_tolerance, is_dtype_supported, parity_dtypes, values_close,
 };
 
 // ============================================================================
@@ -101,6 +102,607 @@ fn gemm_bias_activation_2d_parity(activation: GemmActivation, label: &str) {
                 );
             });
         }
+    }
+}
+
+// ============================================================================
+// 128x128x8 tile coverage (F32): every case above uses [2,3]@[3,2] or
+// [2,2,3]@[2,3,2], which `f32_batched_tile_config` (m<=64 || n<=64) always
+// routes to the 64x64x32 tile. These force the 128x128x8 specialized kernel.
+// ============================================================================
+
+/// Deterministic F32 fill, distinct phase per operand so a/b/bias/residual
+/// don't correlate into an accidental zero. Matches the helper in matmul_bias.rs.
+fn deterministic_f32(n: usize, phase: f32) -> Vec<f32> {
+    (0..n)
+        .map(|i| {
+            ((i as f32 * 0.013 + phase).sin() * 0.5) + ((i as f32 * 0.0047 + phase).cos() * 0.3)
+        })
+        .collect()
+}
+
+/// GELU with a bias offset that drives every pre-activation value deeply
+/// negative, at a 128-tile size. A/B are kept small-amplitude so the bias
+/// term (not the matmul accumulation) controls the sign and magnitude.
+#[test]
+fn gemm_bias_act_f32_128_tile_gelu_large_negative_match_cpu() {
+    let (m, k, n) = (128usize, 128usize, 128usize);
+    let a_data: Vec<f32> = (0..m * k)
+        .map(|i| (i as f32 * 0.013).sin() * 0.01)
+        .collect();
+    let b_data: Vec<f32> = (0..k * n)
+        .map(|i| (i as f32 * 0.017).cos() * 0.01)
+        .collect();
+    let bias_data = vec![-50.0f32; n];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &a_data,
+        &[m, k],
+        &cpu_device,
+    )
+    .unwrap();
+    let b_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &b_data,
+        &[k, n],
+        &cpu_device,
+    )
+    .unwrap();
+    let bias_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &bias_data,
+        &[n],
+        &cpu_device,
+    )
+    .unwrap();
+    let cpu_result = cpu_client
+        .matmul_bias_activation(&a_t, &b_t, &bias_t, GemmActivation::GELU)
+        .unwrap();
+
+    #[cfg(feature = "cuda")]
+    if is_dtype_supported("cuda", numr::dtype::DType::F32) {
+        with_cuda_backend(|cuda_client, cuda_device| {
+            let a_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &a_data,
+                &[m, k],
+                &cuda_device,
+            )
+            .unwrap();
+            let b_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &b_data,
+                &[k, n],
+                &cuda_device,
+            )
+            .unwrap();
+            let bias_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &bias_data,
+                &[n],
+                &cuda_device,
+            )
+            .unwrap();
+            let result = cuda_client
+                .matmul_bias_activation(&a_t, &b_t, &bias_t, GemmActivation::GELU)
+                .unwrap();
+            assert_tensor_allclose(
+                &result,
+                &cpu_result,
+                numr::dtype::DType::F32,
+                "gemm_bias_act_f32_128_tile_gelu_large_negative CUDA vs CPU",
+            );
+        });
+    }
+}
+
+/// GELU with a bias offset that drives every pre-activation value deeply
+/// positive, at a 128-tile size — the counterpart of the negative case above.
+#[test]
+fn gemm_bias_act_f32_128_tile_gelu_large_positive_match_cpu() {
+    let (m, k, n) = (128usize, 128usize, 128usize);
+    let a_data: Vec<f32> = (0..m * k)
+        .map(|i| (i as f32 * 0.013).sin() * 0.01)
+        .collect();
+    let b_data: Vec<f32> = (0..k * n)
+        .map(|i| (i as f32 * 0.017).cos() * 0.01)
+        .collect();
+    let bias_data = vec![50.0f32; n];
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &a_data,
+        &[m, k],
+        &cpu_device,
+    )
+    .unwrap();
+    let b_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &b_data,
+        &[k, n],
+        &cpu_device,
+    )
+    .unwrap();
+    let bias_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &bias_data,
+        &[n],
+        &cpu_device,
+    )
+    .unwrap();
+    let cpu_result = cpu_client
+        .matmul_bias_activation(&a_t, &b_t, &bias_t, GemmActivation::GELU)
+        .unwrap();
+
+    #[cfg(feature = "cuda")]
+    if is_dtype_supported("cuda", numr::dtype::DType::F32) {
+        with_cuda_backend(|cuda_client, cuda_device| {
+            let a_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &a_data,
+                &[m, k],
+                &cuda_device,
+            )
+            .unwrap();
+            let b_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &b_data,
+                &[k, n],
+                &cuda_device,
+            )
+            .unwrap();
+            let bias_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &bias_data,
+                &[n],
+                &cuda_device,
+            )
+            .unwrap();
+            let result = cuda_client
+                .matmul_bias_activation(&a_t, &b_t, &bias_t, GemmActivation::GELU)
+                .unwrap();
+            assert_tensor_allclose(
+                &result,
+                &cpu_result,
+                numr::dtype::DType::F32,
+                "gemm_bias_act_f32_128_tile_gelu_large_positive CUDA vs CPU",
+            );
+        });
+    }
+}
+
+/// Every `GemmActivation` variant at a 128-tile size, ragged K so the
+/// activation epilogue is checked against the partial-tile path too.
+#[test]
+fn gemm_bias_act_f32_128_tile_all_activations_match_cpu() {
+    let (m, k, n) = (128usize, 130usize, 128usize);
+    let a_data = deterministic_f32(m * k, 0.0);
+    let b_data = deterministic_f32(k * n, 1.7);
+    let bias_data = deterministic_f32(n, 3.1);
+    // K=130 dot products, same bias-fold-order argument as
+    // `matmul_bias_f32_128_tile_ragged_large_match_cpu` (see
+    // `gemm_long_k_tolerance`'s doc comment), compounded by GELU/SiLU/Sigmoid
+    // /Tanh evaluating `tanhf` differently per backend (CUDA's device
+    // `tanhf` vs CPU's AVX2 polynomial `tanh_f32`) — both legitimate
+    // approximations of the same transcendental function, not a bug.
+    let operand_scale = a_data
+        .iter()
+        .chain(b_data.iter())
+        .fold(0.0f64, |acc, &v| acc.max(v.abs() as f64));
+    let (gemm_rtol, gemm_atol) = gemm_long_k_tolerance(numr::dtype::DType::F32, k, operand_scale);
+
+    for activation in [
+        GemmActivation::None,
+        GemmActivation::ReLU,
+        GemmActivation::GELU,
+        GemmActivation::SiLU,
+        GemmActivation::Sigmoid,
+        GemmActivation::Tanh,
+    ] {
+        let (cpu_client, cpu_device) = create_cpu_client();
+        let a_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &a_data,
+            &[m, k],
+            &cpu_device,
+        )
+        .unwrap();
+        let b_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &b_data,
+            &[k, n],
+            &cpu_device,
+        )
+        .unwrap();
+        let bias_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &bias_data,
+            &[n],
+            &cpu_device,
+        )
+        .unwrap();
+        let cpu_result = cpu_client
+            .matmul_bias_activation(&a_t, &b_t, &bias_t, activation)
+            .unwrap();
+
+        #[cfg(feature = "cuda")]
+        if is_dtype_supported("cuda", numr::dtype::DType::F32) {
+            with_cuda_backend(|cuda_client, cuda_device| {
+                let a_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                    &a_data,
+                    &[m, k],
+                    &cuda_device,
+                )
+                .unwrap();
+                let b_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                    &b_data,
+                    &[k, n],
+                    &cuda_device,
+                )
+                .unwrap();
+                let bias_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                    &bias_data,
+                    &[n],
+                    &cuda_device,
+                )
+                .unwrap();
+                let result = cuda_client
+                    .matmul_bias_activation(&a_t, &b_t, &bias_t, activation)
+                    .unwrap();
+                assert_tensor_allclose_tol(
+                    &result,
+                    &cpu_result,
+                    gemm_rtol,
+                    gemm_atol,
+                    &format!(
+                        "gemm_bias_act_f32_128_tile_all_activations[{activation:?}] CUDA vs CPU"
+                    ),
+                );
+            });
+        }
+    }
+}
+
+/// Both CPU and CUDA F32 results checked against an F64 ground truth,
+/// computed from the SAME inputs (cast up, never regenerated) at the SAME
+/// shape/activations as `gemm_bias_act_f32_128_tile_all_activations_match_cpu`.
+///
+/// This is a stronger statement than CPU-vs-CUDA agreement: two backends
+/// could in principle agree with each other while both being wrong. Diagnosed
+/// while investigating that test's GELU failure under `tolerance_for_dtype`
+/// — this is the permanent record of that diagnosis, not a throwaway.
+/// `gemm_long_k_tolerance` is the same accumulation-scaled bound used there;
+/// a real accumulation or activation bug (as opposed to a benign
+/// bias-fold-order reassociation plus differing `tanhf` implementations)
+/// would blow through it, because it targets f64 truth rather than another
+/// F32 backend that could share the same bug.
+#[test]
+fn gemm_bias_act_f32_128_tile_all_activations_match_f64_truth() {
+    let (m, k, n) = (128usize, 130usize, 128usize);
+    let a_data = deterministic_f32(m * k, 0.0);
+    let b_data = deterministic_f32(k * n, 1.7);
+    let bias_data = deterministic_f32(n, 3.1);
+    let operand_scale = a_data
+        .iter()
+        .chain(b_data.iter())
+        .fold(0.0f64, |acc, &v| acc.max(v.abs() as f64));
+    let (_, gemm_atol) = gemm_long_k_tolerance(numr::dtype::DType::F32, k, operand_scale);
+
+    let a_f64: Vec<f64> = a_data.iter().map(|&v| v as f64).collect();
+    let b_f64: Vec<f64> = b_data.iter().map(|&v| v as f64).collect();
+    let bias_f64: Vec<f64> = bias_data.iter().map(|&v| v as f64).collect();
+
+    for activation in [
+        GemmActivation::None,
+        GemmActivation::ReLU,
+        GemmActivation::GELU,
+        GemmActivation::SiLU,
+        GemmActivation::Sigmoid,
+        GemmActivation::Tanh,
+    ] {
+        let (cpu_client, cpu_device) = create_cpu_client();
+
+        let a_t64 = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &a_f64,
+            &[m, k],
+            &cpu_device,
+        )
+        .unwrap();
+        let b_t64 = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &b_f64,
+            &[k, n],
+            &cpu_device,
+        )
+        .unwrap();
+        let bias_t64 = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &bias_f64,
+            &[n],
+            &cpu_device,
+        )
+        .unwrap();
+        let truth: Vec<f64> = cpu_client
+            .matmul_bias_activation(&a_t64, &b_t64, &bias_t64, activation)
+            .unwrap()
+            .to_vec();
+
+        let a_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &a_data,
+            &[m, k],
+            &cpu_device,
+        )
+        .unwrap();
+        let b_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &b_data,
+            &[k, n],
+            &cpu_device,
+        )
+        .unwrap();
+        let bias_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+            &bias_data,
+            &[n],
+            &cpu_device,
+        )
+        .unwrap();
+        let cpu_f32: Vec<f32> = cpu_client
+            .matmul_bias_activation(&a_t, &b_t, &bias_t, activation)
+            .unwrap()
+            .to_vec();
+
+        for (i, (&c, &t)) in cpu_f32.iter().zip(truth.iter()).enumerate() {
+            assert!(
+                values_close(c as f64, t, 0.0, gemm_atol),
+                "gemm_bias_act_f32_128_tile_all_activations[{activation:?}] CPU vs F64 truth: element {i} differs: {c} vs {t} (tol={gemm_atol:.2e})"
+            );
+        }
+
+        #[cfg(feature = "cuda")]
+        if is_dtype_supported("cuda", numr::dtype::DType::F32) {
+            with_cuda_backend(|cuda_client, cuda_device| {
+                let a_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                    &a_data,
+                    &[m, k],
+                    &cuda_device,
+                )
+                .unwrap();
+                let b_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                    &b_data,
+                    &[k, n],
+                    &cuda_device,
+                )
+                .unwrap();
+                let bias_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                    &bias_data,
+                    &[n],
+                    &cuda_device,
+                )
+                .unwrap();
+                let cuda_f32: Vec<f32> = cuda_client
+                    .matmul_bias_activation(&a_t, &b_t, &bias_t, activation)
+                    .unwrap()
+                    .to_vec();
+                for (i, (&c, &t)) in cuda_f32.iter().zip(truth.iter()).enumerate() {
+                    assert!(
+                        values_close(c as f64, t, 0.0, gemm_atol),
+                        "gemm_bias_act_f32_128_tile_all_activations[{activation:?}] CUDA vs F64 truth: element {i} differs: {c} vs {t} (tol={gemm_atol:.2e})"
+                    );
+                }
+            });
+        }
+    }
+}
+
+/// K == 0 at a 128-tile size for `matmul_bias_activation`: the tiled kernel
+/// used to leave C unwritten for K==0 and now must write the epilogue
+/// (activation applied to zeros plus bias), same as CPU.
+#[test]
+fn gemm_bias_act_f32_128_tile_k_zero_match_cpu() {
+    let (m, k, n) = (100usize, 0usize, 100usize);
+    let a_data: Vec<f32> = Vec::new();
+    let b_data: Vec<f32> = Vec::new();
+    let bias_data = deterministic_f32(n, 3.1);
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &a_data,
+        &[m, k],
+        &cpu_device,
+    )
+    .unwrap();
+    let b_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &b_data,
+        &[k, n],
+        &cpu_device,
+    )
+    .unwrap();
+    let bias_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &bias_data,
+        &[n],
+        &cpu_device,
+    )
+    .unwrap();
+    let cpu_result = cpu_client
+        .matmul_bias_activation(&a_t, &b_t, &bias_t, GemmActivation::ReLU)
+        .unwrap();
+
+    #[cfg(feature = "cuda")]
+    if is_dtype_supported("cuda", numr::dtype::DType::F32) {
+        with_cuda_backend(|cuda_client, cuda_device| {
+            let a_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &a_data,
+                &[m, k],
+                &cuda_device,
+            )
+            .unwrap();
+            let b_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &b_data,
+                &[k, n],
+                &cuda_device,
+            )
+            .unwrap();
+            let bias_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &bias_data,
+                &[n],
+                &cuda_device,
+            )
+            .unwrap();
+            let result = cuda_client
+                .matmul_bias_activation(&a_t, &b_t, &bias_t, GemmActivation::ReLU)
+                .unwrap();
+            assert_tensor_allclose(
+                &result,
+                &cpu_result,
+                numr::dtype::DType::F32,
+                "gemm_bias_act_f32_128_tile_k_zero CUDA vs CPU",
+            );
+        });
+    }
+}
+
+/// `matmul_bias_residual` at a 128-tile size: residual is indexed elementwise
+/// over the full output, so a partial-tile bug in the residual add would
+/// show up here even if bias/activation are correct.
+#[test]
+fn gemm_bias_residual_f32_128_tile_match_cpu() {
+    let (m, k, n) = (256usize, 128usize, 256usize);
+    let a_data = deterministic_f32(m * k, 0.0);
+    let b_data = deterministic_f32(k * n, 1.7);
+    let bias_data = deterministic_f32(n, 3.1);
+    let residual_data = deterministic_f32(m * n, 5.3);
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &a_data,
+        &[m, k],
+        &cpu_device,
+    )
+    .unwrap();
+    let b_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &b_data,
+        &[k, n],
+        &cpu_device,
+    )
+    .unwrap();
+    let bias_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &bias_data,
+        &[n],
+        &cpu_device,
+    )
+    .unwrap();
+    let res_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &residual_data,
+        &[m, n],
+        &cpu_device,
+    )
+    .unwrap();
+    let cpu_result = cpu_client
+        .matmul_bias_residual(&a_t, &b_t, &bias_t, &res_t)
+        .unwrap();
+
+    #[cfg(feature = "cuda")]
+    if is_dtype_supported("cuda", numr::dtype::DType::F32) {
+        with_cuda_backend(|cuda_client, cuda_device| {
+            let a_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &a_data,
+                &[m, k],
+                &cuda_device,
+            )
+            .unwrap();
+            let b_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &b_data,
+                &[k, n],
+                &cuda_device,
+            )
+            .unwrap();
+            let bias_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &bias_data,
+                &[n],
+                &cuda_device,
+            )
+            .unwrap();
+            let res_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &residual_data,
+                &[m, n],
+                &cuda_device,
+            )
+            .unwrap();
+            let result = cuda_client
+                .matmul_bias_residual(&a_t, &b_t, &bias_t, &res_t)
+                .unwrap();
+            assert_tensor_allclose(
+                &result,
+                &cpu_result,
+                numr::dtype::DType::F32,
+                "gemm_bias_residual_f32_128_tile CUDA vs CPU",
+            );
+        });
+    }
+}
+
+/// `matmul_bias_residual` at a 128-tile size with M, N, and K all ragged:
+/// the case most likely to catch an out-of-range residual read at the
+/// partial-tile boundary.
+#[test]
+fn gemm_bias_residual_f32_128_tile_ragged_match_cpu() {
+    let (m, k, n) = (130usize, 70usize, 130usize);
+    let a_data = deterministic_f32(m * k, 0.0);
+    let b_data = deterministic_f32(k * n, 1.7);
+    let bias_data = deterministic_f32(n, 3.1);
+    let residual_data = deterministic_f32(m * n, 5.3);
+
+    let (cpu_client, cpu_device) = create_cpu_client();
+    let a_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &a_data,
+        &[m, k],
+        &cpu_device,
+    )
+    .unwrap();
+    let b_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &b_data,
+        &[k, n],
+        &cpu_device,
+    )
+    .unwrap();
+    let bias_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &bias_data,
+        &[n],
+        &cpu_device,
+    )
+    .unwrap();
+    let res_t = numr::tensor::Tensor::<numr::runtime::cpu::CpuRuntime>::from_slice(
+        &residual_data,
+        &[m, n],
+        &cpu_device,
+    )
+    .unwrap();
+    let cpu_result = cpu_client
+        .matmul_bias_residual(&a_t, &b_t, &bias_t, &res_t)
+        .unwrap();
+
+    #[cfg(feature = "cuda")]
+    if is_dtype_supported("cuda", numr::dtype::DType::F32) {
+        with_cuda_backend(|cuda_client, cuda_device| {
+            let a_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &a_data,
+                &[m, k],
+                &cuda_device,
+            )
+            .unwrap();
+            let b_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &b_data,
+                &[k, n],
+                &cuda_device,
+            )
+            .unwrap();
+            let bias_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &bias_data,
+                &[n],
+                &cuda_device,
+            )
+            .unwrap();
+            let res_t = numr::tensor::Tensor::<numr::runtime::cuda::CudaRuntime>::from_slice(
+                &residual_data,
+                &[m, n],
+                &cuda_device,
+            )
+            .unwrap();
+            let result = cuda_client
+                .matmul_bias_residual(&a_t, &b_t, &bias_t, &res_t)
+                .unwrap();
+            assert_tensor_allclose(
+                &result,
+                &cpu_result,
+                numr::dtype::DType::F32,
+                "gemm_bias_residual_f32_128_tile_ragged CUDA vs CPU",
+            );
+        });
     }
 }
 

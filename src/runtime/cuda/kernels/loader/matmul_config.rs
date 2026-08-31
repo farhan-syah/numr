@@ -127,3 +127,52 @@ pub fn f32_batched_tile_config(m: usize, n: usize, _k: usize) -> TileConfig {
         }
     }
 }
+
+/// Grid and block shape for a compile-time-tiled F32 kernel.
+///
+/// Grid: (ceil(N/block_n), ceil(M/block_m), batch)
+/// Block: (block_n/thread_n, block_m/thread_m, 1)
+///
+/// `shared_mem_bytes` is 0. The specialised kernels declare only static
+/// `__shared__` arrays; dynamic shared memory would stack on top of that pool
+/// and push the per-block total past the 48 KB default limit on sm_86 for the
+/// 64x64x32 tile (32 KB static + 32 KB dynamic).
+/// Suffix identifying the specialised compile-time-tiled F32 kernel for `cfg`,
+/// `None` when `cfg` has no specialised instantiation.
+///
+/// Single source of truth for which tiles the `*_f32_tiled_*` kernel family
+/// (`matmul.cu`, `gemm_epilogue.cu`) specialises. Every F32 tiled-kernel
+/// dispatch site derives its extern "C" name from this suffix instead of
+/// re-matching the tile tuple, so a new specialisation only needs adding here.
+#[inline]
+pub fn f32_tiled_suffix(cfg: &TileConfig) -> Option<&'static str> {
+    match (
+        cfg.block_m,
+        cfg.block_n,
+        cfg.block_k,
+        cfg.thread_m,
+        cfg.thread_n,
+    ) {
+        (128, 128, 8, 8, 8) => Some("128x128x8_8x8"),
+        (64, 64, 32, 8, 4) => Some("64x64x32_8x4"),
+        _ => None,
+    }
+}
+
+#[inline]
+pub fn f32_tiled_launch_config(m: usize, n: usize, batch: usize, cfg: &TileConfig) -> LaunchConfig {
+    let bm = cfg.block_m as u32;
+    let bn = cfg.block_n as u32;
+    let tm = cfg.thread_m as u32;
+    let tn = cfg.thread_n as u32;
+
+    LaunchConfig {
+        grid_dim: (
+            ((n as u32) + bn - 1) / bn,
+            ((m as u32) + bm - 1) / bm,
+            batch as u32,
+        ),
+        block_dim: (bn / tn, bm / tm, 1),
+        shared_mem_bytes: 0,
+    }
+}

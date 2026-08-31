@@ -256,6 +256,7 @@ fn compile_cuda_kernels() {
         "index_ops.cuh",
         "index_nd_ops.cuh",
         "rng_xorshift.cuh",
+        "matmul_f32_tiled.cuh",
         "semiring_matmul_ops.cuh",
         "sort_bitonic.cuh",
         "sort_compare.cuh",
