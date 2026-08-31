@@ -5,12 +5,12 @@ use crate::ops::{
     BinaryOps, MatmulOps, ShapeOps, matmul_bias_output_shape, matmul_output_dtype,
     matmul_output_shape, validate_matmul_bias_dtypes,
 };
-use crate::runtime::cuda::kernels::int_matmul_has_kernel;
+use crate::runtime::cuda::kernels::{int_matmul_has_kernel, use_wmma_after_padding};
 use crate::runtime::cuda::ops::helpers::{
     matmul_batched_native, matmul_bias_batched_native, matmul_bias_native, matmul_native,
 };
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
-use crate::runtime::validate_binary_dtypes;
+use crate::runtime::{Device, validate_binary_dtypes};
 use crate::tensor::Tensor;
 
 impl MatmulOps<CudaRuntime> for CudaClient {
@@ -96,11 +96,14 @@ impl MatmulOps<CudaRuntime> for CudaClient {
                     // dropped to the ~150x-slower generic kernel (57 vs 8500 GFLOP/s).
                     // Zero-padding is exact (extra K contributes 0; extra M rows / N
                     // cols are sliced off); the WMMA kernel only ever sees aligned dims.
-                    let pad_for_wmma = matches!(dtype, DType::F16 | DType::BF16)
-                        && m > 16
-                        && (!m.is_multiple_of(16)
-                            || !k.is_multiple_of(16)
-                            || !n.is_multiple_of(16));
+                    //
+                    // `use_wmma_after_padding` is the same predicate the launcher uses
+                    // to pick the WMMA kernel (src/runtime/cuda/kernels/loader/matmul_wmma.rs),
+                    // gated on this device's real capabilities — padding a BF16 operand on
+                    // a device without native bf16 (caps.bf16) would allocate and copy for
+                    // a WMMA path that never fires.
+                    let caps = self.device.profile().caps;
+                    let pad_for_wmma = use_wmma_after_padding(dtype, caps, m, n, k);
 
                     if pad_for_wmma {
                         let m_pad = m.next_multiple_of(16);
@@ -241,12 +244,10 @@ impl MatmulOps<CudaRuntime> for CudaClient {
                     matmul_bias_batched_native(self, a, b, bias, dtype, batch_size, m, k, n)
                 } else {
                     // Pad unaligned F16/BF16 (m>16) up to 16-multiples so WMMA fires
-                    // (see matmul() for rationale). bias is [n] → pad to [n_pad].
-                    let pad_for_wmma = matches!(dtype, DType::F16 | DType::BF16)
-                        && m > 16
-                        && (!m.is_multiple_of(16)
-                            || !k.is_multiple_of(16)
-                            || !n.is_multiple_of(16));
+                    // (see matmul() for rationale, including why the predicate is
+                    // gated on this device's caps). bias is [n] → pad to [n_pad].
+                    let caps = self.device.profile().caps;
+                    let pad_for_wmma = use_wmma_after_padding(dtype, caps, m, n, k);
 
                     if pad_for_wmma {
                         let m_pad = m.next_multiple_of(16);

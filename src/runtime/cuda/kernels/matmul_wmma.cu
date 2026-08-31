@@ -257,7 +257,16 @@ extern "C" __global__ void matmul_wmma_batched_f16(
 
 // ---------------------------------------------------------------------------
 // BF16 non-batched
+//
+// BF16 WMMA fragments (nvcuda::wmma::fragment<..., __nv_bfloat16, ...>) are
+// only a complete type from sm_80. Below that, `mma.h` declares them as an
+// incomplete type and the kernel fails to compile. Guard so these two
+// symbols are absent by design on sm_75 fatbin slices; the launcher
+// (src/runtime/cuda/kernels/loader/matmul_wmma.rs) must not request them on
+// a device that lacks `caps.bf16`.
 // ---------------------------------------------------------------------------
+
+#if __CUDA_ARCH__ >= 800
 
 extern "C" __global__ void matmul_wmma_bf16(
     const __nv_bfloat16* __restrict__ A,
@@ -292,5 +301,7 @@ extern "C" __global__ void matmul_wmma_batched_bf16(
     __nv_bfloat16*       C_b = C + b * (M * N);
     WMMA_KERNEL_BODY(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A_b, B_b, C_b)
 }
+
+#endif  // __CUDA_ARCH__ >= 800
 
 #endif  // __CUDA_ARCH__ >= 700

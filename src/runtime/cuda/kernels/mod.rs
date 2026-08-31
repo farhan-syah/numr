@@ -5,8 +5,9 @@
 //!
 //! # Architecture
 //!
-//! Kernels are written in CUDA C++ (.cu files) and compiled to PTX by build.rs.
-//! The PTX is loaded at runtime and cached per-device for efficient reuse.
+//! Kernels are written in CUDA C++ (.cu files) and compiled to multi-arch
+//! fatbins by build.rs. Each fatbin is loaded at runtime and cached
+//! per-device for efficient reuse.
 //!
 //! # Module Organization
 //!
@@ -158,6 +159,7 @@ pub use unary::*;
 pub use utility::*;
 
 // Re-export commonly used items from loader for advanced users
+pub(crate) use loader::use_wmma_after_padding;
 #[allow(unused_imports)]
 pub use loader::{
     BLOCK_SIZE, LaunchConfig, int_matmul_has_kernel, int_matmul_output_dtype, kernel_names,

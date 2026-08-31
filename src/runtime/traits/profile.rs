@@ -105,44 +105,82 @@ impl DeviceProfile {
     /// Pascal 6.1–6.x, Volta 7.0–7.4, Turing 7.5–7.x, Ampere 8.0–8.8,
     /// Ada 8.9, Hopper 9.0–9.x, Blackwell 10.0+. Below 6.1 has none of the
     /// tracked instructions.
-    pub fn arch_and_caps_for_compute_capability(major: u32, minor: u32) -> (DeviceArch, DeviceCaps) {
+    pub fn arch_and_caps_for_compute_capability(
+        major: u32,
+        minor: u32,
+    ) -> (DeviceArch, DeviceCaps) {
         let cc = (major, minor);
         if cc < (6, 1) {
             (DeviceArch::CudaUnknown, DeviceCaps::default())
         } else if cc < (7, 0) {
             (
                 DeviceArch::CudaPascal,
-                DeviceCaps { dp4a: true, int8_mma: false, f16_mma: false, bf16: false },
+                DeviceCaps {
+                    dp4a: true,
+                    int8_mma: false,
+                    f16_mma: false,
+                    bf16: false,
+                },
             )
         } else if cc < (7, 5) {
             (
                 DeviceArch::CudaVolta,
-                DeviceCaps { dp4a: true, int8_mma: false, f16_mma: true, bf16: false },
+                DeviceCaps {
+                    dp4a: true,
+                    int8_mma: false,
+                    f16_mma: true,
+                    bf16: false,
+                },
             )
         } else if cc < (8, 0) {
             (
                 DeviceArch::CudaTuring,
-                DeviceCaps { dp4a: true, int8_mma: true, f16_mma: true, bf16: false },
+                DeviceCaps {
+                    dp4a: true,
+                    int8_mma: true,
+                    f16_mma: true,
+                    bf16: false,
+                },
             )
         } else if cc < (8, 9) {
             (
                 DeviceArch::CudaAmpere,
-                DeviceCaps { dp4a: true, int8_mma: true, f16_mma: true, bf16: true },
+                DeviceCaps {
+                    dp4a: true,
+                    int8_mma: true,
+                    f16_mma: true,
+                    bf16: true,
+                },
             )
         } else if cc < (9, 0) {
             (
                 DeviceArch::CudaAda,
-                DeviceCaps { dp4a: true, int8_mma: true, f16_mma: true, bf16: true },
+                DeviceCaps {
+                    dp4a: true,
+                    int8_mma: true,
+                    f16_mma: true,
+                    bf16: true,
+                },
             )
         } else if cc < (10, 0) {
             (
                 DeviceArch::CudaHopper,
-                DeviceCaps { dp4a: true, int8_mma: true, f16_mma: true, bf16: true },
+                DeviceCaps {
+                    dp4a: true,
+                    int8_mma: true,
+                    f16_mma: true,
+                    bf16: true,
+                },
             )
         } else {
             (
                 DeviceArch::CudaBlackwell,
-                DeviceCaps { dp4a: true, int8_mma: true, f16_mma: true, bf16: true },
+                DeviceCaps {
+                    dp4a: true,
+                    int8_mma: true,
+                    f16_mma: true,
+                    bf16: true,
+                },
             )
         }
     }

@@ -12,6 +12,8 @@ use std::sync::Arc;
 use crate::algorithm::TileConfig;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
+use crate::runtime::Device;
+use crate::runtime::cuda::CudaDevice;
 
 use super::gemv::launch_gemv_kernel;
 use super::launch_dims::LaunchConfig;
@@ -94,7 +96,10 @@ pub unsafe fn launch_matmul_kernel(
         }
     }
     // Tensor-core WMMA path: F16/BF16 with 16-aligned dims → up to ~100 TFLOPS on Ampere.
-    if use_wmma(dtype, m, n, k) {
+    // CudaDevice::new is a zero-cost index wrapper; profile() serves the
+    // per-index cache (queried once, on first use of this device index).
+    let caps = CudaDevice::new(device_index).profile().caps;
+    if use_wmma(dtype, caps, m, n, k) {
         unsafe {
             return launch_matmul_wmma_kernel(
                 context,
@@ -303,7 +308,8 @@ pub unsafe fn launch_matmul_batched_kernel(
         }
     }
     // Tensor-core WMMA path for F16/BF16 with 16-aligned dims.
-    if use_wmma(dtype, m, n, k) {
+    let caps = CudaDevice::new(device_index).profile().caps;
+    if use_wmma(dtype, caps, m, n, k) {
         unsafe {
             return launch_matmul_wmma_batched_kernel(
                 context,
