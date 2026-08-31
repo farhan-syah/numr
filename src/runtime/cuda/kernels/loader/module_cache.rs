@@ -1,6 +1,6 @@
-//! PTX module loading and per-device module caching.
+//! Multi-arch fatbin module loading and per-device module caching.
 //!
-//! PTX files are compiled by `build.rs`; modules are loaded on first use and
+//! Fatbins are compiled by `build.rs`; modules are loaded on first use and
 //! cached per-device. The cache uses `OnceLock<Mutex<HashMap>>` so concurrent
 //! CUDA streams can share a loaded module safely.
 
@@ -11,12 +11,13 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::{Error, Result};
 
-/// Directory containing compiled PTX files (set by build.rs)
+/// Directory containing compiled fatbin files (set by build.rs)
 const KERNEL_DIR: &str = env!("CUDA_KERNEL_DIR");
 
-/// Load PTX from compiled file.
-fn load_ptx(name: &str) -> Ptx {
-    let path = format!("{}/{}.ptx", KERNEL_DIR, name);
+/// Load a compiled fatbin file. `cuModuleLoad` sniffs cubin/fatbin/PTX by
+/// content, so `Ptx::from_file` (a thin path wrapper) still applies here.
+fn load_fatbin(name: &str) -> Ptx {
+    let path = format!("{}/{}.fatbin", KERNEL_DIR, name);
     Ptx::from_file(path)
 }
 
@@ -33,11 +34,11 @@ static MODULE_CACHE: OnceLock<Mutex<HashMap<(usize, &'static str), Arc<CudaModul
 ///
 /// * `context` - CUDA context for the target device
 /// * `device_index` - Index of the target device (used as cache key)
-/// * `module_name` - Name of the PTX file (without extension)
+/// * `module_name` - Name of the fatbin file (without extension)
 ///
 /// # Errors
 ///
-/// Returns an error if the PTX file cannot be loaded or the module cannot be created.
+/// Returns an error if the fatbin file cannot be loaded or the module cannot be created.
 pub fn get_or_load_module(
     context: &Arc<CudaContext>,
     device_index: usize,
@@ -53,8 +54,8 @@ pub fn get_or_load_module(
         return Ok(module.clone());
     }
 
-    // Load PTX and create module
-    let ptx = load_ptx(module_name);
+    // Load fatbin and create module
+    let ptx = load_fatbin(module_name);
     let module = context.load_module(ptx).map_err(|e| {
         Error::Internal(format!(
             "Failed to load CUDA module '{}': {:?}. \
