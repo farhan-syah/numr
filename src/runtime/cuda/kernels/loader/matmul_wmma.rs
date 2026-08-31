@@ -1,8 +1,8 @@
 //! Tensor-core WMMA GEMM launchers for F16 and BF16.
 //!
 //! `use_wmma` decides when the path is legal; the launchers below cover the
-//! 2-D and batched forms. The kernels use only static shared memory, so the
-//! dynamic request is always zero.
+//! 2-D and batched forms, each with and without a fused bias. The kernels use
+//! only static shared memory, so the dynamic request is always zero.
 
 use cudarc::driver::PushKernelArg;
 use cudarc::driver::safe::{CudaContext, CudaStream};
@@ -17,15 +17,15 @@ use super::module_cache::{get_kernel_function, get_or_load_module};
 use super::names::{dtype_suffix, kernel_names};
 
 //
-// Block: WARP_ROWS*WARP_COLS warps × 32 threads = 8 warps × 32 = 256 threads.
-//   Warp grid: 4 rows × 2 cols. Each warp: WARP_M=2 × WARP_N=4 frags (32×64).
-//   8 warps × 32×64 = 128×128 block tile. ✓
+// Block: WARP_ROWS*WARP_COLS warps × 32 threads = 16 warps × 32 = 512 threads.
+//   Warp grid: 4 rows × 4 cols. Each warp: WARP_M=2 × WARP_N=2 frags (32×32).
+//   16 warps × 32×32 = 128×128 block tile. ✓
 // Grid:  ceil(N/128) × ceil(M/128) [× batch]
 // Static shared memory per block (single-buffered, no cp.async):
-//   smem_A:   128 × 24 × 2 bytes = 6 144
-//   smem_B:    16 × 136 × 2 bytes = 4 352
-//   scratch:    8 × 256 × 4 bytes = 8 192
-//   Total:   18 688 bytes ≈ 18.25 KB  (well within 48 KB)
+//   smem_A:   128 × 24 × 2 bytes =  6 144
+//   smem_B:    16 × 136 × 2 bytes =  4 352
+//   scratch:   16 × 256 × 4 bytes = 16 384
+//   Total:    26 880 bytes ≈ 26.25 KB  (well within 48 KB)
 
 /// Returns true when the WMMA path should be taken for this dtype, device,
 /// and shape. This is the SINGLE source of truth for the decision — both the
@@ -206,6 +206,130 @@ pub unsafe fn launch_matmul_wmma_batched_kernel(
         builder.launch(cfg).map_err(|e| {
             Error::Internal(format!(
                 "CUDA WMMA batched matmul kernel launch failed: {:?}",
+                e
+            ))
+        })?;
+    }
+
+    Ok(())
+}
+
+/// Launch 2-D (non-batched) WMMA GEMM with fused bias for F16 or BF16:
+/// `C[M,N] = A[M,K] @ B[K,N] + bias[N]`.
+///
+/// The bias is added in F32, inside the epilogue, before the narrowing store.
+///
+/// # Safety
+///
+/// Caller must guarantee M, N, K are multiples of 16, and that `bias_ptr`
+/// addresses N elements of `dtype`.
+pub unsafe fn launch_matmul_bias_wmma_kernel(
+    context: &Arc<CudaContext>,
+    stream: &CudaStream,
+    device_index: usize,
+    dtype: DType,
+    a_ptr: u64,
+    b_ptr: u64,
+    bias_ptr: u64,
+    c_ptr: u64,
+    m: usize,
+    n: usize,
+    k: usize,
+) -> Result<()> {
+    let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
+    let func_name = format!("matmul_bias_wmma_{}", dtype_suffix(dtype));
+    let func = get_kernel_function(&module, &func_name)?;
+
+    let grid_x = ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N;
+    let grid_y = ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M;
+    let cfg = LaunchConfig {
+        grid_dim: (grid_x, grid_y, 1),
+        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
+        shared_mem_bytes: WMMA_SMEM_BYTES,
+    };
+
+    let m_u32 = m as u32;
+    let n_u32 = n as u32;
+    let k_u32 = k as u32;
+
+    unsafe {
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&a_ptr);
+        builder.arg(&b_ptr);
+        builder.arg(&bias_ptr);
+        builder.arg(&c_ptr);
+        builder.arg(&m_u32);
+        builder.arg(&n_u32);
+        builder.arg(&k_u32);
+        builder.launch(cfg).map_err(|e| {
+            Error::Internal(format!(
+                "CUDA WMMA matmul_bias kernel launch failed: {:?}",
+                e
+            ))
+        })?;
+    }
+
+    Ok(())
+}
+
+/// Launch batched WMMA GEMM with fused bias for F16 or BF16. The bias is
+/// `[N]` and broadcasts across rows and across batch slices.
+///
+/// # Safety
+///
+/// Caller must guarantee M, N, K are multiples of 16, and that `bias_ptr`
+/// addresses N elements of `dtype`.
+pub unsafe fn launch_matmul_bias_wmma_batched_kernel(
+    context: &Arc<CudaContext>,
+    stream: &CudaStream,
+    device_index: usize,
+    dtype: DType,
+    a_ptr: u64,
+    b_ptr: u64,
+    bias_ptr: u64,
+    c_ptr: u64,
+    batch: usize,
+    m: usize,
+    n: usize,
+    k: usize,
+    a_batch: usize,
+    b_batch: usize,
+) -> Result<()> {
+    let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
+    let func_name = format!("matmul_bias_wmma_batched_{}", dtype_suffix(dtype));
+    let func = get_kernel_function(&module, &func_name)?;
+
+    let grid_x = ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N;
+    let grid_y = ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M;
+    let grid_z = batch as u32;
+    let cfg = LaunchConfig {
+        grid_dim: (grid_x, grid_y, grid_z),
+        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
+        shared_mem_bytes: WMMA_SMEM_BYTES,
+    };
+
+    let batch_u32 = batch as u32;
+    let m_u32 = m as u32;
+    let n_u32 = n as u32;
+    let k_u32 = k as u32;
+    let a_batch_u32 = a_batch as u32;
+    let b_batch_u32 = b_batch as u32;
+
+    unsafe {
+        let mut builder = stream.launch_builder(&func);
+        builder.arg(&a_ptr);
+        builder.arg(&b_ptr);
+        builder.arg(&bias_ptr);
+        builder.arg(&c_ptr);
+        builder.arg(&batch_u32);
+        builder.arg(&m_u32);
+        builder.arg(&n_u32);
+        builder.arg(&k_u32);
+        builder.arg(&a_batch_u32);
+        builder.arg(&b_batch_u32);
+        builder.launch(cfg).map_err(|e| {
+            Error::Internal(format!(
+                "CUDA WMMA batched matmul_bias kernel launch failed: {:?}",
                 e
             ))
         })?;

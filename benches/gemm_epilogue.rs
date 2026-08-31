@@ -24,6 +24,18 @@ fn rand_cuda_f64(shape: &[usize], device: &CudaDevice) -> Tensor<CudaRuntime> {
     client.rand(shape, DType::F64).unwrap()
 }
 
+#[cfg(all(feature = "cuda", feature = "f16"))]
+fn rand_cuda_f16(shape: &[usize], device: &CudaDevice) -> Tensor<CudaRuntime> {
+    let client = CudaRuntime::default_client(device);
+    client.rand(shape, DType::F16).unwrap()
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+fn rand_cuda_bf16(shape: &[usize], device: &CudaDevice) -> Tensor<CudaRuntime> {
+    let client = CudaRuntime::default_client(device);
+    client.rand(shape, DType::BF16).unwrap()
+}
+
 // ---------------------------------------------------------------------------
 // matmul_bias_activation: non-batched, F32
 // ---------------------------------------------------------------------------
@@ -135,6 +147,53 @@ fn cuda_gemm_bias_residual_512m_4096k_1024n(b: &mut Bencher) {
         let r = black_box(
             client
                 .matmul_bias_residual(&a, &bm, &bias, &residual)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
+// matmul_bias_activation: F16/BF16 — generic fallback kernel, no tiled
+// specialization (unlike F32, which just got a 26-59x faster tiled kernel).
+// ---------------------------------------------------------------------------
+
+/// F16: M=N=K=1024, GELU.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "gemm_epilogue_bias_act_f16")]
+fn cuda_gemm_bias_act_f16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[1024, 1024], &device);
+    let bm = rand_cuda_f16(&[1024, 1024], &device);
+    let bias = rand_cuda_f16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .matmul_bias_activation(&a, &bm, &bias, GemmActivation::GELU)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// BF16: M=N=K=1024, GELU.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "gemm_epilogue_bias_act_bf16")]
+fn cuda_gemm_bias_act_bf16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_bf16(&[1024, 1024], &device);
+    let bm = rand_cuda_bf16(&[1024, 1024], &device);
+    let bias = rand_cuda_bf16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .matmul_bias_activation(&a, &bm, &bias, GemmActivation::GELU)
                 .unwrap(),
         );
         // Sync to get accurate wall-clock time.

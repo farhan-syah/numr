@@ -76,17 +76,36 @@ using namespace nvcuda::wmma;
 
 // ---------------------------------------------------------------------------
 // Kernel body macro — instantiated for F16 (non-batched), F16 (batched),
-// BF16 (non-batched), BF16 (batched).
+// BF16 (non-batched), BF16 (batched), each with and without a fused bias.
 //
 // HALF_T  : __half | __nv_bfloat16
 // ZERO    : __float2half(0.0f) | __float2bfloat16(0.0f)
 // STORE   : __float2half | __float2bfloat16
+// EPI_FN  : epilogue value transform, EPI_FN(f32_accumulator, global_col)
+//           → float. WMMA_EPILOGUE_PLAIN is the identity; the bias forms add
+//           bias[global_col] in F32 BEFORE STORE_FN narrows, matching the CPU
+//           reference (cpu/kernels/simd/matmul/half_convert.rs).
+//
+// EPI_FN is a macro parameter rather than a runtime `bias != nullptr` branch:
+// the no-bias kernels then expand to the exact code they had before, with no
+// extra pointer in the register file and no branch in the epilogue loop.
 //
 // For the batched variant, the caller sets up A_ptr/B_ptr/C_ptr from the
-// batch-slice offset before entering WMMA_KERNEL_BODY.
+// batch-slice offset before entering the macro. The bias is indexed by global
+// column only, so it broadcasts across rows and across batch slices — the same
+// semantics as `matmul_bias_batched_*` in matmul.cu.
 // ---------------------------------------------------------------------------
 
-#define WMMA_KERNEL_BODY(HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr) \
+#define WMMA_EPILOGUE_PLAIN(VAL, COL)      (VAL)
+#define WMMA_EPILOGUE_BIAS_F16(VAL, COL)   ((VAL) + __half2float(bias[(COL)]))
+#define WMMA_EPILOGUE_BIAS_BF16(VAL, COL)  ((VAL) + __bfloat162float(bias[(COL)]))
+
+/* No-bias body: the epilogue transform is the identity. */
+#define WMMA_KERNEL_BODY(HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr)   \
+    WMMA_KERNEL_BODY_EPI(HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr,   \
+                         WMMA_EPILOGUE_PLAIN)
+
+#define WMMA_KERNEL_BODY_EPI(HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr, EPI_FN) \
 {                                                                            \
     const unsigned int warp_id  = threadIdx.x / 32;                         \
     const unsigned int warp_row = warp_id / WARP_COLS;                      \
@@ -198,8 +217,8 @@ using namespace nvcuda::wmma;
                 unsigned int r = idx / WMMA_N;                              \
                 unsigned int c = idx % WMMA_N;                              \
                 if ((gr + r) < M && (gc + c) < N) {                         \
-                    (C_ptr)[(gr + r) * N + (gc + c)] =                      \
-                        STORE_FN(warp_scratch[r * WMMA_N + c]);              \
+                    (C_ptr)[(gr + r) * N + (gc + c)] = STORE_FN(            \
+                        EPI_FN(warp_scratch[r * WMMA_N + c], gc + c));      \
                 }                                                            \
             }                                                                \
             __syncwarp();   /* before reusing scratch for next fragment */   \
@@ -256,6 +275,53 @@ extern "C" __global__ void matmul_wmma_batched_f16(
 }
 
 // ---------------------------------------------------------------------------
+// F16 non-batched, fused bias
+//
+// bias is [N] and broadcasts across rows. It is added in F32, before the
+// narrowing store, so the result matches the CPU reference.
+// ---------------------------------------------------------------------------
+
+extern "C" __global__ void matmul_bias_wmma_f16(
+    const __half* __restrict__ A,
+    const __half* __restrict__ B,
+    const __half* __restrict__ bias,
+    __half*       __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K
+) {
+    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A, B, C,
+                         WMMA_EPILOGUE_BIAS_F16)
+}
+
+// ---------------------------------------------------------------------------
+// F16 batched, fused bias
+//
+// bias is [N] and broadcasts across rows AND batch slices.
+// ---------------------------------------------------------------------------
+
+extern "C" __global__ void matmul_bias_wmma_batched_f16(
+    const __half* __restrict__ A,
+    const __half* __restrict__ B,
+    const __half* __restrict__ bias,
+    __half*       __restrict__ C,
+    unsigned int batch,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int a_batch_count,
+    unsigned int b_batch_count
+) {
+    const unsigned int b = blockIdx.z;
+    if (b >= batch) return;
+    const __half* A_b = A + (b % a_batch_count) * (M * K);
+    const __half* B_b = B + (b % b_batch_count) * (K * N);
+    __half*       C_b = C + b * (M * N);
+    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A_b, B_b, C_b,
+                         WMMA_EPILOGUE_BIAS_F16)
+}
+
+// ---------------------------------------------------------------------------
 // BF16 non-batched
 //
 // BF16 WMMA fragments (nvcuda::wmma::fragment<..., __nv_bfloat16, ...>) are
@@ -300,6 +366,48 @@ extern "C" __global__ void matmul_wmma_batched_bf16(
     const __nv_bfloat16* B_b = B + (b % b_batch_count) * (K * N);
     __nv_bfloat16*       C_b = C + b * (M * N);
     WMMA_KERNEL_BODY(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A_b, B_b, C_b)
+}
+
+// ---------------------------------------------------------------------------
+// BF16 non-batched, fused bias
+// ---------------------------------------------------------------------------
+
+extern "C" __global__ void matmul_bias_wmma_bf16(
+    const __nv_bfloat16* __restrict__ A,
+    const __nv_bfloat16* __restrict__ B,
+    const __nv_bfloat16* __restrict__ bias,
+    __nv_bfloat16*       __restrict__ C,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K
+) {
+    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A, B, C,
+                         WMMA_EPILOGUE_BIAS_BF16)
+}
+
+// ---------------------------------------------------------------------------
+// BF16 batched, fused bias
+// ---------------------------------------------------------------------------
+
+extern "C" __global__ void matmul_bias_wmma_batched_bf16(
+    const __nv_bfloat16* __restrict__ A,
+    const __nv_bfloat16* __restrict__ B,
+    const __nv_bfloat16* __restrict__ bias,
+    __nv_bfloat16*       __restrict__ C,
+    unsigned int batch,
+    unsigned int M,
+    unsigned int N,
+    unsigned int K,
+    unsigned int a_batch_count,
+    unsigned int b_batch_count
+) {
+    const unsigned int b = blockIdx.z;
+    if (b >= batch) return;
+    const __nv_bfloat16* A_b = A + (b % a_batch_count) * (M * K);
+    const __nv_bfloat16* B_b = B + (b % b_batch_count) * (K * N);
+    __nv_bfloat16*       C_b = C + b * (M * N);
+    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A_b, B_b, C_b,
+                         WMMA_EPILOGUE_BIAS_BF16)
 }
 
 #endif  // __CUDA_ARCH__ >= 800

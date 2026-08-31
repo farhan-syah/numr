@@ -283,6 +283,200 @@ fn cuda_wmma_attn_context(b: &mut Bencher) {
 }
 
 // ---------------------------------------------------------------------------
+// F16/BF16 matmul_bias — WMMA tensor-core epilogue.
+//
+// F32 matmul_bias and the fused epilogue ops have compile-time-tiled CUDA
+// kernels (26-59x faster). F16/BF16 now take a fused WMMA epilogue kernel
+// (see matmul_wmma.cu) when M/N/K are 16-aligned (or padded to be); other
+// shapes fall through to the generic runtime-parameter kernel. These
+// benches cover both paths. Shapes mirror the F32 matmul_bias_activation
+// shapes in gemm_epilogue.rs so numbers are directly comparable across
+// dtypes.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+fn rand_cuda_bf16(shape: &[usize], device: &CudaDevice) -> Tensor<CudaRuntime> {
+    let client = CudaRuntime::default_client(device);
+    client.rand(shape, DType::BF16).unwrap()
+}
+
+/// Plain matmul (no bias), F16, 1024x1024x1024 — for direct dtype comparison.
+/// Aligned to 16, so this takes the WMMA path.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_2d_f16")]
+fn cuda_matmul_f16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[1024, 1024], &device);
+    let bm = rand_cuda_f16(&[1024, 1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Plain matmul (no bias), BF16, 1024x1024x1024 — for direct dtype comparison.
+/// Aligned to 16, so this takes the WMMA path.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_2d_bf16")]
+fn cuda_matmul_bf16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_bf16(&[1024, 1024], &device);
+    let bm = rand_cuda_bf16(&[1024, 1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, F16, M=N=K=1024 — generic fallback kernel, no tiled specialization.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_f16")]
+fn cuda_matmul_bias_f16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[1024, 1024], &device);
+    let bm = rand_cuda_f16(&[1024, 1024], &device);
+    let bias = rand_cuda_f16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, BF16, M=N=K=1024 — generic fallback kernel, no tiled specialization.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_bf16")]
+fn cuda_matmul_bias_bf16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_bf16(&[1024, 1024], &device);
+    let bm = rand_cuda_bf16(&[1024, 1024], &device);
+    let bias = rand_cuda_bf16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, F16, skewed M=512, K=4096, N=1024.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_f16")]
+fn cuda_matmul_bias_f16_512m_4096k_1024n(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[512, 4096], &device);
+    let bm = rand_cuda_f16(&[4096, 1024], &device);
+    let bias = rand_cuda_f16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, BF16, skewed M=512, K=4096, N=1024.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_bf16")]
+fn cuda_matmul_bias_bf16_512m_4096k_1024n(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_bf16(&[512, 4096], &device);
+    let bm = rand_cuda_bf16(&[4096, 1024], &device);
+    let bias = rand_cuda_bf16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, F16, batched batch=4, M=512, K=1024, N=1024.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_batched_f16")]
+fn cuda_matmul_bias_f16_batched_4x512x1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[4, 512, 1024], &device);
+    let bm = rand_cuda_f16(&[4, 1024, 1024], &device);
+    let bias = rand_cuda_f16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, BF16, batched batch=4, M=512, K=1024, N=1024.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_batched_bf16")]
+fn cuda_matmul_bias_bf16_batched_4x512x1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_bf16(&[4, 512, 1024], &device);
+    let bm = rand_cuda_bf16(&[4, 1024, 1024], &device);
+    let bias = rand_cuda_bf16(&[1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, F16, unaligned M=N=K=1000 (not a multiple of 16).
+/// Both plain matmul and matmul_bias pad unaligned F16/BF16 operands (and
+/// the bias vector) up to 16-multiples to reach the WMMA kernel — this shows
+/// what that padding costs vs. the natively-aligned case above.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_f16")]
+fn cuda_matmul_bias_f16_1000x1000_unaligned(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[1000, 1000], &device);
+    let bm = rand_cuda_f16(&[1000, 1000], &device);
+    let bias = rand_cuda_f16(&[1000], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// matmul_bias, BF16, unaligned M=N=K=1000 (not a multiple of 16).
+/// Both plain matmul and matmul_bias pad unaligned F16/BF16 operands (and
+/// the bias vector) up to 16-multiples to reach the WMMA kernel — this shows
+/// what that padding costs vs. the natively-aligned case above.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_bias_bf16")]
+fn cuda_matmul_bias_bf16_1000x1000_unaligned(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_bf16(&[1000, 1000], &device);
+    let bm = rand_cuda_bf16(&[1000, 1000], &device);
+    let bias = rand_cuda_bf16(&[1000], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias(&a, &bm, &bias).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Reranker projection GEMMs — dominant cost in the reranker query pipeline.
 //
 // Shapes (batched F16, WMMA path):
