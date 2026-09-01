@@ -127,7 +127,25 @@ macro_rules! impl_pow_f64_avx2 {
                 let log_a = log_vec_f64(va);
                 let b_log_a = _mm256_mul_pd(vb, log_a);
                 let vr = exp_vec_f64(b_log_a);
-                $store(out.add(offset), vr);
+
+                // The identity only holds for a > 0. Elsewhere log(a) is -inf
+                // or NaN, and results like pow(0, 0) = 1 or pow(-2, 3) = -8
+                // have no form in it at all. Unordered compare, so NaN bases
+                // land here too.
+                let undefined = _mm256_cmp_pd::<_CMP_NGT_UQ>(va, _mm256_setzero_pd());
+                if _mm256_movemask_pd(undefined) == 0 {
+                    $store(out.add(offset), vr);
+                } else {
+                    let mut lanes = [0.0f64; F64_LANES];
+                    _mm256_storeu_pd(lanes.as_mut_ptr(), vr);
+                    for (lane, slot) in lanes.iter_mut().enumerate() {
+                        let base = *a.add(offset + lane);
+                        if base.is_nan() || base <= 0.0 {
+                            *slot = base.powf(*b.add(offset + lane));
+                        }
+                    }
+                    $store(out.add(offset), _mm256_loadu_pd(lanes.as_ptr()));
+                }
             }
         }
     };

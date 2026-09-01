@@ -320,6 +320,40 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_binary_pow_f64_nonpositive_base() {
+        // exp(b*log(a)) has no answer for a <= 0: log(0) is -inf and log of a
+        // negative is NaN, so these lanes must come from the scalar reference.
+        const LEN: usize = 512;
+        let bases = [0.0f64, -0.0, -2.0, -1.0, 2.0, 0.5, -0.5, 4.0];
+        let exps = [0.0f64, 1.0, 2.0, 3.0, -1.0, 0.5, -2.0, 10.0];
+        let a: Vec<f64> = (0..LEN).map(|i| bases[i % bases.len()]).collect();
+        let b: Vec<f64> = (0..LEN)
+            .map(|i| exps[(i / bases.len()) % exps.len()])
+            .collect();
+        let mut out = vec![0.0f64; LEN];
+
+        unsafe { binary_f64(BinaryOp::Pow, a.as_ptr(), b.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].powf(b[i]);
+            if a[i] > 0.0 {
+                continue; // accuracy of the positive branch is covered above
+            }
+            if expected.is_nan() {
+                assert!(
+                    out[i].is_nan(),
+                    "pow({}, {}) = {}, expected NaN",
+                    a[i],
+                    b[i],
+                    out[i]
+                );
+            } else {
+                assert_eq!(out[i], expected, "pow({}, {}) mismatch", a[i], b[i]);
+            }
+        }
+    }
+
     /// Test that large arrays produce correct results for all operations
     #[test]
     fn test_large_array_all_ops_f32() {
