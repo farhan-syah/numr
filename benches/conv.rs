@@ -1180,3 +1180,61 @@ fn cuda_depthwise_conv2d_96ch_k3_112x112_batch2(b: &mut Bencher) {
 fn main() {
     fluxbench::run().unwrap();
 }
+
+/// Large-kernel depthwise: k7 at 112x112. Tests whether the interior path's
+/// trade — no bounds tests, but one load per tap instead of an amortized
+/// window — keeps paying as the tap loop grows.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_32ch_k7_112x112(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 112, 112], &device);
+    let weight = rand_cuda(&[32, 1, 7, 7], &device);
+    let bias = rand_cuda(&[32], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Large kernel at a smaller image, separating kernel width from image size.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_64ch_k5_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 64, 56, 56], &device);
+    let weight = rand_cuda(&[64, 1, 5, 5], &device);
+    let bias = rand_cuda(&[64], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}

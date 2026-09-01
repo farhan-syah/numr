@@ -265,3 +265,57 @@ fn depthwise_conv2d_ox_general_path_parity() {
         (1, 2),
     );
 }
+
+/// Padded border with `output_w % 4 == 1`, so the trailing partial column block
+/// sits next to interior neighbours and every kernel row has a genuine
+/// out-of-range tap at the first and last output column. A border thread
+/// misclassified as interior reads outside the image and shows up here.
+#[test]
+fn depthwise_conv2d_ox_padded_border_residue1_parity() {
+    let input_shape = [1usize, 32, 30, 33];
+    let weight_shape = [32usize, 1, 3, 3];
+    let input = dw_input(input_shape.iter().product());
+    let weight = dw_weight(weight_shape.iter().product());
+    let bias = dw_bias(weight_shape[0]);
+    assert_depthwise_conv2d_parity(
+        "depthwise_conv2d_ox_padded_border_residue1",
+        &input,
+        &input_shape,
+        &weight,
+        &weight_shape,
+        Some(&bias),
+        (1, 1),
+        PaddingMode::Custom(1, 1, 1, 1),
+        (1, 1),
+    );
+}
+
+/// The exact-boundary case, chosen so the LAST FULL column block's final tap
+/// lands precisely on `width`: `kw = 3`, `pad_w = (1, 1)` and `width = 36` give
+/// `output_w = 36`, so that block starts at column 32 and its last tap index is
+/// exactly 36. That block must be classified as border, not interior.
+///
+/// This is the shape a relational off-by-one in the interior test needs. A
+/// shape that merely overshoots the boundary is excluded by a comfortable
+/// margin and cannot distinguish `<` from `<=`; a shape whose trailing block is
+/// partial is excluded by the partial-block guard instead, which hides the test
+/// entirely. `output_w % 4 == 0` is what keeps that guard out of the way here.
+#[test]
+fn depthwise_conv2d_ox_interior_boundary_parity() {
+    let input_shape = [1usize, 32, 30, 36];
+    let weight_shape = [32usize, 1, 3, 3];
+    let input = dw_input(input_shape.iter().product());
+    let weight = dw_weight(weight_shape.iter().product());
+    let bias = dw_bias(weight_shape[0]);
+    assert_depthwise_conv2d_parity(
+        "depthwise_conv2d_ox_interior_boundary",
+        &input,
+        &input_shape,
+        &weight,
+        &weight_shape,
+        Some(&bias),
+        (1, 1),
+        PaddingMode::Custom(1, 1, 1, 1),
+        (1, 1),
+    );
+}
