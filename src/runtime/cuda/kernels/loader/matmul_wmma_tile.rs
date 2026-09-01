@@ -24,9 +24,16 @@ const WMMA_BLOCK_THREADS: u32 = 512;
 /// to lower it.
 const WMMA_BLOCKS_PER_UNIT: u32 = 2;
 
-/// Device waves the larger tile's grid must reach before it is preferred.
-/// One wave is `compute_units * WMMA_BLOCKS_PER_UNIT` blocks.
-const WMMA_MIN_WAVES: u32 = 2;
+/// Device waves the larger tile's grid must reach when the tile divides the
+/// output exactly. One wave is `compute_units * WMMA_BLOCKS_PER_UNIT` blocks.
+/// No block computes a partial tile, so every block does full-value work and
+/// the tile pays off as soon as it can fill the device once.
+const WMMA_MIN_WAVES_EXACT: u32 = 1;
+
+/// Device waves the larger tile's grid must reach when it leaves partial edge
+/// tiles. Edge blocks compute and discard the overhanging fragments, so that
+/// waste has to be amortized over more waves before the tile pays off.
+const WMMA_MIN_WAVES_PARTIAL: u32 = 2;
 
 /// Block tile of a WMMA kernel instantiation.
 ///
@@ -101,15 +108,27 @@ fn wmma_grid_blocks(m: usize, n: usize, batch: usize, tile: WmmaTile) -> u64 {
 /// - the output covers it in both dimensions. A tile wider or taller than the
 ///   problem still stages, multiplies and accumulates the overhanging
 ///   fragments, then discards their stores — pure waste.
-/// - its grid reaches `WMMA_MIN_WAVES` device waves, a wave being
-///   `compute_units * WMMA_BLOCKS_PER_UNIT` blocks.
+/// - its grid reaches the wave count required for how the tile divides the
+///   output, a wave being `compute_units * WMMA_BLOCKS_PER_UNIT` blocks.
+///
+/// How many waves are required depends on divisibility, not on the grid alone.
+/// A tile that divides both output dimensions exactly wastes nothing on partial
+/// edges, so every block does full-value work and the tile is worth taking as
+/// soon as it fills the device once (`WMMA_MIN_WAVES_EXACT`). A tile that
+/// leaves partial edges pays for the discarded fragments of every edge block,
+/// and that cost is only amortized over a longer grid
+/// (`WMMA_MIN_WAVES_PARTIAL`). Two shapes can produce the same grid and still
+/// want opposite tiles for this reason, so the wave count alone cannot decide.
+///
+/// Both wave thresholds are empirical; `benches/matmul.rs` forces each tile and
+/// is how they are re-derived when the kernels change.
 ///
 /// K does not enter the rule: both tiles iterate the whole K extent, so K
 /// scales the per-block work of both by the same factor.
 ///
 /// `compute_units` comes from the cached device profile — an atomic load, not
 /// a driver query per launch. An unknown profile reports zero compute units,
-/// which makes the wave test trivially true and leaves the larger tile as the
+/// which makes the wave tests trivially true and leaves the larger tile as the
 /// default.
 ///
 /// This runs only after [`super::matmul_wmma::use_wmma`] has already chosen
@@ -140,7 +159,14 @@ fn wmma_tile_for_units(m: usize, n: usize, batch: usize, compute_units: u32) -> 
     }
 
     let wave_blocks = u64::from(compute_units) * u64::from(WMMA_BLOCKS_PER_UNIT);
-    let needed = wave_blocks * u64::from(WMMA_MIN_WAVES);
+    let divides_exactly =
+        m.is_multiple_of(LARGE.tile_m() as usize) && n.is_multiple_of(LARGE.tile_n() as usize);
+    let min_waves = if divides_exactly {
+        WMMA_MIN_WAVES_EXACT
+    } else {
+        WMMA_MIN_WAVES_PARTIAL
+    };
+    let needed = wave_blocks * u64::from(min_waves);
 
     if wmma_grid_blocks(m, n, batch, LARGE) >= needed {
         LARGE
@@ -182,9 +208,10 @@ mod tests {
 
     #[test]
     fn small_grid_takes_the_smaller_tile() {
-        // The large tile covers this output, but its grid is under the
-        // minimum wave count, so the device would run barely one wave.
-        assert_eq!(wmma_tile_for_units(1024, 1024, 1, UNITS), WmmaTile::Tile64);
+        // 4x8 = 32 blocks at the large tile, under one wave on this device:
+        // too few blocks in flight for the extra reuse to buy anything, even
+        // though the tile divides the output exactly.
+        assert_eq!(wmma_tile_for_units(512, 1024, 1, UNITS), WmmaTile::Tile64);
     }
 
     #[test]
@@ -192,6 +219,28 @@ mod tests {
         // Batching multiplies the grid past the wave threshold.
         assert_eq!(wmma_tile_for_units(512, 1024, 4, UNITS), WmmaTile::Tile128);
         assert_eq!(wmma_tile_for_units(512, 512, 64, UNITS), WmmaTile::Tile128);
+    }
+
+    #[test]
+    fn exact_divide_takes_the_larger_tile_at_one_wave() {
+        // 8x8 = 64 blocks, just over one wave. The tile divides 1024 exactly,
+        // so no block computes a partial edge and the tile is worth taking.
+        assert_eq!(wmma_tile_for_units(1024, 1024, 1, UNITS), WmmaTile::Tile128);
+    }
+
+    #[test]
+    fn partial_edge_at_the_same_grid_takes_the_smaller_tile() {
+        // Same 8x8 = 64 blocks as the exact case above, but 1000 leaves a
+        // partial edge tile in both dimensions; one wave is too short to
+        // amortize the discarded fragments.
+        assert_eq!(wmma_tile_for_units(1000, 1000, 1, UNITS), WmmaTile::Tile64);
+    }
+
+    #[test]
+    fn partial_edge_takes_the_larger_tile_once_the_grid_is_long() {
+        // The same partial-edge shape at twice the batch reaches the longer
+        // grid the edge waste needs.
+        assert_eq!(wmma_tile_for_units(1000, 1000, 2, UNITS), WmmaTile::Tile128);
     }
 
     #[test]
@@ -204,10 +253,10 @@ mod tests {
     }
 
     #[test]
-    fn threshold_is_exactly_the_wave_count() {
-        // Needed blocks = UNITS * WMMA_BLOCKS_PER_UNIT * WMMA_MIN_WAVES.
-        let needed = (UNITS * WMMA_BLOCKS_PER_UNIT * WMMA_MIN_WAVES) as usize;
-        // One 128x128 tile per batch slice, so batch == grid blocks.
+    fn exact_threshold_is_exactly_the_wave_count() {
+        let needed = (UNITS * WMMA_BLOCKS_PER_UNIT * WMMA_MIN_WAVES_EXACT) as usize;
+        // 128x128 divides the large tile exactly and gives one block per batch
+        // slice, so batch == grid blocks.
         assert_eq!(
             wmma_tile_for_units(128, 128, needed, UNITS),
             WmmaTile::Tile128
@@ -219,10 +268,28 @@ mod tests {
     }
 
     #[test]
+    fn partial_threshold_is_exactly_the_wave_count() {
+        let wave = (UNITS * WMMA_BLOCKS_PER_UNIT * WMMA_MIN_WAVES_PARTIAL) as usize;
+        // 129x129 leaves a partial edge in both dimensions and gives four
+        // blocks per batch slice.
+        let batch = wave / 4;
+        assert_eq!(
+            wmma_tile_for_units(129, 129, batch, UNITS),
+            WmmaTile::Tile128
+        );
+        assert_eq!(
+            wmma_tile_for_units(129, 129, batch - 1, UNITS),
+            WmmaTile::Tile64
+        );
+    }
+
+    #[test]
     fn unknown_profile_keeps_the_larger_tile() {
-        // DeviceProfile::unknown reports zero compute units; the wave test is
-        // then trivially satisfied and the default tile stands.
+        // DeviceProfile::unknown reports zero compute units; both wave tests
+        // are then trivially satisfied and the default tile stands.
         assert_eq!(wmma_tile_for_units(1024, 1024, 1, 0), WmmaTile::Tile128);
+        // Including for a shape the large tile does not divide.
+        assert_eq!(wmma_tile_for_units(1000, 1000, 1, 0), WmmaTile::Tile128);
     }
 
     #[test]
