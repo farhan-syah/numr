@@ -23,13 +23,17 @@
 //   region, then each lane converts + writes elements to global C via STORE_FN
 //   (float→HALF_T). No cross-warp collisions.
 //
-// Static smem (2-stage ping-pong staging, aliased with the epilogue scratch):
+// Static smem (2-stage ping-pong staging, aliased with the epilogue scratch).
+// BLOCK_K (below) is chosen per architecture, so the staging footprint varies
+// by build target; figures here are for BLOCK_K=16 (SMEM_STRIDE_A=24):
 //   staging (per stage): smem_A 128 × 24 × 2 = 6 144 bytes
 //                        smem_B  16 × 136 × 2 = 4 352 bytes
 //   staging (two stages):                        20 992 bytes
 //   scratch: 16 warps × 256 × 4 bytes =         16 384 bytes
 //   The scratch is written only after the K-loop ends, so it overlays the
 //   staging buffers. Total = max(20 992, 16 384) = 20 992 bytes.
+//   At BLOCK_K=32 (SMEM_STRIDE_A=40) the staging total is 37 888 bytes,
+//   which also exceeds the scratch, so total = 37 888 bytes.
 //
 // Scalar staging (bounds-checked zero-pad loops):
 //   Each thread iterates over its share of tile elements with strided loops,
@@ -80,10 +84,19 @@ using namespace nvcuda::wmma;
 // needed. An earlier version of this note described a correctness
 // regression at BLOCK_K=32; that regression belonged to a since-removed
 // cp.async double-buffered kernel, not this synchronous scalar-staging one.
-// Raising BLOCK_K here is bounded by the static shared-memory budget above
-// (two staging stages now, so the cost per BLOCK_K step doubles) and reduces
-// the number of blocks resident per SM.
+//
+// BLOCK_K sets the two-stage staging footprint (see the smem accounting
+// above), which bounds how many blocks can be resident per SM at once — and
+// the shared-memory budget per SM differs by architecture. A single BLOCK_K
+// cannot be optimal everywhere, so it is chosen per architecture: this file
+// compiles once per target arch into the fatbin, and __CUDA_ARCH__ is only
+// defined during device compilation, so this stays a compile-time constant
+// with no host-side effect.
+#if __CUDA_ARCH__ >= 800
+#define BLOCK_K   32
+#else
 #define BLOCK_K   16
+#endif
 
 // Occupancy cap. 16 warps = 512 threads per block; 2 resident blocks fills the
 // 64K-register file exactly at 64 registers per thread. Without the cap ptxas
