@@ -260,6 +260,7 @@ fn compile_cuda_kernels() {
         "gemm_activation.cuh",
         "matmul_f32_tiled.cuh",
         "matmul_wmma.cuh",
+        "matmul_wmma_stage.cuh",
         "semiring_matmul_ops.cuh",
         "sort_bitonic.cuh",
         "sort_compare.cuh",
