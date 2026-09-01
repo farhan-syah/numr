@@ -3,6 +3,7 @@ pub mod helpers;
 
 pub mod activation;
 pub mod advanced_random;
+pub mod autograd_conv1d;
 pub mod autograd_indexing;
 pub mod binary;
 pub mod binary_int_div_zero;
