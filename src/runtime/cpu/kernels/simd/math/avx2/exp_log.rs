@@ -94,7 +94,8 @@ pub unsafe fn exp_f64(x: __m256d) -> __m256d {
     use exp_coefficients::*;
 
     let log2e = _mm256_set1_pd(std::f64::consts::LOG2_E);
-    let ln2 = _mm256_set1_pd(std::f64::consts::LN_2);
+    let ln2_hi = _mm256_set1_pd(LN2_HI_F64);
+    let ln2_lo = _mm256_set1_pd(LN2_LO_F64);
 
     let c0 = _mm256_set1_pd(C0_F64);
     let c1 = _mm256_set1_pd(C1_F64);
@@ -103,6 +104,13 @@ pub unsafe fn exp_f64(x: __m256d) -> __m256d {
     let c4 = _mm256_set1_pd(C4_F64);
     let c5 = _mm256_set1_pd(C5_F64);
     let c6 = _mm256_set1_pd(C6_F64);
+    let c7 = _mm256_set1_pd(C7_F64);
+    let c8 = _mm256_set1_pd(C8_F64);
+    let c9 = _mm256_set1_pd(C9_F64);
+    let c10 = _mm256_set1_pd(C10_F64);
+    let c11 = _mm256_set1_pd(C11_F64);
+    let c12 = _mm256_set1_pd(C12_F64);
+    let c13 = _mm256_set1_pd(C13_F64);
 
     // Clamp input
     let x = _mm256_max_pd(x, _mm256_set1_pd(MIN_F64));
@@ -110,22 +118,26 @@ pub unsafe fn exp_f64(x: __m256d) -> __m256d {
 
     let y = _mm256_mul_pd(x, log2e);
     let n = _mm256_round_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(y);
-    let f = _mm256_sub_pd(y, n);
-    let r = _mm256_mul_pd(f, ln2);
 
-    let r2 = _mm256_mul_pd(r, r);
-    let r3 = _mm256_mul_pd(r2, r);
-    let r4 = _mm256_mul_pd(r2, r2);
-    let r5 = _mm256_mul_pd(r4, r);
-    let r6 = _mm256_mul_pd(r4, r2);
+    // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F64 is exact
+    let r = _mm256_fnmadd_pd(n, ln2_hi, x);
+    let r = _mm256_fnmadd_pd(n, ln2_lo, r);
 
-    let mut poly = c0;
-    poly = _mm256_fmadd_pd(c1, r, poly);
-    poly = _mm256_fmadd_pd(c2, r2, poly);
-    poly = _mm256_fmadd_pd(c3, r3, poly);
-    poly = _mm256_fmadd_pd(c4, r4, poly);
-    poly = _mm256_fmadd_pd(c5, r5, poly);
-    poly = _mm256_fmadd_pd(c6, r6, poly);
+    // Horner: one rounding per term, and no r^k powers to lose bits in
+    let mut poly = c13;
+    poly = _mm256_fmadd_pd(poly, r, c12);
+    poly = _mm256_fmadd_pd(poly, r, c11);
+    poly = _mm256_fmadd_pd(poly, r, c10);
+    poly = _mm256_fmadd_pd(poly, r, c9);
+    poly = _mm256_fmadd_pd(poly, r, c8);
+    poly = _mm256_fmadd_pd(poly, r, c7);
+    poly = _mm256_fmadd_pd(poly, r, c6);
+    poly = _mm256_fmadd_pd(poly, r, c5);
+    poly = _mm256_fmadd_pd(poly, r, c4);
+    poly = _mm256_fmadd_pd(poly, r, c3);
+    poly = _mm256_fmadd_pd(poly, r, c2);
+    poly = _mm256_fmadd_pd(poly, r, c1);
+    poly = _mm256_fmadd_pd(poly, r, c0);
 
     // AVX2 lacks _mm256_cvtpd_epi64, use scalar conversion for 2^n
     // This is a known AVX2 limitation - polynomial eval is still SIMD

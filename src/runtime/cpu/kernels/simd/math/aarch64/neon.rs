@@ -13,7 +13,14 @@
 //! | sin      | 4   | 2   | < 1e-6 / 1e-10 |
 //! | cos      | 4   | 2   | < 1e-6 / 1e-10 |
 //! | tan      | 4   | 2   | < 2e-4 / 1e-4  |
-//! | atan     | 4   | 2   | < 1e-6 / 1e-12 |
+//! | atan     | 4   | 2   | see note / 2 ulp |
+//! | asin     | 4   | 2   | see note / 2 ulp |
+//! | acos     | 4   | 2   | see note / 2 ulp |
+//!
+//! Note: the f32 atan/asin/acos paths reduce with `atan(x) = π/2 - atan(1/x)`
+//! and a Gregory series, whose truncation error grows toward the |x| = 1
+//! boundary. The f64 paths use the multi-centre reduction in `common.rs`
+//! instead and hold below 2 ulps everywhere.
 //!
 //! # Safety
 //!
@@ -23,7 +30,8 @@
 use std::arch::aarch64::*;
 
 use super::super::common::{
-    atan_coefficients, exp_coefficients, log_coefficients, tan_coefficients, trig_coefficients,
+    asin_coefficients, atan_coefficients, exp_coefficients, log_coefficients, tan_coefficients,
+    trig_coefficients,
 };
 
 // ============================================================================
@@ -172,7 +180,8 @@ pub unsafe fn exp_f64(x: float64x2_t) -> float64x2_t {
     use exp_coefficients::*;
 
     let log2e = vdupq_n_f64(std::f64::consts::LOG2_E);
-    let ln2 = vdupq_n_f64(std::f64::consts::LN_2);
+    let ln2_hi = vdupq_n_f64(LN2_HI_F64);
+    let ln2_lo = vdupq_n_f64(LN2_LO_F64);
 
     let c0 = vdupq_n_f64(C0_F64);
     let c1 = vdupq_n_f64(C1_F64);
@@ -181,6 +190,13 @@ pub unsafe fn exp_f64(x: float64x2_t) -> float64x2_t {
     let c4 = vdupq_n_f64(C4_F64);
     let c5 = vdupq_n_f64(C5_F64);
     let c6 = vdupq_n_f64(C6_F64);
+    let c7 = vdupq_n_f64(C7_F64);
+    let c8 = vdupq_n_f64(C8_F64);
+    let c9 = vdupq_n_f64(C9_F64);
+    let c10 = vdupq_n_f64(C10_F64);
+    let c11 = vdupq_n_f64(C11_F64);
+    let c12 = vdupq_n_f64(C12_F64);
+    let c13 = vdupq_n_f64(C13_F64);
 
     // Clamp input
     let x = vmaxq_f64(x, vdupq_n_f64(MIN_F64));
@@ -188,22 +204,26 @@ pub unsafe fn exp_f64(x: float64x2_t) -> float64x2_t {
 
     let y = vmulq_f64(x, log2e);
     let n = vrndnq_f64(y);
-    let f = vsubq_f64(y, n);
-    let r = vmulq_f64(f, ln2);
 
-    let r2 = vmulq_f64(r, r);
-    let r3 = vmulq_f64(r2, r);
-    let r4 = vmulq_f64(r2, r2);
-    let r5 = vmulq_f64(r4, r);
-    let r6 = vmulq_f64(r4, r2);
+    // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F64 is exact
+    let r = vfmsq_f64(x, n, ln2_hi);
+    let r = vfmsq_f64(r, n, ln2_lo);
 
-    let mut poly = c0;
-    poly = vfmaq_f64(poly, c1, r);
-    poly = vfmaq_f64(poly, c2, r2);
-    poly = vfmaq_f64(poly, c3, r3);
-    poly = vfmaq_f64(poly, c4, r4);
-    poly = vfmaq_f64(poly, c5, r5);
-    poly = vfmaq_f64(poly, c6, r6);
+    // Horner: one rounding per term, and no r^k powers to lose bits in
+    let mut poly = c13;
+    poly = vfmaq_f64(c12, poly, r);
+    poly = vfmaq_f64(c11, poly, r);
+    poly = vfmaq_f64(c10, poly, r);
+    poly = vfmaq_f64(c9, poly, r);
+    poly = vfmaq_f64(c8, poly, r);
+    poly = vfmaq_f64(c7, poly, r);
+    poly = vfmaq_f64(c6, poly, r);
+    poly = vfmaq_f64(c5, poly, r);
+    poly = vfmaq_f64(c4, poly, r);
+    poly = vfmaq_f64(c3, poly, r);
+    poly = vfmaq_f64(c2, poly, r);
+    poly = vfmaq_f64(c1, poly, r);
+    poly = vfmaq_f64(c0, poly, r);
 
     // Compute 2^n using IEEE 754 bit manipulation for f64
     // 2^n = reinterpret((n + 1023) << 52) for f64
@@ -715,48 +735,68 @@ pub unsafe fn atan_f64(x: float64x2_t) -> float64x2_t {
     use atan_coefficients::*;
 
     let one = vdupq_n_f64(1.0);
-    let pi_over_2 = vdupq_n_f64(std::f64::consts::FRAC_PI_2);
-
-    // Save sign and work with absolute value
+    let zero = vdupq_n_f64(0.0);
     let sign_mask = vdupq_n_u64(0x8000000000000000);
     let sign = vandq_u64(vreinterpretq_u64_f64(x), sign_mask);
-    let abs_x = vabsq_f64(x);
+    let ax = vabsq_f64(x);
 
-    // Range reduction
-    let need_recip = vcgtq_f64(abs_x, one);
-    let recip_x = vdivq_f64(one, abs_x);
-    let y = vbslq_f64(need_recip, recip_x, abs_x);
+    // Pick the reduction centre c and the matching atan(c) head/correction.
+    // The breakpoint masks are nested, so blending from the widest bucket
+    // inward leaves each lane holding its tightest match.
+    let mut c = vdupq_n_f64(1.5);
+    let mut hi = vdupq_n_f64(ATAN_HI2_F64);
+    let mut lo = vdupq_n_f64(ATAN_LO2_F64);
 
-    let a0 = vdupq_n_f64(A0_F64);
-    let a2 = vdupq_n_f64(A2_F64);
-    let a4 = vdupq_n_f64(A4_F64);
-    let a6 = vdupq_n_f64(A6_F64);
-    let a8 = vdupq_n_f64(A8_F64);
-    let a10 = vdupq_n_f64(A10_F64);
-    let a12 = vdupq_n_f64(A12_F64);
-    let a14 = vdupq_n_f64(A14_F64);
-    let a16 = vdupq_n_f64(A16_F64);
-    let a18 = vdupq_n_f64(A18_F64);
-    let a20 = vdupq_n_f64(A20_F64);
+    let in2 = vcltq_f64(ax, vdupq_n_f64(BREAK2_F64));
+    c = vbslq_f64(in2, one, c);
+    hi = vbslq_f64(in2, vdupq_n_f64(ATAN_HI1_F64), hi);
+    lo = vbslq_f64(in2, vdupq_n_f64(ATAN_LO1_F64), lo);
 
-    let y2 = vmulq_f64(y, y);
+    let in1 = vcltq_f64(ax, vdupq_n_f64(BREAK1_F64));
+    c = vbslq_f64(in1, vdupq_n_f64(0.5), c);
+    hi = vbslq_f64(in1, vdupq_n_f64(ATAN_HI0_F64), hi);
+    lo = vbslq_f64(in1, vdupq_n_f64(ATAN_LO0_F64), lo);
 
-    // Horner's method with 11 terms
-    let mut poly = a20;
-    poly = vfmaq_f64(a18, poly, y2);
-    poly = vfmaq_f64(a16, poly, y2);
-    poly = vfmaq_f64(a14, poly, y2);
-    poly = vfmaq_f64(a12, poly, y2);
-    poly = vfmaq_f64(a10, poly, y2);
-    poly = vfmaq_f64(a8, poly, y2);
-    poly = vfmaq_f64(a6, poly, y2);
-    poly = vfmaq_f64(a4, poly, y2);
-    poly = vfmaq_f64(a2, poly, y2);
-    poly = vfmaq_f64(a0, poly, y2);
-    let atan_y = vmulq_f64(y, poly);
+    let in0 = vcltq_f64(ax, vdupq_n_f64(BREAK0_F64));
+    c = vbslq_f64(in0, zero, c);
+    hi = vbslq_f64(in0, zero, hi);
+    lo = vbslq_f64(in0, zero, lo);
 
-    let adjusted = vsubq_f64(pi_over_2, atan_y);
-    let result = vbslq_f64(need_recip, adjusted, atan_y);
+    // Past the last breakpoint the centre is at infinity: t = -1/|x|.
+    // NaN fails every comparison and falls through to c = 1.5, which
+    // propagates NaN through the division below.
+    let big = vcgeq_f64(ax, vdupq_n_f64(BREAK3_F64));
+    hi = vbslq_f64(big, vdupq_n_f64(ATAN_HI3_F64), hi);
+    lo = vbslq_f64(big, vdupq_n_f64(ATAN_LO3_F64), lo);
+    let num = vbslq_f64(big, vdupq_n_f64(-1.0), vsubq_f64(ax, c));
+    let den = vbslq_f64(big, ax, vfmaq_f64(one, c, ax));
+
+    // t in [-0.4375, 0.4375]; |x| = inf gives t = -0.0, so the result is π/2.
+    let t = vdivq_f64(num, den);
+    let z = vmulq_f64(t, t);
+    let w = vmulq_f64(z, z);
+
+    // Even- and odd-indexed coefficients evaluated as two independent Horner
+    // chains in w, which shortens the dependency chain versus one chain in z.
+    let mut s1 = vdupq_n_f64(AT10_F64);
+    s1 = vfmaq_f64(vdupq_n_f64(AT8_F64), s1, w);
+    s1 = vfmaq_f64(vdupq_n_f64(AT6_F64), s1, w);
+    s1 = vfmaq_f64(vdupq_n_f64(AT4_F64), s1, w);
+    s1 = vfmaq_f64(vdupq_n_f64(AT2_F64), s1, w);
+    s1 = vfmaq_f64(vdupq_n_f64(AT0_F64), s1, w);
+    s1 = vmulq_f64(s1, z);
+
+    let mut s2 = vdupq_n_f64(AT9_F64);
+    s2 = vfmaq_f64(vdupq_n_f64(AT7_F64), s2, w);
+    s2 = vfmaq_f64(vdupq_n_f64(AT5_F64), s2, w);
+    s2 = vfmaq_f64(vdupq_n_f64(AT3_F64), s2, w);
+    s2 = vfmaq_f64(vdupq_n_f64(AT1_F64), s2, w);
+    s2 = vmulq_f64(s2, w);
+
+    // atan(x) = atan(c) + atan(t), grouped so the correction term lands
+    // beside the polynomial residual rather than beside the head.
+    let poly = vmulq_f64(t, vaddq_f64(s1, s2));
+    let result = vsubq_f64(hi, vsubq_f64(vsubq_f64(poly, lo), t));
 
     // Restore sign
     vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_f64(result), sign))
@@ -1074,16 +1114,68 @@ pub unsafe fn asin_f32(x: float32x4_t) -> float32x4_t {
     atan_f32(ratio)
 }
 
+/// Shared rational correction `R(t) = p(t)/q(t)` for f64 asin/acos.
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC`. Valid for t in [0, 0.5].
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn asin_r_f64(t: float64x2_t) -> float64x2_t {
+    use asin_coefficients::*;
+
+    let mut p = vdupq_n_f64(PS5_F64);
+    p = vfmaq_f64(vdupq_n_f64(PS4_F64), p, t);
+    p = vfmaq_f64(vdupq_n_f64(PS3_F64), p, t);
+    p = vfmaq_f64(vdupq_n_f64(PS2_F64), p, t);
+    p = vfmaq_f64(vdupq_n_f64(PS1_F64), p, t);
+    p = vfmaq_f64(vdupq_n_f64(PS0_F64), p, t);
+    p = vmulq_f64(p, t);
+
+    let mut q = vdupq_n_f64(QS4_F64);
+    q = vfmaq_f64(vdupq_n_f64(QS3_F64), q, t);
+    q = vfmaq_f64(vdupq_n_f64(QS2_F64), q, t);
+    q = vfmaq_f64(vdupq_n_f64(QS1_F64), q, t);
+    q = vfmaq_f64(vdupq_n_f64(1.0), q, t);
+
+    vdivq_f64(p, q)
+}
+
 /// Fast SIMD asin for f64 using NEON
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn asin_f64(x: float64x2_t) -> float64x2_t {
+    use asin_coefficients::*;
+
     let one = vdupq_n_f64(1.0);
-    let x2 = vmulq_f64(x, x);
-    let sqrt_term = vsqrtq_f64(vsubq_f64(one, x2));
-    let ratio = vdivq_f64(x, sqrt_term);
-    atan_f64(ratio)
+    let half = vdupq_n_f64(HALF_F64);
+    let sign_mask = vdupq_n_u64(0x8000000000000000);
+    let sign = vandq_u64(vreinterpretq_u64_f64(x), sign_mask);
+    let ax = vabsq_f64(x);
+
+    // |x| > 1 leaves the reflection argument negative, so sqrt yields NaN.
+    // NaN input fails the comparison and takes the same reflection path.
+    let small = vcltq_f64(ax, half);
+    let t_refl = vmulq_f64(vsubq_f64(one, ax), half);
+    let t = vbslq_f64(small, vmulq_f64(ax, ax), t_refl);
+    let r = asin_r_f64(t);
+    let s = vsqrtq_f64(t);
+
+    let res_small = vfmaq_f64(ax, ax, r);
+
+    // π/2 - 2*asin(sqrt(t)), with the low half of π/2 folded into the
+    // subtracted term so the cancellation keeps the trailing bits.
+    let s_sr = vfmaq_f64(s, s, r);
+    let two_s = vaddq_f64(s_sr, s_sr);
+    let res_refl = vsubq_f64(
+        vdupq_n_f64(PIO2_HI_F64),
+        vsubq_f64(two_s, vdupq_n_f64(PIO2_LO_F64)),
+    );
+
+    let result = vbslq_f64(small, res_small, res_refl);
+    vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_f64(result), sign))
 }
 
 /// Fast SIMD acos for f32 using NEON
@@ -1097,12 +1189,47 @@ pub unsafe fn acos_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD acos for f64 using NEON
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details. Built from the
+/// reflection directly, not as π/2 - asin(x): that subtraction cancels away the
+/// whole result as x approaches 1.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn acos_f64(x: float64x2_t) -> float64x2_t {
-    let pi_half = vdupq_n_f64(std::f64::consts::FRAC_PI_2);
-    vsubq_f64(pi_half, asin_f64(x))
+    use asin_coefficients::*;
+
+    let one = vdupq_n_f64(1.0);
+    let zero = vdupq_n_f64(0.0);
+    let half = vdupq_n_f64(HALF_F64);
+    let pio2_lo = vdupq_n_f64(PIO2_LO_F64);
+    let ax = vabsq_f64(x);
+
+    let small = vcltq_f64(ax, half);
+    let t_refl = vmulq_f64(vsubq_f64(one, ax), half);
+    let t = vbslq_f64(small, vmulq_f64(ax, ax), t_refl);
+    let r = asin_r_f64(t);
+    let s = vsqrtq_f64(t);
+
+    // |x| <= 0.5: π/2 - asin(x), evaluated without forming asin(x) first.
+    let res_small = vsubq_f64(
+        vdupq_n_f64(PIO2_HI_F64),
+        vaddq_f64(x, vsubq_f64(vmulq_f64(x, r), pio2_lo)),
+    );
+
+    // x >= 0.5: 2*asin(sqrt(t)), which is small and free of cancellation.
+    let s_sr = vfmaq_f64(s, s, r);
+    let res_pos = vaddq_f64(s_sr, s_sr);
+
+    // x <= -0.5: π - 2*asin(sqrt(t)).
+    let w = vaddq_f64(s, vsubq_f64(vmulq_f64(s, r), pio2_lo));
+    let res_neg = vsubq_f64(vdupq_n_f64(PI_HI_F64), vaddq_f64(w, w));
+
+    // NaN fails both comparisons and lands on the negative branch, where the
+    // NaN sqrt argument propagates.
+    let positive = vcgtq_f64(x, zero);
+    let res_refl = vbslq_f64(positive, res_pos, res_neg);
+    vbslq_f64(small, res_small, res_refl)
 }
 
 /// Fast SIMD cbrt (cube root) for f32 using NEON

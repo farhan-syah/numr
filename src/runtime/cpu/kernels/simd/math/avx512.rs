@@ -13,7 +13,14 @@
 //! | sin      | ✓   | ✓   | < 1e-6 / 1e-10 |
 //! | cos      | ✓   | ✓   | < 1e-6 / 1e-10 |
 //! | tan      | ✓   | ✓   | < 2e-4 / 1e-4  |
-//! | atan     | ✓   | ✓   | < 1e-6 / 1e-12 |
+//! | atan     | ✓   | ✓   | see note / 2 ulp |
+//! | asin     | ✓   | ✓   | see note / 2 ulp |
+//! | acos     | ✓   | ✓   | see note / 2 ulp |
+//!
+//! Note: the f32 atan/asin/acos paths reduce with `atan(x) = π/2 - atan(1/x)`
+//! and a Gregory series, whose truncation error grows toward the |x| = 1
+//! boundary. The f64 paths use the multi-centre reduction in `common.rs`
+//! instead and hold below 2 ulps everywhere.
 //!
 //! # Safety
 //!
@@ -29,7 +36,8 @@
 use std::arch::x86_64::*;
 
 use super::common::{
-    atan_coefficients, exp_coefficients, log_coefficients, tan_coefficients, trig_coefficients,
+    asin_coefficients, atan_coefficients, exp_coefficients, log_coefficients, tan_coefficients,
+    trig_coefficients,
 };
 
 // ============================================================================
@@ -114,7 +122,8 @@ pub unsafe fn exp_f64(x: __m512d) -> __m512d {
     use exp_coefficients::*;
 
     let log2e = _mm512_set1_pd(std::f64::consts::LOG2_E);
-    let ln2 = _mm512_set1_pd(std::f64::consts::LN_2);
+    let ln2_hi = _mm512_set1_pd(LN2_HI_F64);
+    let ln2_lo = _mm512_set1_pd(LN2_LO_F64);
 
     let c0 = _mm512_set1_pd(C0_F64);
     let c1 = _mm512_set1_pd(C1_F64);
@@ -123,6 +132,13 @@ pub unsafe fn exp_f64(x: __m512d) -> __m512d {
     let c4 = _mm512_set1_pd(C4_F64);
     let c5 = _mm512_set1_pd(C5_F64);
     let c6 = _mm512_set1_pd(C6_F64);
+    let c7 = _mm512_set1_pd(C7_F64);
+    let c8 = _mm512_set1_pd(C8_F64);
+    let c9 = _mm512_set1_pd(C9_F64);
+    let c10 = _mm512_set1_pd(C10_F64);
+    let c11 = _mm512_set1_pd(C11_F64);
+    let c12 = _mm512_set1_pd(C12_F64);
+    let c13 = _mm512_set1_pd(C13_F64);
 
     // Clamp input
     let x = _mm512_max_pd(x, _mm512_set1_pd(MIN_F64));
@@ -130,22 +146,26 @@ pub unsafe fn exp_f64(x: __m512d) -> __m512d {
 
     let y = _mm512_mul_pd(x, log2e);
     let n = _mm512_roundscale_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(y);
-    let f = _mm512_sub_pd(y, n);
-    let r = _mm512_mul_pd(f, ln2);
 
-    let r2 = _mm512_mul_pd(r, r);
-    let r3 = _mm512_mul_pd(r2, r);
-    let r4 = _mm512_mul_pd(r2, r2);
-    let r5 = _mm512_mul_pd(r4, r);
-    let r6 = _mm512_mul_pd(r4, r2);
+    // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F64 is exact
+    let r = _mm512_fnmadd_pd(n, ln2_hi, x);
+    let r = _mm512_fnmadd_pd(n, ln2_lo, r);
 
-    let mut poly = c0;
-    poly = _mm512_fmadd_pd(c1, r, poly);
-    poly = _mm512_fmadd_pd(c2, r2, poly);
-    poly = _mm512_fmadd_pd(c3, r3, poly);
-    poly = _mm512_fmadd_pd(c4, r4, poly);
-    poly = _mm512_fmadd_pd(c5, r5, poly);
-    poly = _mm512_fmadd_pd(c6, r6, poly);
+    // Horner: one rounding per term, and no r^k powers to lose bits in
+    let mut poly = c13;
+    poly = _mm512_fmadd_pd(poly, r, c12);
+    poly = _mm512_fmadd_pd(poly, r, c11);
+    poly = _mm512_fmadd_pd(poly, r, c10);
+    poly = _mm512_fmadd_pd(poly, r, c9);
+    poly = _mm512_fmadd_pd(poly, r, c8);
+    poly = _mm512_fmadd_pd(poly, r, c7);
+    poly = _mm512_fmadd_pd(poly, r, c6);
+    poly = _mm512_fmadd_pd(poly, r, c5);
+    poly = _mm512_fmadd_pd(poly, r, c4);
+    poly = _mm512_fmadd_pd(poly, r, c3);
+    poly = _mm512_fmadd_pd(poly, r, c2);
+    poly = _mm512_fmadd_pd(poly, r, c1);
+    poly = _mm512_fmadd_pd(poly, r, c0);
 
     // AVX-512 has native 64-bit integer conversion
     let n_i64 = _mm512_cvtpd_epi64(n);
@@ -663,50 +683,67 @@ pub unsafe fn atan_f64(x: __m512d) -> __m512d {
     use atan_coefficients::*;
 
     let one = _mm512_set1_pd(1.0);
-    let pi_over_2 = _mm512_set1_pd(std::f64::consts::FRAC_PI_2);
     let zero = _mm512_setzero_pd();
-
-    // Save sign and work with absolute value
-    let abs_x = _mm512_abs_pd(x);
+    let ax = _mm512_abs_pd(x);
     let neg_mask = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(x, zero);
 
-    // Range reduction: for |x| > 1, compute atan(1/x) then adjust
-    let need_recip_mask = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(abs_x, one);
-    let recip_x = _mm512_div_pd(one, abs_x);
-    let y = _mm512_mask_blend_pd(need_recip_mask, abs_x, recip_x);
+    // Pick the reduction centre c and the matching atan(c) head/correction.
+    // The breakpoint masks are nested, so blending from the widest bucket
+    // inward leaves each lane holding its tightest match.
+    let mut c = _mm512_set1_pd(1.5);
+    let mut hi = _mm512_set1_pd(ATAN_HI2_F64);
+    let mut lo = _mm512_set1_pd(ATAN_LO2_F64);
 
-    // Polynomial approximation for atan(y) where y in [0, 1]
-    let a0 = _mm512_set1_pd(A0_F64);
-    let a2 = _mm512_set1_pd(A2_F64);
-    let a4 = _mm512_set1_pd(A4_F64);
-    let a6 = _mm512_set1_pd(A6_F64);
-    let a8 = _mm512_set1_pd(A8_F64);
-    let a10 = _mm512_set1_pd(A10_F64);
-    let a12 = _mm512_set1_pd(A12_F64);
-    let a14 = _mm512_set1_pd(A14_F64);
-    let a16 = _mm512_set1_pd(A16_F64);
-    let a18 = _mm512_set1_pd(A18_F64);
-    let a20 = _mm512_set1_pd(A20_F64);
+    let in2 = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(ax, _mm512_set1_pd(BREAK2_F64));
+    c = _mm512_mask_blend_pd(in2, c, one);
+    hi = _mm512_mask_blend_pd(in2, hi, _mm512_set1_pd(ATAN_HI1_F64));
+    lo = _mm512_mask_blend_pd(in2, lo, _mm512_set1_pd(ATAN_LO1_F64));
 
-    let y2 = _mm512_mul_pd(y, y);
+    let in1 = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(ax, _mm512_set1_pd(BREAK1_F64));
+    c = _mm512_mask_blend_pd(in1, c, _mm512_set1_pd(0.5));
+    hi = _mm512_mask_blend_pd(in1, hi, _mm512_set1_pd(ATAN_HI0_F64));
+    lo = _mm512_mask_blend_pd(in1, lo, _mm512_set1_pd(ATAN_LO0_F64));
 
-    // Horner's method with 11 terms for higher precision
-    let mut poly = a20;
-    poly = _mm512_fmadd_pd(poly, y2, a18);
-    poly = _mm512_fmadd_pd(poly, y2, a16);
-    poly = _mm512_fmadd_pd(poly, y2, a14);
-    poly = _mm512_fmadd_pd(poly, y2, a12);
-    poly = _mm512_fmadd_pd(poly, y2, a10);
-    poly = _mm512_fmadd_pd(poly, y2, a8);
-    poly = _mm512_fmadd_pd(poly, y2, a6);
-    poly = _mm512_fmadd_pd(poly, y2, a4);
-    poly = _mm512_fmadd_pd(poly, y2, a2);
-    poly = _mm512_fmadd_pd(poly, y2, a0);
-    let atan_y = _mm512_mul_pd(y, poly);
+    let in0 = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(ax, _mm512_set1_pd(BREAK0_F64));
+    c = _mm512_mask_blend_pd(in0, c, zero);
+    hi = _mm512_mask_blend_pd(in0, hi, zero);
+    lo = _mm512_mask_blend_pd(in0, lo, zero);
 
-    // Apply range reduction inverse: if |x| > 1, result = π/2 - atan(1/x)
-    let adjusted = _mm512_sub_pd(pi_over_2, atan_y);
-    let result = _mm512_mask_blend_pd(need_recip_mask, atan_y, adjusted);
+    // Past the last breakpoint the centre is at infinity: t = -1/|x|.
+    // NaN fails every comparison and falls through to c = 1.5, which
+    // propagates NaN through the division below.
+    let big = _mm512_cmp_pd_mask::<_CMP_GE_OQ>(ax, _mm512_set1_pd(BREAK3_F64));
+    hi = _mm512_mask_blend_pd(big, hi, _mm512_set1_pd(ATAN_HI3_F64));
+    lo = _mm512_mask_blend_pd(big, lo, _mm512_set1_pd(ATAN_LO3_F64));
+    let num = _mm512_mask_blend_pd(big, _mm512_sub_pd(ax, c), _mm512_set1_pd(-1.0));
+    let den = _mm512_mask_blend_pd(big, _mm512_fmadd_pd(c, ax, one), ax);
+
+    // t in [-0.4375, 0.4375]; |x| = inf gives t = -0.0, so the result is π/2.
+    let t = _mm512_div_pd(num, den);
+    let z = _mm512_mul_pd(t, t);
+    let w = _mm512_mul_pd(z, z);
+
+    // Even- and odd-indexed coefficients evaluated as two independent Horner
+    // chains in w, which shortens the dependency chain versus one chain in z.
+    let mut s1 = _mm512_set1_pd(AT10_F64);
+    s1 = _mm512_fmadd_pd(s1, w, _mm512_set1_pd(AT8_F64));
+    s1 = _mm512_fmadd_pd(s1, w, _mm512_set1_pd(AT6_F64));
+    s1 = _mm512_fmadd_pd(s1, w, _mm512_set1_pd(AT4_F64));
+    s1 = _mm512_fmadd_pd(s1, w, _mm512_set1_pd(AT2_F64));
+    s1 = _mm512_fmadd_pd(s1, w, _mm512_set1_pd(AT0_F64));
+    s1 = _mm512_mul_pd(s1, z);
+
+    let mut s2 = _mm512_set1_pd(AT9_F64);
+    s2 = _mm512_fmadd_pd(s2, w, _mm512_set1_pd(AT7_F64));
+    s2 = _mm512_fmadd_pd(s2, w, _mm512_set1_pd(AT5_F64));
+    s2 = _mm512_fmadd_pd(s2, w, _mm512_set1_pd(AT3_F64));
+    s2 = _mm512_fmadd_pd(s2, w, _mm512_set1_pd(AT1_F64));
+    s2 = _mm512_mul_pd(s2, w);
+
+    // atan(x) = atan(c) + atan(t), grouped so the correction term lands
+    // beside the polynomial residual rather than beside the head.
+    let poly = _mm512_mul_pd(t, _mm512_add_pd(s1, s2));
+    let result = _mm512_sub_pd(hi, _mm512_sub_pd(_mm512_sub_pd(poly, lo), t));
 
     // Restore sign: negate result if x was negative
     let neg_result = _mm512_sub_pd(zero, result);
@@ -986,15 +1023,69 @@ pub unsafe fn asin_f32(x: __m512) -> __m512 {
     atan_f32(ratio)
 }
 
+/// Shared rational correction `R(t) = p(t)/q(t)` for f64 asin/acos.
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC`. Valid for t in [0, 0.5].
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn asin_r_f64(t: __m512d) -> __m512d {
+    use asin_coefficients::*;
+
+    let mut p = _mm512_set1_pd(PS5_F64);
+    p = _mm512_fmadd_pd(p, t, _mm512_set1_pd(PS4_F64));
+    p = _mm512_fmadd_pd(p, t, _mm512_set1_pd(PS3_F64));
+    p = _mm512_fmadd_pd(p, t, _mm512_set1_pd(PS2_F64));
+    p = _mm512_fmadd_pd(p, t, _mm512_set1_pd(PS1_F64));
+    p = _mm512_fmadd_pd(p, t, _mm512_set1_pd(PS0_F64));
+    p = _mm512_mul_pd(p, t);
+
+    let mut q = _mm512_set1_pd(QS4_F64);
+    q = _mm512_fmadd_pd(q, t, _mm512_set1_pd(QS3_F64));
+    q = _mm512_fmadd_pd(q, t, _mm512_set1_pd(QS2_F64));
+    q = _mm512_fmadd_pd(q, t, _mm512_set1_pd(QS1_F64));
+    q = _mm512_fmadd_pd(q, t, _mm512_set1_pd(1.0));
+
+    _mm512_div_pd(p, q)
+}
+
 /// Fast SIMD asin for f64 using AVX-512
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn asin_f64(x: __m512d) -> __m512d {
+    use asin_coefficients::*;
+
     let one = _mm512_set1_pd(1.0);
-    let x2 = _mm512_mul_pd(x, x);
-    let sqrt_term = _mm512_sqrt_pd(_mm512_sub_pd(one, x2));
-    let ratio = _mm512_div_pd(x, sqrt_term);
-    atan_f64(ratio)
+    let zero = _mm512_setzero_pd();
+    let half = _mm512_set1_pd(HALF_F64);
+    let ax = _mm512_abs_pd(x);
+    let neg_mask = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(x, zero);
+
+    // |x| > 1 leaves the reflection argument negative, so sqrt yields NaN.
+    // NaN input fails the comparison and takes the same reflection path.
+    let small = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(ax, half);
+    let t_refl = _mm512_mul_pd(_mm512_sub_pd(one, ax), half);
+    let t = _mm512_mask_blend_pd(small, t_refl, _mm512_mul_pd(ax, ax));
+    let r = asin_r_f64(t);
+    let s = _mm512_sqrt_pd(t);
+
+    let res_small = _mm512_fmadd_pd(ax, r, ax);
+
+    // π/2 - 2*asin(sqrt(t)), with the low half of π/2 folded into the
+    // subtracted term so the cancellation keeps the trailing bits.
+    let s_sr = _mm512_fmadd_pd(s, r, s);
+    let two_s = _mm512_add_pd(s_sr, s_sr);
+    let res_refl = _mm512_sub_pd(
+        _mm512_set1_pd(PIO2_HI_F64),
+        _mm512_sub_pd(two_s, _mm512_set1_pd(PIO2_LO_F64)),
+    );
+
+    let result = _mm512_mask_blend_pd(small, res_refl, res_small);
+
+    // Restore sign: negate result if x was negative
+    let neg_result = _mm512_sub_pd(zero, result);
+    _mm512_mask_blend_pd(neg_mask, result, neg_result)
 }
 
 /// Fast SIMD acos for f32 using AVX-512
@@ -1006,11 +1097,46 @@ pub unsafe fn acos_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD acos for f64 using AVX-512
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details. Built from the
+/// reflection directly, not as π/2 - asin(x): that subtraction cancels away the
+/// whole result as x approaches 1.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn acos_f64(x: __m512d) -> __m512d {
-    let pi_half = _mm512_set1_pd(std::f64::consts::FRAC_PI_2);
-    _mm512_sub_pd(pi_half, asin_f64(x))
+    use asin_coefficients::*;
+
+    let one = _mm512_set1_pd(1.0);
+    let zero = _mm512_setzero_pd();
+    let half = _mm512_set1_pd(HALF_F64);
+    let pio2_lo = _mm512_set1_pd(PIO2_LO_F64);
+    let ax = _mm512_abs_pd(x);
+
+    let small = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(ax, half);
+    let t_refl = _mm512_mul_pd(_mm512_sub_pd(one, ax), half);
+    let t = _mm512_mask_blend_pd(small, t_refl, _mm512_mul_pd(ax, ax));
+    let r = asin_r_f64(t);
+    let s = _mm512_sqrt_pd(t);
+
+    // |x| <= 0.5: π/2 - asin(x), evaluated without forming asin(x) first.
+    let res_small = _mm512_sub_pd(
+        _mm512_set1_pd(PIO2_HI_F64),
+        _mm512_add_pd(x, _mm512_sub_pd(_mm512_mul_pd(x, r), pio2_lo)),
+    );
+
+    // x >= 0.5: 2*asin(sqrt(t)), which is small and free of cancellation.
+    let s_sr = _mm512_fmadd_pd(s, r, s);
+    let res_pos = _mm512_add_pd(s_sr, s_sr);
+
+    // x <= -0.5: π - 2*asin(sqrt(t)).
+    let w = _mm512_add_pd(s, _mm512_sub_pd(_mm512_mul_pd(s, r), pio2_lo));
+    let res_neg = _mm512_sub_pd(_mm512_set1_pd(PI_HI_F64), _mm512_add_pd(w, w));
+
+    // NaN fails both comparisons and lands on the negative branch, where the
+    // NaN sqrt argument propagates.
+    let positive = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(x, zero);
+    let res_refl = _mm512_mask_blend_pd(positive, res_neg, res_pos);
+    _mm512_mask_blend_pd(small, res_refl, res_small)
 }
 
 /// Fast SIMD cbrt (cube root) for f32 using AVX-512

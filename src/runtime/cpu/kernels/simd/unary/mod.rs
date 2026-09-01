@@ -251,6 +251,236 @@ mod tests {
         }
     }
 
+    /// f64 exp must reach double precision, not merely f32 precision.
+    ///
+    /// The length forces the SIMD path (>= SIMD_THRESHOLD, and a whole number of
+    /// AVX2/AVX-512/NEON f64 lanes), so no element falls through to the exact
+    /// scalar fallback. A degree-6 Taylor polynomial leaves a truncation error
+    /// near 1.2e-7 here and fails this bound by nine orders of magnitude.
+    #[test]
+    fn test_unary_exp_f64_double_precision() {
+        const LEN: usize = 2048;
+        let a: Vec<f64> = (0..LEN)
+            .map(|i| -700.0 + 1400.0 * (i as f64) / (LEN as f64 - 1.0))
+            .collect();
+        let mut out = vec![0.0f64; LEN];
+
+        unsafe { unary_f64(UnaryOp::Exp, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].exp();
+            let rel_err = (out[i] - expected).abs() / expected;
+            assert!(
+                rel_err < 1e-14,
+                "exp({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    /// Relative error against a reference, safe when the reference is zero.
+    ///
+    /// asin(0) and acos(1) are exactly zero, so a plain division would report
+    /// NaN for a bit-exact result.
+    fn rel_err_f64(got: f64, expected: f64) -> f64 {
+        (got - expected).abs() / expected.abs().max(f64::MIN_POSITIVE)
+    }
+
+    /// Fill `a` up to `len` with a sweep over [-limit, limit].
+    fn fill_sweep_f64(a: &mut Vec<f64>, len: usize, limit: f64) {
+        let start = a.len();
+        let span = len - start;
+        for i in 0..span {
+            a.push(-limit + 2.0 * limit * (i as f64) / (span as f64 - 1.0));
+        }
+    }
+
+    #[test]
+    fn test_unary_asin_f64_double_precision() {
+        const LEN: usize = 2048;
+        let mut a: Vec<f64> = Vec::with_capacity(LEN);
+
+        // 1/sqrt(2) is where asin crosses from the direct series to the
+        // reflection in every naive atan-based formulation, so a wrong branch
+        // shows up here first. 0.5 is this implementation's own branch point.
+        for &b in &[std::f64::consts::FRAC_1_SQRT_2, 0.5, 1.0] {
+            for k in -100i32..=100 {
+                let d = b + (k as f64) * 1e-12;
+                if d <= 1.0 {
+                    a.push(d);
+                    a.push(-d);
+                }
+            }
+        }
+        fill_sweep_f64(&mut a, LEN, 1.0);
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Asin, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].asin();
+            let rel_err = rel_err_f64(out[i], expected);
+            assert!(
+                rel_err < 1e-14,
+                "asin({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_acos_f64_double_precision() {
+        const LEN: usize = 2048;
+        let mut a: Vec<f64> = Vec::with_capacity(LEN);
+
+        for &b in &[std::f64::consts::FRAC_1_SQRT_2, 0.5, 1.0] {
+            for k in -100i32..=100 {
+                let d = b + (k as f64) * 1e-12;
+                if d <= 1.0 {
+                    a.push(d);
+                    a.push(-d);
+                }
+            }
+        }
+        fill_sweep_f64(&mut a, LEN, 1.0);
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Acos, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].acos();
+            let rel_err = rel_err_f64(out[i], expected);
+            assert!(
+                rel_err < 1e-14,
+                "acos({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_atan_f64_double_precision() {
+        const LEN: usize = 2048;
+        let mut a: Vec<f64> = Vec::with_capacity(LEN);
+
+        // Every reduction breakpoint, from both sides. |x| = 1 is the boundary
+        // of the naive reciprocal reduction and the worst point of a truncated
+        // Gregory series.
+        for &b in &[0.4375f64, 0.6875, 1.0, 1.1875, 2.4375] {
+            for k in -40i32..=40 {
+                let d = b + (k as f64) * 1e-12;
+                a.push(d);
+                a.push(-d);
+            }
+        }
+        // Magnitudes far past the last breakpoint, where t = -1/|x| is used.
+        for k in 0..100 {
+            let d = 10.0f64.powi(k % 25 + 2);
+            a.push(d);
+            a.push(-d);
+        }
+        fill_sweep_f64(&mut a, LEN, 8.0);
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Atan, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].atan();
+            let rel_err = rel_err_f64(out[i], expected);
+            assert!(
+                rel_err < 1e-14,
+                "atan({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_inverse_trig_f64_domain_edges() {
+        const LEN: usize = 2048;
+
+        // ±1 are exact endpoints; beyond them asin/acos are undefined.
+        let asin_edges = [1.0f64, -1.0, 0.0, -0.0, 1.5, -1.5, f64::INFINITY, f64::NAN];
+        let a: Vec<f64> = (0..LEN).map(|i| asin_edges[i % asin_edges.len()]).collect();
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Asin, a.as_ptr(), out.as_mut_ptr(), LEN) }
+        for i in 0..LEN {
+            let expected = a[i].asin();
+            if expected.is_nan() {
+                assert!(out[i].is_nan(), "asin({}) = {}, expected NaN", a[i], out[i]);
+            } else {
+                assert!(
+                    rel_err_f64(out[i], expected) < 1e-14,
+                    "asin({}) = {}, expected {}",
+                    a[i],
+                    out[i],
+                    expected
+                );
+            }
+        }
+
+        unsafe { unary_f64(UnaryOp::Acos, a.as_ptr(), out.as_mut_ptr(), LEN) }
+        for i in 0..LEN {
+            let expected = a[i].acos();
+            if expected.is_nan() {
+                assert!(out[i].is_nan(), "acos({}) = {}, expected NaN", a[i], out[i]);
+            } else {
+                assert!(
+                    rel_err_f64(out[i], expected) < 1e-14,
+                    "acos({}) = {}, expected {}",
+                    a[i],
+                    out[i],
+                    expected
+                );
+            }
+        }
+
+        // atan is defined everywhere; ±inf must saturate to ±pi/2.
+        let atan_edges = [
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            0.0f64,
+            1.0,
+            -1.0,
+            1e308,
+            -1e308,
+            f64::NAN,
+        ];
+        let a: Vec<f64> = (0..LEN).map(|i| atan_edges[i % atan_edges.len()]).collect();
+        unsafe { unary_f64(UnaryOp::Atan, a.as_ptr(), out.as_mut_ptr(), LEN) }
+        for i in 0..LEN {
+            if a[i].is_nan() {
+                assert!(out[i].is_nan(), "atan(NaN) = {}", out[i]);
+            } else {
+                let expected = a[i].atan();
+                assert!(
+                    rel_err_f64(out[i], expected) < 1e-14,
+                    "atan({}) = {}, expected {}",
+                    a[i],
+                    out[i],
+                    expected
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_unary_tanh_f32() {
         let a: Vec<f32> = (0..100).map(|x| (x as f32 - 50.0) * 0.1).collect();
