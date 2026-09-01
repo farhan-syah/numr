@@ -337,6 +337,296 @@ fn cuda_conv1d_oc4_narrow_output_256_512ch_k3_lout1(b: &mut Bencher) {
 }
 
 // ---------------------------------------------------------------------------
+// conv1d — im2col dispatch corner (MIN_CONTRACTION / MIN_C_OUT_PER_GROUP floor)
+// ---------------------------------------------------------------------------
+//
+// `src/ops/cuda/conv1d_im2col.rs` gates the im2col path on MIN_CONTRACTION=64,
+// MIN_C_OUT_PER_GROUP=4, MIN_OUTPUT_LENGTH=4, MAX_COL_ELEMENTS=1<<26. A sweep
+// on c_in=c_out=1536, K=7 found im2col faster at every output_length from 1
+// to 300, so MIN_OUTPUT_LENGTH dropped from 16 to 4. That sweep never
+// covered c_out at its MIN_C_OUT_PER_GROUP floor with contraction at its
+// MIN_CONTRACTION floor, where the GEMM is degenerate. These cases close
+// that gap. Every case below has groups=1, contraction >= MIN_CONTRACTION,
+// c_out/groups >= MIN_C_OUT_PER_GROUP, and col_elements << MAX_COL_ELEMENTS,
+// so only output_length varies within each family.
+
+/// Both floors at once: c_in=16, c_out=4, K=4 -> contraction=64=MIN_CONTRACTION,
+/// c_out/groups=4=MIN_C_OUT_PER_GROUP. Shortest output_length routed through
+/// im2col: output_length=1 -> input length=1+3=4. col_elements=16*4*1=64.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_floor_c16_c4_k4_lout1(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 16, 4], &device);
+    let weight = rand_cuda(&[4, 16, 4], &device);
+    let bias = rand_cuda(&[4], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Same floor family, output_length=4=MIN_OUTPUT_LENGTH -> input length=4+3=7.
+/// col_elements=16*4*4=256.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_floor_c16_c4_k4_lout4(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 16, 7], &device);
+    let weight = rand_cuda(&[4, 16, 4], &device);
+    let bias = rand_cuda(&[4], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Same floor family, output_length=16 -> input length=16+3=19.
+/// col_elements=16*4*16=1024.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_floor_c16_c4_k4_lout16(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 16, 19], &device);
+    let weight = rand_cuda(&[4, 16, 4], &device);
+    let bias = rand_cuda(&[4], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Same floor family, output_length=64 -> input length=64+3=67.
+/// col_elements=16*4*64=4096.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_floor_c16_c4_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 16, 67], &device);
+    let weight = rand_cuda(&[4, 16, 4], &device);
+    let bias = rand_cuda(&[4], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Midpoint between the floor family above and the 1536-channel family:
+/// c_in=c_out=32, K=4 -> contraction=128, c_out/groups=32. output_length=4 ->
+/// input length=4+3=7. col_elements=32*4*4=512.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_mid_c32_c32_k4_lout4(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 7], &device);
+    let weight = rand_cuda(&[32, 32, 4], &device);
+    let bias = rand_cuda(&[32], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Same midpoint family, output_length=64 -> input length=64+3=67.
+/// col_elements=32*4*64=8192.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_mid_c32_c32_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 67], &device);
+    let weight = rand_cuda(&[32, 32, 4], &device);
+    let bias = rand_cuda(&[32], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
+// conv1d — im2col work-axis sweep (c_in=c_out, K=4, output_length=64)
+// ---------------------------------------------------------------------------
+//
+// Brackets the gap between two measured points on the c_in*c_out*K*output_length
+// work axis: cuda_conv1d_im2col_mid_c32_c32_k4_lout64 (work ~262K, im2col loses)
+// and the 1536-channel, K=7, lout1 family (work ~16.5M, im2col wins). These four
+// cases hold K=4 and output_length=64 fixed and step c_in=c_out from 64 to 512
+// to locate the crossover. Each satisfies groups=1, contraction (c_in*K) >=
+// MIN_CONTRACTION (64), c_out/groups >= MIN_C_OUT_PER_GROUP (4), and
+// col_elements (c_in*K*output_length) << MAX_COL_ELEMENTS (1<<26).
+
+/// Sweep point 1 of 4: c_in=c_out=64, K=4, output_length=64 -> input length=67.
+/// contraction=256, col_elements=16384, work=64*256*64=1.05M.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_sweep_c64_c64_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 64, 67], &device);
+    let weight = rand_cuda(&[64, 64, 4], &device);
+    let bias = rand_cuda(&[64], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Sweep point 2 of 4: c_in=c_out=128, K=4, output_length=64 -> input length=131.
+/// contraction=512, col_elements=32768, work=128*512*64=4.2M.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_sweep_c128_c128_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 128, 131], &device);
+    let weight = rand_cuda(&[128, 128, 4], &device);
+    let bias = rand_cuda(&[128], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Sweep point 3 of 4: c_in=c_out=256, K=4, output_length=64 -> input length=259.
+/// contraction=1024, col_elements=65536, work=256*1024*64=16.8M.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_sweep_c256_c256_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 256, 259], &device);
+    let weight = rand_cuda(&[256, 256, 4], &device);
+    let bias = rand_cuda(&[256], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Sweep point 4 of 4: c_in=c_out=512, K=4, output_length=64 -> input length=515.
+/// contraction=2048, col_elements=131072, work=512*2048*64=67M.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_sweep_c512_c512_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 512, 515], &device);
+    let weight = rand_cuda(&[512, 512, 4], &device);
+    let bias = rand_cuda(&[512], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Deep contraction, few output channels. Separates contraction depth from c_out.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_deep_c512_c32_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 512, 67], &device);
+    let weight = rand_cuda(&[32, 512, 4], &device);
+    let bias = rand_cuda(&[32], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Shallow contraction, many output channels. The mirror of the deep case.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_im2col_wide_c32_c512_k4_lout64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 67], &device);
+    let weight = rand_cuda(&[512, 32, 4], &device);
+    let bias = rand_cuda(&[512], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
 // conv_transpose1d — optimization target
 // ---------------------------------------------------------------------------
 

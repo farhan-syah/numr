@@ -26,7 +26,17 @@ use crate::tensor::Tensor;
 ///
 /// Below this the column buffer costs more to write than the GEMM saves, and
 /// the K loop is too short for the tiled kernels to amortise their prologue.
-const MIN_CONTRACTION: usize = 64;
+///
+/// **Contraction depth is the discriminator, not output length and not total
+/// work.** Two shapes with the same GEMM volume can want opposite kernels: the
+/// direct kernel handles many shallow outputs well and struggles when few
+/// outputs each carry deep contraction, which is exactly where the GEMM wins.
+/// Swept with c_out held at both 32 and 512 to confirm the axis: contraction
+/// 512 and 1024 lose, 2048 wins at both widths.
+///
+/// The previous value of 64 was far below that crossover and admitted shapes
+/// the GEMM ran a factor of two SLOWER than the direct kernel.
+const MIN_CONTRACTION: usize = 2048;
 
 /// Smallest number of output channels per group. Below this the GEMM has too
 /// few rows to reuse a loaded column tile, which is the whole gain over the
