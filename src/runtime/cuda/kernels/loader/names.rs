@@ -108,6 +108,8 @@ pub mod kernel_names {
     pub const STATISTICS_MODULE: &str = "statistics";
     /// Semiring matrix multiplication operations
     pub const SEMIRING_MATMUL_MODULE: &str = "semiring_matmul";
+    /// conv1d im2col gather (packs receptive fields into a GEMM operand)
+    pub const IM2COL_MODULE: &str = "im2col";
 
     /// Generate kernel name for reduction operations.
     #[inline]

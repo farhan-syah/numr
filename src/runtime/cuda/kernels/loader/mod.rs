@@ -8,6 +8,7 @@ mod dtype_modules;
 mod elementwise;
 mod gemm_epilogue_wmma;
 mod gemv;
+mod im2col;
 mod launch_dims;
 mod matmul;
 mod matmul_bias;
@@ -29,6 +30,7 @@ pub(crate) use gemm_epilogue_wmma::{
     launch_gemm_bias_residual_wmma_batched_kernel, launch_gemm_bias_residual_wmma_kernel,
 };
 pub use gemv::{launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr};
+pub use im2col::{im2col_has_kernel, launch_im2col1d};
 pub use launch_dims::{
     BLOCK_SIZE, LaunchConfig, check_shared_mem_fits, elementwise_launch_config, launch_config,
     reduce_dim_launch_config, reduce_launch_config, softmax_launch_config,
