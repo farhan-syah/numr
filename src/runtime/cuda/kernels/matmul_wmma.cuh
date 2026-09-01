@@ -35,7 +35,10 @@
 //   positions are zero-padded. This is deterministic and correct for all shapes.
 //
 // Caller must guarantee M, N, K are all multiples of 16 before dispatching here.
-// FMA fallback handles all other shapes.
+// FMA fallback handles all other shapes. Given that guarantee, the K-direction
+// zero-pad in the staging loops below never triggers — it is currently
+// unreachable, not tested. Only the M/N-direction zero-pad (block tiles that
+// overhang the matrix) is live.
 //
 // cp.async double-buffering is DISABLED (documented nondeterminism dead-end).
 // Do NOT enable it. The synchronous path is deterministic and correct.
@@ -66,10 +69,13 @@ using namespace nvcuda::wmma;
 #define WARP_M 2
 #define WARP_N 2
 
-// NOTE: BLOCK_K=16. BLOCK_K=32 was tried for fewer K-loop iterations on
-// large-K projections but introduced a correctness regression on the real
-// workload (reranker 5-query recall@10 1.000→0.400) that the synthetic K-tail
-// parity tests (K=48/80) did NOT catch. Reverted; not worth broken recall.
+// NOTE: BLOCK_K is a free parameter. The K-loop below steps by WMMA_K, so
+// BLOCK_K > WMMA_K just adds more mma_sync calls per K-tile, no rewrite
+// needed. An earlier version of this note described a correctness
+// regression at BLOCK_K=32; that regression belonged to a since-removed
+// cp.async double-buffered kernel, not this synchronous scalar-staging one.
+// Raising BLOCK_K here is bounded by the static shared-memory budget above
+// and reduces the number of blocks resident per SM.
 #define BLOCK_K   16
 
 // Block tile:

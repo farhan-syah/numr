@@ -241,6 +241,11 @@ __global__ void conv1d_oc4_##suffix(CONV1D_PARAMS(dtype)) { \
 // so j = (t + padding - k*dilation) / stride, and only when that divides evenly.
 // ============================================================================
 
+// Deliberately kept simple: one thread per output element, scalar accumulator.
+// This kernel is latency-bound, so register blocking and tap precomputation cost
+// more occupancy than they save and measured slower on every shape tried. The
+// same blocking wins in conv1d_oc4, which is compute-bound; it loses here.
+// Benchmark with benches/conv.rs before changing this.
 #define DEFINE_CONV_TRANSPOSE1D_KERNEL(suffix, dtype) \
 __global__ void conv_transpose1d_##suffix( \
     const dtype* __restrict__ input, \

@@ -169,10 +169,11 @@ matmul_case!(
     )]
 );
 
-// K=48: multiple of 16 but NOT 32 — exercises the WMMA K-tail zero-pad path
-// (BLOCK_K=32 means the last K-tile covers only 16 real columns; the boundary
-// handling in the cp.async staging must zero-pad the missing columns so the
-// partial WMMA tile accumulates the correct value).
+// K=48 and K=80 are both multiples of 16, the minimum use_wmma requires
+// (K % 16 == 0). With BLOCK_K=16 this gives several full K-tiles and no
+// partial tile, so these cases exercise multi-K-tile accumulation, not a
+// K-tail zero-pad — that branch is unreachable while use_wmma requires
+// K % 16 == 0.
 matmul_case!(
     test_matmul_wmma_k_tail_parity,
     &[
