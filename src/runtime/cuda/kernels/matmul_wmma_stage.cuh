@@ -2,6 +2,8 @@
 // fallback, used to fill the shared-memory A/B tiles before each K-step.
 // Included only from matmul_wmma.cuh, which declares the tile constants
 // (SMEM_STRIDE_A, SMEM_STRIDE_B, BLOCK_K, ...) these macros expand against.
+// BLOCK_K is a local constexpr declared by WMMA_TILE_CONSTANTS, not a
+// file-scope macro — it is a per-tile value, not a per-arch one.
 
 #ifndef NUMR_MATMUL_WMMA_STAGE_CUH
 #define NUMR_MATMUL_WMMA_STAGE_CUH

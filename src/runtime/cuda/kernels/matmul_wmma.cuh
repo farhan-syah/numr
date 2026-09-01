@@ -38,8 +38,9 @@
 // Static smem (WMMA_STAGES-stage ring, aliased with the epilogue scratch).
 // WMMA_STAGES is 2 today (classic ping-pong); the ring shape is what would
 // let a later multi-stage pipeline raise it without reshaping this staging
-// code. BLOCK_K (below) is chosen per architecture, so the staging footprint
-// varies by build target. Per stage the staging holds
+// code. BLOCK_K is a PER-TILE value passed into WMMA_TILE_CONSTANTS (below),
+// not one file-scope constant, so the staging footprint varies by tile as
+// well as by build target. Per stage the staging holds
 //   smem_A: BLOCK_TILE_M x SMEM_STRIDE_A halves
 //   smem_B: BLOCK_K      x SMEM_STRIDE_B halves
 // and the total is max(WMMA_STAGES stages, scratch), because the scratch is
@@ -47,8 +48,11 @@
 // buffers:
 //   BLOCK_K=16 (SMEM_STRIDE_A=24): 128x128 -> 20 992 B, 64x64 -> 16 384 B
 //   BLOCK_K=32 (SMEM_STRIDE_A=40): 128x128 -> 37 888 B, 64x64 -> 19 456 B
-// The 64x64 tile never needs more smem than the 128x128 one, so it never
-// lowers the resident-block count.
+//   BLOCK_K=64 (SMEM_STRIDE_A=72), 64x64 only, sm_80+: -> 36 864 B
+// The 64x64 tile never needs more smem than the 128x128 tile at its own
+// BLOCK_K, so it never lowers the resident-block count below what 128x128
+// gets. The static_assert in WMMA_KERNEL_BODY_EPI turns any future
+// combination that breaks this into a compile error, not a launch failure.
 //
 // Staging (bounds-checked zero-pad loops, vectorised where legal):
 //   Threads cooperatively copy the tile with strided loops. The fast path
@@ -105,15 +109,27 @@ using namespace nvcuda::wmma;
 //
 // BLOCK_K sets the WMMA_STAGES-stage staging footprint (see the smem
 // accounting above), which bounds how many blocks can be resident per SM at
-// once — and the shared-memory budget per SM differs by architecture. A
-// single BLOCK_K cannot be optimal everywhere, so it is chosen per
-// architecture: this file compiles once per target arch into the fatbin, and
-// __CUDA_ARCH__ is only defined during device compilation, so this stays a
-// compile-time constant with no host-side effect.
+// once — and the shared-memory budget per SM differs by architecture, and by
+// how much smem one block tile needs at a given BLOCK_K. So BLOCK_K is a
+// PER-TILE choice, passed into WMMA_TILE_CONSTANTS (below) rather than read
+// from one file-scope constant. This file compiles once per target arch into
+// the fatbin, and __CUDA_ARCH__ is only defined during device compilation, so
+// every BLOCK_K value below stays a compile-time constant with no host-side
+// effect.
+//
+// WMMA_BLOCK_K_DEFAULT is what a tile gets unless it overrides: 32 on
+// sm_80+, 16 below. Every tile takes the default today.
+//
+// MEASURED AND REJECTED: 64 for the 64x64 tile on sm_80+. It fits the smem
+// budget (36864 B, 2 resident blocks kept) and halves the K-loop iterations on
+// large-K shapes, but bought nothing for F16 and cost BF16 several percent on
+// the shape it targeted. Large-K is not staging-limited. A wider staging
+// footprint has now lost twice for BF16 while leaving F16 flat; find out why
+// before trying a third time.
 #if __CUDA_ARCH__ >= 800
-#define BLOCK_K   32
+#define WMMA_BLOCK_K_DEFAULT 32
 #else
-#define BLOCK_K   16
+#define WMMA_BLOCK_K_DEFAULT 16
 #endif
 
 // Occupancy cap. 16 warps = 512 threads per block; 2 resident blocks fills the
@@ -136,7 +152,8 @@ static_assert(WMMA_STAGES >= 2,
    tile can vary per instantiation. Smem strides carry +8 padding to avoid
    32-bank conflicts; both stay multiples of 8 halves (16 bytes), the alignment
    load_matrix_sync/store_matrix_sync require of their leading dimension. */
-#define WMMA_TILE_CONSTANTS(WM, WN)                                          \
+#define WMMA_TILE_CONSTANTS(WM, WN, BLOCK_K_ARG)                             \
+    constexpr unsigned int BLOCK_K = (BLOCK_K_ARG);                          \
     constexpr unsigned int BLOCK_TILE_M = WARP_ROWS * (WM) * WMMA_M;         \
     constexpr unsigned int BLOCK_TILE_N = WARP_COLS * (WN) * WMMA_N;         \
     constexpr unsigned int SMEM_STRIDE_A = BLOCK_K + 8;                      \
@@ -236,13 +253,13 @@ static_assert(WMMA_STAGES >= 2,
            + __bfloat162float(res_ptr[(ROW) * N + (COL)]))
 
 /* No-bias body: the epilogue transform is the identity. */
-#define WMMA_KERNEL_BODY(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr) \
-    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN,                \
+#define WMMA_KERNEL_BODY(WM, WN, BLOCK_K_ARG, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr) \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_ARG, HALF_T, ZERO_EXPR, STORE_FN,   \
                          A_ptr, B_ptr, C_ptr, WMMA_EPILOGUE_PLAIN)
 
-#define WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr, EPI_FN) \
+#define WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_ARG, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr, EPI_FN) \
 {                                                                            \
-    WMMA_TILE_CONSTANTS(WM, WN)                                              \
+    WMMA_TILE_CONSTANTS(WM, WN, BLOCK_K_ARG)                                 \
                                                                              \
     const unsigned int warp_id  = threadIdx.x / 32;                          \
     const unsigned int warp_row = warp_id / WARP_COLS;                       \
@@ -258,6 +275,11 @@ static_assert(WMMA_STAGES >= 2,
        epilogue enforces that. __align__(16) keeps every wmma fragment       \
        pointer aligned. */                                                   \
     __shared__ __align__(16) char smem_raw[SMEM_TOTAL_BYTES(HALF_T)];        \
+    /* Compile-time guard: an over-budget BLOCK_K/tile/WMMA_STAGES combination \
+       is a build error here, not a launch failure discovered on-device. */   \
+    static_assert(SMEM_TOTAL_BYTES(HALF_T) <= 49152,                          \
+        "WMMA static smem exceeds the 49152 B per-block cap; lower BLOCK_K "  \
+        "or WMMA_STAGES for this tile");                                      \
     /* Guards the SELECTION below, not sizing: SMEM_TOTAL_BYTES already takes \
        a max over the stage footprint, so a size assert could never fail. */  \
     static_assert(WMMA_STAGES == 2,                                           \

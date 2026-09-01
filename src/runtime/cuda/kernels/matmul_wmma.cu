@@ -47,7 +47,7 @@
 // carries the code from `activation_to_u32` (gemm_epilogue/launcher.rs).
 // ---------------------------------------------------------------------------
 
-#define DEFINE_WMMA_MATMUL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN)         \
+#define DEFINE_WMMA_MATMUL(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_##NAME(             \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -56,10 +56,10 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_##NAME(             \
     unsigned int N,                                                           \
     unsigned int K                                                            \
 ) {                                                                           \
-    WMMA_KERNEL_BODY(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C)            \
+    WMMA_KERNEL_BODY(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, A, B, C) \
 }
 
-#define DEFINE_WMMA_MATMUL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN) \
+#define DEFINE_WMMA_MATMUL_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_##NAME(     \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -76,10 +76,11 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_##NAME(     \
     const HALF_T* A_b = A + (b % a_batch_count) * (M * K);                    \
     const HALF_T* B_b = B + (b % b_batch_count) * (K * N);                    \
     HALF_T*       C_b = C + b * (M * N);                                      \
-    WMMA_KERNEL_BODY(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b)      \
+    WMMA_KERNEL_BODY(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN,        \
+                     A_b, B_b, C_b)                                           \
 }
 
-#define DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+#define DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_##NAME(        \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -89,10 +90,11 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_##NAME(        \
     unsigned int N,                                                           \
     unsigned int K                                                            \
 ) {                                                                           \
-    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C, EPI_FN) \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN,    \
+                         A, B, C, EPI_FN)                                     \
 }
 
-#define DEFINE_WMMA_MATMUL_BIAS_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+#define DEFINE_WMMA_MATMUL_BIAS_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_batched_##NAME( \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -110,11 +112,11 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_batched_##NAME( \
     const HALF_T* A_b = A + (b % a_batch_count) * (M * K);                    \
     const HALF_T* B_b = B + (b % b_batch_count) * (K * N);                    \
     HALF_T*       C_b = C + b * (M * N);                                      \
-    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b,  \
-                         EPI_FN)                                              \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN,    \
+                         A_b, B_b, C_b, EPI_FN)                               \
 }
 
-#define DEFINE_WMMA_GEMM_BIAS_ACT(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+#define DEFINE_WMMA_GEMM_BIAS_ACT(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_##NAME(      \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -125,10 +127,11 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_##NAME(      \
     unsigned int K,                                                           \
     unsigned int activation_type                                              \
 ) {                                                                           \
-    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C, EPI_FN) \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN,    \
+                         A, B, C, EPI_FN)                                     \
 }
 
-#define DEFINE_WMMA_GEMM_BIAS_ACT_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+#define DEFINE_WMMA_GEMM_BIAS_ACT_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_batched_##NAME( \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -145,11 +148,11 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_batched_##NAME(
     const HALF_T* A_b = A + b * (M * K);                                      \
     const HALF_T* B_b = B + b * (K * N);                                      \
     HALF_T*       C_b = C + b * (M * N);                                      \
-    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b,  \
-                         EPI_FN)                                              \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN,    \
+                         A_b, B_b, C_b, EPI_FN)                               \
 }
 
-#define DEFINE_WMMA_GEMM_BIAS_RESIDUAL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+#define DEFINE_WMMA_GEMM_BIAS_RESIDUAL(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_##NAME( \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -161,10 +164,11 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_##NAME( \
     unsigned int K                                                            \
 ) {                                                                           \
     const HALF_T* res_ptr = residual;                                         \
-    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C, EPI_FN) \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN,    \
+                         A, B, C, EPI_FN)                                     \
 }
 
-#define DEFINE_WMMA_GEMM_BIAS_RESIDUAL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+#define DEFINE_WMMA_GEMM_BIAS_RESIDUAL_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_##NAME( \
     const HALF_T* __restrict__ A,                                             \
     const HALF_T* __restrict__ B,                                             \
@@ -182,41 +186,45 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_##
     const HALF_T* B_b = B + b * (K * N);                                      \
     const HALF_T* res_ptr = residual + b * (M * N);                           \
     HALF_T*       C_b = C + b * (M * N);                                      \
-    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b,  \
-                         EPI_FN)                                              \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN,    \
+                         A_b, B_b, C_b, EPI_FN)                               \
 }
 
-/* All eight families at one dtype and one tile. */
-#define DEFINE_WMMA_FAMILY(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,          \
+/* All eight families at one dtype, one tile, one BLOCK_K. */
+#define DEFINE_WMMA_FAMILY(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN, \
                            EPI_BIAS, EPI_ACT, EPI_RESIDUAL)                    \
-    DEFINE_WMMA_MATMUL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN)              \
-    DEFINE_WMMA_MATMUL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN)      \
-    DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,         \
-                            EPI_BIAS)                                          \
-    DEFINE_WMMA_MATMUL_BIAS_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, \
-                                    EPI_BIAS)                                  \
-    DEFINE_WMMA_GEMM_BIAS_ACT(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,       \
-                              EPI_ACT)                                         \
-    DEFINE_WMMA_GEMM_BIAS_ACT_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR,         \
-                                      STORE_FN, EPI_ACT)                       \
-    DEFINE_WMMA_GEMM_BIAS_RESIDUAL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,  \
-                                   EPI_RESIDUAL)                               \
-    DEFINE_WMMA_GEMM_BIAS_RESIDUAL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR,    \
-                                           STORE_FN, EPI_RESIDUAL)
+    DEFINE_WMMA_MATMUL(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR, STORE_FN) \
+    DEFINE_WMMA_MATMUL_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR,   \
+                               STORE_FN)                                      \
+    DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR,      \
+                            STORE_FN, EPI_BIAS)                               \
+    DEFINE_WMMA_MATMUL_BIAS_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T,         \
+                                    ZERO_EXPR, STORE_FN, EPI_BIAS)             \
+    DEFINE_WMMA_GEMM_BIAS_ACT(NAME, WM, WN, BLOCK_K_VAL, HALF_T, ZERO_EXPR,     \
+                              STORE_FN, EPI_ACT)                              \
+    DEFINE_WMMA_GEMM_BIAS_ACT_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T,       \
+                                      ZERO_EXPR, STORE_FN, EPI_ACT)            \
+    DEFINE_WMMA_GEMM_BIAS_RESIDUAL(NAME, WM, WN, BLOCK_K_VAL, HALF_T,          \
+                                   ZERO_EXPR, STORE_FN, EPI_RESIDUAL)          \
+    DEFINE_WMMA_GEMM_BIAS_RESIDUAL_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T,   \
+                                           ZERO_EXPR, STORE_FN, EPI_RESIDUAL)
 
 // ---------------------------------------------------------------------------
 // F16, all three tiles.
 // ---------------------------------------------------------------------------
 
-DEFINE_WMMA_FAMILY(f16_128x128, 2, 2, __half, __float2half(0.0f), __float2half,
+DEFINE_WMMA_FAMILY(f16_128x128, 2, 2, WMMA_BLOCK_K_DEFAULT, __half,
+                   __float2half(0.0f), __float2half,
                    WMMA_EPILOGUE_BIAS_F16, WMMA_EPILOGUE_BIAS_ACT_F16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
 
-DEFINE_WMMA_FAMILY(f16_128x64, 2, 1, __half, __float2half(0.0f), __float2half,
+DEFINE_WMMA_FAMILY(f16_128x64, 2, 1, WMMA_BLOCK_K_DEFAULT, __half,
+                   __float2half(0.0f), __float2half,
                    WMMA_EPILOGUE_BIAS_F16, WMMA_EPILOGUE_BIAS_ACT_F16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
 
-DEFINE_WMMA_FAMILY(f16_64x64, 1, 1, __half, __float2half(0.0f), __float2half,
+DEFINE_WMMA_FAMILY(f16_64x64, 1, 1, WMMA_BLOCK_K_DEFAULT, __half,
+                   __float2half(0.0f), __float2half,
                    WMMA_EPILOGUE_BIAS_F16, WMMA_EPILOGUE_BIAS_ACT_F16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
 
@@ -233,17 +241,20 @@ DEFINE_WMMA_FAMILY(f16_64x64, 1, 1, __half, __float2half(0.0f), __float2half,
 
 #if __CUDA_ARCH__ >= 800
 
-DEFINE_WMMA_FAMILY(bf16_128x128, 2, 2, __nv_bfloat16, __float2bfloat16(0.0f),
+DEFINE_WMMA_FAMILY(bf16_128x128, 2, 2, WMMA_BLOCK_K_DEFAULT, __nv_bfloat16,
+                   __float2bfloat16(0.0f),
                    __float2bfloat16, WMMA_EPILOGUE_BIAS_BF16,
                    WMMA_EPILOGUE_BIAS_ACT_BF16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
 
-DEFINE_WMMA_FAMILY(bf16_128x64, 2, 1, __nv_bfloat16, __float2bfloat16(0.0f),
+DEFINE_WMMA_FAMILY(bf16_128x64, 2, 1, WMMA_BLOCK_K_DEFAULT, __nv_bfloat16,
+                   __float2bfloat16(0.0f),
                    __float2bfloat16, WMMA_EPILOGUE_BIAS_BF16,
                    WMMA_EPILOGUE_BIAS_ACT_BF16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
 
-DEFINE_WMMA_FAMILY(bf16_64x64, 1, 1, __nv_bfloat16, __float2bfloat16(0.0f),
+DEFINE_WMMA_FAMILY(bf16_64x64, 1, 1, WMMA_BLOCK_K_DEFAULT, __nv_bfloat16,
+                   __float2bfloat16(0.0f),
                    __float2bfloat16, WMMA_EPILOGUE_BIAS_BF16,
                    WMMA_EPILOGUE_BIAS_ACT_BF16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
