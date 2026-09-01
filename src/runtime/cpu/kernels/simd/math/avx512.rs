@@ -8,7 +8,7 @@
 //! | Function | f32 | f64 | Relative Error |
 //! |----------|-----|-----|----------------|
 //! | exp      | ✓   | ✓   | < 1e-6 / 1e-12 |
-//! | tanh     | ✓   | ✓   | < 1e-6 / 1e-12 |
+//! | tanh     | ✓   | ✓   | < 1e-6 / 2 ulp |
 //! | log      | ✓   | ✓   | < 1e-6 / 2 ulp |
 //! | sin      | ✓   | ✓   | < 1e-6 / 4 ulp |
 //! | cos      | ✓   | ✓   | < 1e-6 / 4 ulp |
@@ -31,6 +31,10 @@
 //! poles. Their f32 counterparts reduce with a single rounded π/2 and use
 //! truncated Taylor series, so they are far coarser than f32 epsilon.
 //!
+//! exp2, expm1, sinh, tanh, asinh, acosh and atanh hold below 2 ulps in f64.
+//! Their f32 counterparts still compose from `exp` and `log` and cancel at
+//! small arguments, where the result is the difference that vanishes.
+//!
 //! # Safety
 //!
 //! All functions require AVX-512F CPU feature.
@@ -45,8 +49,8 @@
 use std::arch::x86_64::*;
 
 use super::common::{
-    asin_coefficients, atan_coefficients, exp_coefficients, log_coefficients, tan_coefficients,
-    trig_coefficients,
+    asin_coefficients, atan_coefficients, exp_coefficients, exp2_coefficients,
+    inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients, trig_coefficients,
 };
 
 // ============================================================================
@@ -208,21 +212,48 @@ pub unsafe fn tanh_f32(x: __m512) -> __m512 {
     _mm512_div_ps(num, den)
 }
 
-/// Fast SIMD tanh approximation for f64 using AVX-512
+/// Fast SIMD tanh for f64 using AVX-512
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `(e^2x - 1)/(e^2x + 1)` cancels the
+/// whole numerator away as x approaches zero; `u/(u+2)` with `u = expm1(2|x|)`
+/// never forms that difference.
 ///
 /// # Safety
 /// Requires AVX-512F CPU feature.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn tanh_f64(x: __m512d) -> __m512d {
-    let two = _mm512_set1_pd(2.0);
-    let one = _mm512_set1_pd(1.0);
+    let a = _mm512_abs_pd(x);
+    let u = expm1_f64(_mm512_add_pd(a, a));
 
-    let exp2x = exp_f64(_mm512_mul_pd(two, x));
-    let num = _mm512_sub_pd(exp2x, one);
-    let den = _mm512_add_pd(exp2x, one);
+    let d = _mm512_div_pd(u, _mm512_add_pd(u, _mm512_set1_pd(2.0)));
+    // u saturates to infinity past |x| = 355; the limit of u/(u+2) there is 1,
+    // whereas the quotient itself would be inf/inf.
+    let is_inf = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(u, _mm512_set1_pd(f64::INFINITY));
+    let d = _mm512_mask_blend_pd(is_inf, d, _mm512_set1_pd(1.0));
 
-    _mm512_div_pd(num, den)
+    // The sign rides the sign bit, so tanh(-0) is -0 and tanh(-inf) is -1.
+    copy_sign_f64(d, x)
+}
+
+/// OR the sign bit of `source` into `magnitude`, which must be non-negative or
+/// NaN — every caller here computes it from `|x|`.
+///
+/// The odd hyperbolic functions all work on `|x|` and restore the sign here, so
+/// that ±0 and ±inf come back with the sign they went in with.
+///
+/// Bit masks go through the integer domain: `_mm512_and_si512` and
+/// `_mm512_or_si512` are AVX-512F, while `_mm512_and_pd`/`_mm512_or_pd` require
+/// AVX-512DQ, which `detect_simd` does not check for.
+///
+/// # Safety
+/// Requires AVX-512F CPU feature.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn copy_sign_f64(magnitude: __m512d, source: __m512d) -> __m512d {
+    let sign_bit = _mm512_set1_epi64(0x8000_0000_0000_0000u64 as i64);
+    let sign = _mm512_and_si512(_mm512_castpd_si512(source), sign_bit);
+    _mm512_castsi512_pd(_mm512_or_si512(_mm512_castpd_si512(magnitude), sign))
 }
 
 // ============================================================================
@@ -894,11 +925,59 @@ pub unsafe fn exp2_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD exp2 (2^x) for f64 using AVX-512
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. Borrowing `exp(x * ln2)` would
+/// round the product once, and the exponential turns that absolute error into
+/// a relative one — about 1e-13 near |x| = 1000.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn exp2_f64(x: __m512d) -> __m512d {
-    let ln2 = _mm512_set1_pd(std::f64::consts::LN_2);
-    exp_f64(_mm512_mul_pd(x, ln2))
+    use exp2_coefficients::*;
+
+    let xc = _mm512_max_pd(x, _mm512_set1_pd(MIN_F64));
+    let xc = _mm512_min_pd(xc, _mm512_set1_pd(MAX_F64));
+
+    // Both n and r are exact, so nothing is lost before the polynomial.
+    let n = _mm512_roundscale_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(xc);
+    let r = _mm512_sub_pd(xc, n);
+
+    let mut poly = _mm512_set1_pd(C13_F64);
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C12_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C11_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C10_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C9_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C8_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C7_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C6_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C5_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C4_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C3_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C2_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C1_F64));
+    poly = _mm512_fmadd_pd(poly, r, _mm512_set1_pd(C0_F64));
+
+    // Split the power of two in half: both factors stay normal, an overflow
+    // reaches infinity in the second multiply, and a subnormal result takes
+    // exactly one rounding because the first multiply is exact.
+    let n_hi = _mm512_roundscale_pd::<{ _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC }>(_mm512_mul_pd(
+        n,
+        _mm512_set1_pd(0.5),
+    ));
+    let n_lo = _mm512_sub_pd(n, n_hi);
+    let bias = _mm512_set1_epi64(1023);
+    let p_hi = _mm512_castsi512_pd(_mm512_slli_epi64::<52>(_mm512_add_epi64(
+        _mm512_cvtpd_epi64(n_hi),
+        bias,
+    )));
+    let p_lo = _mm512_castsi512_pd(_mm512_slli_epi64::<52>(_mm512_add_epi64(
+        _mm512_cvtpd_epi64(n_lo),
+        bias,
+    )));
+    let out = _mm512_mul_pd(_mm512_mul_pd(poly, p_hi), p_lo);
+
+    // max/min return their second operand for NaN, so the clamp above turns a
+    // NaN input into -1075. Restore it.
+    _mm512_mask_blend_pd(_mm512_cmp_pd_mask::<_CMP_UNORD_Q>(x, x), out, x)
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f32 using AVX-512
@@ -924,24 +1003,65 @@ pub unsafe fn expm1_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f64 using AVX-512
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. A degree-4 Taylor series on
+/// |x| <= 0.5 drops `x⁵/120`, which is 2.6e-4 at the interval edge — twelve
+/// decimal digits short of double precision.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn expm1_f64(x: __m512d) -> __m512d {
-    let one = _mm512_set1_pd(1.0);
-    let half = _mm512_set1_pd(0.5);
-    let abs_x = _mm512_abs_pd(x);
+    use exp_coefficients::*;
 
-    let x2 = _mm512_mul_pd(x, x);
-    let x3 = _mm512_mul_pd(x2, x);
-    let x4 = _mm512_mul_pd(x2, x2);
-    let c2 = _mm512_set1_pd(0.5);
-    let c3 = _mm512_set1_pd(1.0 / 6.0);
-    let c4 = _mm512_set1_pd(1.0 / 24.0);
-    let taylor = _mm512_fmadd_pd(c4, x4, _mm512_fmadd_pd(c3, x3, _mm512_fmadd_pd(c2, x2, x)));
+    let xc = _mm512_max_pd(x, _mm512_set1_pd(EXPM1_MIN_F64));
+    let xc = _mm512_min_pd(xc, _mm512_set1_pd(EXPM1_MAX_F64));
 
-    let exp_result = _mm512_sub_pd(exp_f64(x), one);
-    let mask = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(abs_x, half);
-    _mm512_mask_blend_pd(mask, taylor, exp_result)
+    let y = _mm512_mul_pd(xc, _mm512_set1_pd(std::f64::consts::LOG2_E));
+    let n = _mm512_roundscale_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(y);
+
+    // Cody-Waite reduction, identical to exp_f64: r = x - n*ln2, |r| <= ln2/2.
+    let r = _mm512_fnmadd_pd(n, _mm512_set1_pd(LN2_HI_F64), xc);
+    let r = _mm512_fnmadd_pd(n, _mm512_set1_pd(LN2_LO_F64), r);
+
+    // Q is the exp series from its r² term up, so expm1(r) = r + r²*Q(r) keeps
+    // r itself outside the polynomial and never rounds against a leading 1.
+    let mut q = _mm512_set1_pd(C13_F64);
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C12_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C11_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C10_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C9_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C8_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C7_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C6_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C5_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C4_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C3_F64));
+    q = _mm512_fmadd_pd(q, r, _mm512_set1_pd(C2_F64));
+    let e = _mm512_fmadd_pd(_mm512_mul_pd(r, r), q, r);
+
+    // 2^n*(1+E) - 1 = 2*(t*E + (t - 0.5)) with t = 2^(n-1). t and t - 0.5 are
+    // both exact, and at n = 0 they are 0.5 and 0, so the result is E itself.
+    // The halved scale also keeps n = 1024 representable, so the overflow
+    // happens in the final doubling rather than in 2^n.
+    let bias = _mm512_set1_epi64(1023 - 1);
+    let t = _mm512_castsi512_pd(_mm512_slli_epi64::<52>(_mm512_add_epi64(
+        _mm512_cvtpd_epi64(n),
+        bias,
+    )));
+    let out = _mm512_mul_pd(
+        _mm512_set1_pd(2.0),
+        _mm512_fmadd_pd(t, e, _mm512_sub_pd(t, _mm512_set1_pd(0.5))),
+    );
+
+    // At n = 0 the scale is exactly 1 and the answer is E itself. Taking it
+    // directly matters for a subnormal E, where the halved form's `0.5 * E`
+    // rounds the last bit to even and loses the whole value.
+    let no_scale = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(n, _mm512_setzero_pd());
+    let out = _mm512_mask_blend_pd(no_scale, out, e);
+
+    // expm1(±0) = ±0, and the clamp above would otherwise silence NaN.
+    let is_zero = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(x, _mm512_setzero_pd());
+    let out = _mm512_mask_blend_pd(is_zero, out, x);
+    _mm512_mask_blend_pd(_mm512_cmp_pd_mask::<_CMP_UNORD_Q>(x, x), out, x)
 }
 
 /// Fast SIMD log2 for f32 using AVX-512
@@ -1051,13 +1171,24 @@ pub unsafe fn sinh_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD sinh for f64 using AVX-512
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `(e^x - e^-x)/2` subtracts two
+/// values that both approach 1 as x approaches 0, so it keeps none of the
+/// result; `(u + u/(1+u))/2` with `u = expm1(|x|)` keeps all of it.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn sinh_f64(x: __m512d) -> __m512d {
-    let half = _mm512_set1_pd(0.5);
-    let exp_x = exp_f64(x);
-    let exp_neg_x = exp_f64(_mm512_sub_pd(_mm512_setzero_pd(), x));
-    _mm512_mul_pd(half, _mm512_sub_pd(exp_x, exp_neg_x))
+    let one = _mm512_set1_pd(1.0);
+    let a = _mm512_abs_pd(x);
+    let u = expm1_f64(a);
+
+    let d = _mm512_div_pd(u, _mm512_add_pd(one, u));
+    // u/(1+u) tends to 1 as u overflows, where the quotient itself is inf/inf.
+    let is_inf = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(u, _mm512_set1_pd(f64::INFINITY));
+    let d = _mm512_mask_blend_pd(is_inf, d, one);
+    let s = _mm512_mul_pd(_mm512_set1_pd(0.5), _mm512_add_pd(u, d));
+
+    copy_sign_f64(s, x)
 }
 
 /// Fast SIMD cosh for f32 using AVX-512
@@ -1091,13 +1222,38 @@ pub unsafe fn asinh_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD asinh for f64 using AVX-512
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `log(x + sqrt(x²+1))` cancels for
+/// every negative x — at x = -49.6 the two addends agree to twelve digits —
+/// so the sign is taken out first and the work is done on |x|.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn asinh_f64(x: __m512d) -> __m512d {
+    use inv_hyperbolic_breakpoints::{BIG_F64, NEAR_F64};
+
     let one = _mm512_set1_pd(1.0);
-    let x2 = _mm512_mul_pd(x, x);
-    let sqrt_term = _mm512_sqrt_pd(_mm512_add_pd(x2, one));
-    log_f64(_mm512_add_pd(x, sqrt_term))
+    let a = _mm512_abs_pd(x);
+    let t = _mm512_mul_pd(a, a);
+    let root = _mm512_sqrt_pd(_mm512_add_pd(t, one));
+
+    // a <= 2: a + a²/(1 + sqrt(1+a²)) is sqrt(1+a²) - 1 + a without the
+    // subtraction, and log1p keeps its low bits down to the subnormal range.
+    let near = log1p_f64(_mm512_add_pd(a, _mm512_div_pd(t, _mm512_add_pd(one, root))));
+    // 2 < a <= 2^28: the same identity with the reciprocal written out.
+    let mid = log_f64(_mm512_fmadd_pd(
+        _mm512_set1_pd(2.0),
+        a,
+        _mm512_div_pd(one, _mm512_add_pd(root, a)),
+    ));
+    // a > 2^28: sqrt(a²+1) equals a in double, so asinh collapses to log(2a).
+    let far = _mm512_add_pd(log_f64(a), _mm512_set1_pd(std::f64::consts::LN_2));
+
+    let is_mid = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(a, _mm512_set1_pd(NEAR_F64));
+    let is_far = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(a, _mm512_set1_pd(BIG_F64));
+    let r = _mm512_mask_blend_pd(is_mid, near, mid);
+    let r = _mm512_mask_blend_pd(is_far, r, far);
+
+    copy_sign_f64(r, x)
 }
 
 /// Fast SIMD acosh for f32 using AVX-512
@@ -1111,13 +1267,41 @@ pub unsafe fn acosh_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD acosh for f64 using AVX-512
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. Forming `x² - 1` near x = 1 throws
+/// away half the significant bits of `x - 1`, which is the whole result there.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn acosh_f64(x: __m512d) -> __m512d {
+    use inv_hyperbolic_breakpoints::{BIG_F64, NEAR_F64};
+
     let one = _mm512_set1_pd(1.0);
-    let x2 = _mm512_mul_pd(x, x);
-    let sqrt_term = _mm512_sqrt_pd(_mm512_sub_pd(x2, one));
-    log_f64(_mm512_add_pd(x, sqrt_term))
+    let two = _mm512_set1_pd(2.0);
+    let t = _mm512_sub_pd(x, one);
+
+    // 1 <= x < 2: acosh(1+t) = log1p(t + sqrt(2t + t²)), which never forms a
+    // difference of two nearly equal quantities.
+    let disc = _mm512_sqrt_pd(_mm512_fmadd_pd(t, t, _mm512_mul_pd(two, t)));
+    let near = log1p_f64(_mm512_add_pd(t, disc));
+    // 2 <= x <= 2^28.
+    let root = _mm512_sqrt_pd(_mm512_fmsub_pd(x, x, one));
+    let mid = log_f64(_mm512_fmsub_pd(
+        two,
+        x,
+        _mm512_div_pd(one, _mm512_add_pd(x, root)),
+    ));
+    // x > 2^28: sqrt(x²-1) equals x in double, so acosh collapses to log(2x).
+    let far = _mm512_add_pd(log_f64(x), _mm512_set1_pd(std::f64::consts::LN_2));
+
+    let is_mid = _mm512_cmp_pd_mask::<_CMP_GE_OQ>(x, _mm512_set1_pd(NEAR_F64));
+    let is_far = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(x, _mm512_set1_pd(BIG_F64));
+    let r = _mm512_mask_blend_pd(is_mid, near, mid);
+    let r = _mm512_mask_blend_pd(is_far, r, far);
+
+    // acosh is undefined below 1. NaN fails the ordered compare and keeps the
+    // NaN the log1p branch already produced.
+    let below = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(x, one);
+    _mm512_mask_blend_pd(below, r, _mm512_set1_pd(f64::NAN))
 }
 
 /// Fast SIMD atanh for f32 using AVX-512
@@ -1133,15 +1317,32 @@ pub unsafe fn atanh_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD atanh for f64 using AVX-512
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `0.5*log((1+x)/(1-x))` rounds
+/// `1 + x` before the log, which at x = 7e-4 discards every bit the result is
+/// made of; log1p keeps them.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn atanh_f64(x: __m512d) -> __m512d {
-    let half = _mm512_set1_pd(0.5);
+    use inv_hyperbolic_breakpoints::ATANH_SPLIT_F64;
+
     let one = _mm512_set1_pd(1.0);
-    let one_plus_x = _mm512_add_pd(one, x);
-    let one_minus_x = _mm512_sub_pd(one, x);
-    let ratio = _mm512_div_pd(one_plus_x, one_minus_x);
-    _mm512_mul_pd(half, log_f64(ratio))
+    let a = _mm512_abs_pd(x);
+    let t = _mm512_add_pd(a, a);
+    let den = _mm512_sub_pd(one, a);
+
+    // a < 0.5: t + t*a/(1-a) is 2a/(1-a) written so the leading term stays
+    // exact, which is what carries atanh(x) == x through the subnormal range.
+    let small = log1p_f64(_mm512_add_pd(t, _mm512_div_pd(_mm512_mul_pd(t, a), den)));
+    // 0.5 <= a: at a = 1 the quotient is +inf and log1p returns +inf; past 1 it
+    // is at most -2, so log1p of it is NaN.
+    let large = log1p_f64(_mm512_div_pd(t, den));
+
+    let is_small = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(a, _mm512_set1_pd(ATANH_SPLIT_F64));
+    let picked = _mm512_mask_blend_pd(is_small, large, small);
+    let r = _mm512_mul_pd(_mm512_set1_pd(0.5), picked);
+
+    copy_sign_f64(r, x)
 }
 
 /// Fast SIMD asin for f32 using AVX-512

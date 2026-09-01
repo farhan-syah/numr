@@ -10,6 +10,15 @@ type Kernel = fn(&CpuClient, &Tensor<CpuRuntime>) -> numr::error::Result<Tensor<
 /// Name, kernel under test, reference, and the closed interval to sweep.
 type Case = (&'static str, Kernel, fn(f64) -> f64, f64, f64);
 
+/// `f64::atanh` is the one function here Rust std does not delegate to libm:
+/// it is `0.5 * ((2x)/(1-x)).ln_1p()`, which is not odd-symmetric and loses
+/// accuracy without bound as `x -> -1`. Evaluating it on the positive side and
+/// negating gives the accurate branch for both signs, so the survey measures
+/// the kernel rather than the reference.
+fn atanh_reference(x: f64) -> f64 {
+    if x < 0.0 { -(-x).atanh() } else { x.atanh() }
+}
+
 fn main() {
     let device = CpuDevice::default();
     let client = CpuRuntime::default_client(&device);
@@ -36,7 +45,7 @@ fn main() {
         ("tanh", |c, t| c.tanh(t), f64::tanh, -10.0, 10.0),
         ("asinh", |c, t| c.asinh(t), f64::asinh, -50.0, 50.0),
         ("acosh", |c, t| c.acosh(t), f64::acosh, 1.01, 50.0),
-        ("atanh", |c, t| c.atanh(t), f64::atanh, -0.99, 0.99),
+        ("atanh", |c, t| c.atanh(t), atanh_reference, -0.99, 0.99),
     ];
 
     const N: usize = 4096;

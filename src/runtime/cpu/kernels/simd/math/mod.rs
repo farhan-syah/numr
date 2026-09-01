@@ -10,7 +10,7 @@
 //! | Function | f32 | f64 | Algorithm |
 //! |----------|-----|-----|-----------|
 //! | exp      | ✓   | ✓   | Range reduction + Taylor series |
-//! | tanh     | ✓   | ✓   | Based on exp: (e^2x - 1)/(e^2x + 1) |
+//! | tanh     | ✓   | ✓   | f32 (e^2x - 1)/(e^2x + 1); f64 u/(u+2), u = expm1(2\|x\|) |
 //! | log      | ✓   | ✓   | Exponent extraction + minimax polynomial |
 //! | sin      | ✓   | ✓   | Range reduction + Taylor series |
 //! | cos      | ✓   | ✓   | sin(x + π/2) |

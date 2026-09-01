@@ -8,7 +8,7 @@
 //! | Function | f32 | f64 | Relative Error |
 //! |----------|-----|-----|----------------|
 //! | exp      | 4   | 2   | < 1e-6 / 1e-12 |
-//! | tanh     | 4   | 2   | < 1e-6 / 1e-12 |
+//! | tanh     | 4   | 2   | < 1e-6 / 2 ulp |
 //! | log      | 4   | 2   | < 1e-6 / 2 ulp |
 //! | sin      | 4   | 2   | < 1e-6 / 4 ulp |
 //! | cos      | 4   | 2   | < 1e-6 / 4 ulp |
@@ -31,6 +31,10 @@
 //! poles. Their f32 counterparts reduce with a single rounded π/2 and use
 //! truncated Taylor series, so they are far coarser than f32 epsilon.
 //!
+//! exp2, expm1, sinh, tanh, asinh, acosh and atanh hold below 2 ulps in f64.
+//! Their f32 counterparts still compose from `exp` and `log` and cancel at
+//! small arguments, where the result is the difference that vanishes.
+//!
 //! # Safety
 //!
 //! All functions require NEON CPU features (always available on AArch64).
@@ -39,8 +43,8 @@
 use std::arch::aarch64::*;
 
 use super::super::common::{
-    asin_coefficients, atan_coefficients, exp_coefficients, log_coefficients, tan_coefficients,
-    trig_coefficients,
+    asin_coefficients, atan_coefficients, exp_coefficients, exp2_coefficients,
+    inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients, trig_coefficients,
 };
 
 // ============================================================================
@@ -268,19 +272,40 @@ pub unsafe fn tanh_f32(x: float32x4_t) -> float32x4_t {
     vdivq_f32(num, den)
 }
 
-/// Fast SIMD tanh approximation for f64 using NEON
+/// Fast SIMD tanh for f64 using NEON
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `(e^2x - 1)/(e^2x + 1)` cancels the
+/// whole numerator away as x approaches zero; `u/(u+2)` with `u = expm1(2|x|)`
+/// never forms that difference.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn tanh_f64(x: float64x2_t) -> float64x2_t {
-    let two = vdupq_n_f64(2.0);
-    let one = vdupq_n_f64(1.0);
+    let a = vabsq_f64(x);
+    let u = expm1_f64(vaddq_f64(a, a));
 
-    let exp2x = exp_f64(vmulq_f64(two, x));
-    let num = vsubq_f64(exp2x, one);
-    let den = vaddq_f64(exp2x, one);
+    let d = vdivq_f64(u, vaddq_f64(u, vdupq_n_f64(2.0)));
+    // u saturates to infinity past |x| = 355; the limit of u/(u+2) there is 1,
+    // whereas the quotient itself would be inf/inf.
+    let is_inf = vceqq_f64(u, vdupq_n_f64(f64::INFINITY));
+    let d = vbslq_f64(is_inf, vdupq_n_f64(1.0), d);
 
-    vdivq_f64(num, den)
+    // The sign rides the sign bit, so tanh(-0) is -0 and tanh(-inf) is -1.
+    copy_sign_f64(d, x)
+}
+
+/// OR the sign bit of `source` into `magnitude`, which must be non-negative or
+/// NaN — every caller here computes it from `|x|`.
+///
+/// The odd hyperbolic functions all work on `|x|` and restore the sign here, so
+/// that ±0 and ±inf come back with the sign they went in with.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn copy_sign_f64(magnitude: float64x2_t, source: float64x2_t) -> float64x2_t {
+    let sign_mask = vdupq_n_u64(0x8000_0000_0000_0000);
+    let sign = vandq_u64(vreinterpretq_u64_f64(source), sign_mask);
+    vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_f64(magnitude), sign))
 }
 
 // ============================================================================
@@ -949,12 +974,52 @@ pub unsafe fn exp2_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD exp2 (2^x) for f64 using NEON
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. Borrowing `exp(x * ln2)` would
+/// round the product once, and the exponential turns that absolute error into
+/// a relative one — about 1e-13 near |x| = 1000.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn exp2_f64(x: float64x2_t) -> float64x2_t {
-    let ln2 = vdupq_n_f64(std::f64::consts::LN_2);
-    exp_f64(vmulq_f64(x, ln2))
+    use exp2_coefficients::*;
+
+    let xc = vmaxq_f64(x, vdupq_n_f64(MIN_F64));
+    let xc = vminq_f64(xc, vdupq_n_f64(MAX_F64));
+
+    // Both n and r are exact, so nothing is lost before the polynomial.
+    let n = vrndnq_f64(xc);
+    let r = vsubq_f64(xc, n);
+
+    let mut poly = vdupq_n_f64(C13_F64);
+    poly = vfmaq_f64(vdupq_n_f64(C12_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C11_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C10_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C9_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C8_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C7_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C6_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C5_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C4_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C3_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C2_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C1_F64), poly, r);
+    poly = vfmaq_f64(vdupq_n_f64(C0_F64), poly, r);
+
+    // Split the power of two in half: both factors stay normal, an overflow
+    // reaches infinity in the second multiply, and a subnormal result takes
+    // exactly one rounding because the first multiply is exact.
+    let n_hi = vrndq_f64(vmulq_f64(n, vdupq_n_f64(0.5)));
+    let n_lo = vsubq_f64(n, n_hi);
+    let bias = vdupq_n_s64(1023);
+    let p_hi = vreinterpretq_f64_s64(vshlq_n_s64::<52>(vaddq_s64(vcvtq_s64_f64(n_hi), bias)));
+    let p_lo = vreinterpretq_f64_s64(vshlq_n_s64::<52>(vaddq_s64(vcvtq_s64_f64(n_lo), bias)));
+    let out = vmulq_f64(vmulq_f64(poly, p_hi), p_lo);
+
+    // Restore NaN explicitly rather than relying on FMAX/FMIN propagating it,
+    // so this path matches the x86 ones, where max/min return their second
+    // operand and the clamp would swallow it.
+    vbslq_f64(vceqq_f64(x, x), out, x)
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f32 using NEON
@@ -984,25 +1049,61 @@ pub unsafe fn expm1_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f64 using NEON
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. A degree-4 Taylor series on
+/// |x| <= 0.5 drops `x⁵/120`, which is 2.6e-4 at the interval edge — twelve
+/// decimal digits short of double precision.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn expm1_f64(x: float64x2_t) -> float64x2_t {
-    let one = vdupq_n_f64(1.0);
-    let half = vdupq_n_f64(0.5);
-    let abs_x = vabsq_f64(x);
+    use exp_coefficients::*;
 
-    let x2 = vmulq_f64(x, x);
-    let x3 = vmulq_f64(x2, x);
-    let x4 = vmulq_f64(x2, x2);
-    let c2 = vdupq_n_f64(0.5);
-    let c3 = vdupq_n_f64(1.0 / 6.0);
-    let c4 = vdupq_n_f64(1.0 / 24.0);
-    let taylor = vfmaq_f64(vfmaq_f64(vfmaq_f64(x, c2, x2), c3, x3), c4, x4);
+    let xc = vmaxq_f64(x, vdupq_n_f64(EXPM1_MIN_F64));
+    let xc = vminq_f64(xc, vdupq_n_f64(EXPM1_MAX_F64));
 
-    let exp_result = vsubq_f64(exp_f64(x), one);
-    let mask = vcgtq_f64(abs_x, half);
-    vbslq_f64(mask, exp_result, taylor)
+    let y = vmulq_f64(xc, vdupq_n_f64(std::f64::consts::LOG2_E));
+    let n = vrndnq_f64(y);
+
+    // Cody-Waite reduction, identical to exp_f64: r = x - n*ln2, |r| <= ln2/2.
+    let r = vfmsq_f64(xc, n, vdupq_n_f64(LN2_HI_F64));
+    let r = vfmsq_f64(r, n, vdupq_n_f64(LN2_LO_F64));
+
+    // Q is the exp series from its r² term up, so expm1(r) = r + r²*Q(r) keeps
+    // r itself outside the polynomial and never rounds against a leading 1.
+    let mut q = vdupq_n_f64(C13_F64);
+    q = vfmaq_f64(vdupq_n_f64(C12_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C11_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C10_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C9_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C8_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C7_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C6_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C5_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C4_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C3_F64), q, r);
+    q = vfmaq_f64(vdupq_n_f64(C2_F64), q, r);
+    let e = vfmaq_f64(r, vmulq_f64(r, r), q);
+
+    // 2^n*(1+E) - 1 = 2*(t*E + (t - 0.5)) with t = 2^(n-1). t and t - 0.5 are
+    // both exact, and at n = 0 they are 0.5 and 0, so the result is E itself.
+    // The halved scale also keeps n = 1024 representable, so the overflow
+    // happens in the final doubling rather than in 2^n.
+    let bias = vdupq_n_s64(1023 - 1);
+    let t = vreinterpretq_f64_s64(vshlq_n_s64::<52>(vaddq_s64(vcvtq_s64_f64(n), bias)));
+    let out = vmulq_f64(
+        vdupq_n_f64(2.0),
+        vfmaq_f64(vsubq_f64(t, vdupq_n_f64(0.5)), t, e),
+    );
+
+    // At n = 0 the scale is exactly 1 and the answer is E itself. Taking it
+    // directly matters for a subnormal E, where the halved form's `0.5 * E`
+    // rounds the last bit to even and loses the whole value.
+    let out = vbslq_f64(vceqq_f64(n, vdupq_n_f64(0.0)), e, out);
+
+    // expm1(±0) = ±0, and the clamp above would otherwise silence NaN.
+    let out = vbslq_f64(vceqq_f64(x, vdupq_n_f64(0.0)), x, out);
+    vbslq_f64(vceqq_f64(x, x), out, x)
 }
 
 /// Fast SIMD log2 for f32 using NEON
@@ -1121,14 +1222,25 @@ pub unsafe fn sinh_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD sinh for f64 using NEON
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `(e^x - e^-x)/2` subtracts two
+/// values that both approach 1 as x approaches 0, so it keeps none of the
+/// result; `(u + u/(1+u))/2` with `u = expm1(|x|)` keeps all of it.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn sinh_f64(x: float64x2_t) -> float64x2_t {
-    let half = vdupq_n_f64(0.5);
-    let exp_x = exp_f64(x);
-    let exp_neg_x = exp_f64(vnegq_f64(x));
-    vmulq_f64(half, vsubq_f64(exp_x, exp_neg_x))
+    let one = vdupq_n_f64(1.0);
+    let a = vabsq_f64(x);
+    let u = expm1_f64(a);
+
+    let d = vdivq_f64(u, vaddq_f64(one, u));
+    // u/(1+u) tends to 1 as u overflows, where the quotient itself is inf/inf.
+    let is_inf = vceqq_f64(u, vdupq_n_f64(f64::INFINITY));
+    let d = vbslq_f64(is_inf, one, d);
+    let s = vmulq_f64(vdupq_n_f64(0.5), vaddq_f64(u, d));
+
+    copy_sign_f64(s, x)
 }
 
 /// Fast SIMD cosh for f32 using NEON
@@ -1166,14 +1278,34 @@ pub unsafe fn asinh_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD asinh for f64 using NEON
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `log(x + sqrt(x²+1))` cancels for
+/// every negative x — at x = -49.6 the two addends agree to twelve digits —
+/// so the sign is taken out first and the work is done on |x|.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn asinh_f64(x: float64x2_t) -> float64x2_t {
+    use inv_hyperbolic_breakpoints::{BIG_F64, NEAR_F64};
+
     let one = vdupq_n_f64(1.0);
-    let x2 = vmulq_f64(x, x);
-    let sqrt_term = vsqrtq_f64(vaddq_f64(x2, one));
-    log_f64(vaddq_f64(x, sqrt_term))
+    let a = vabsq_f64(x);
+    let t = vmulq_f64(a, a);
+    let root = vsqrtq_f64(vaddq_f64(t, one));
+
+    // a <= 2: a + a²/(1 + sqrt(1+a²)) is sqrt(1+a²) - 1 + a without the
+    // subtraction, and log1p keeps its low bits down to the subnormal range.
+    let near = log1p_f64(vaddq_f64(a, vdivq_f64(t, vaddq_f64(one, root))));
+    // 2 < a <= 2^28: the same identity with the reciprocal written out.
+    let recip = vdivq_f64(one, vaddq_f64(root, a));
+    let mid = log_f64(vfmaq_f64(recip, vdupq_n_f64(2.0), a));
+    // a > 2^28: sqrt(a²+1) equals a in double, so asinh collapses to log(2a).
+    let far = vaddq_f64(log_f64(a), vdupq_n_f64(std::f64::consts::LN_2));
+
+    let r = vbslq_f64(vcgtq_f64(a, vdupq_n_f64(NEAR_F64)), mid, near);
+    let r = vbslq_f64(vcgtq_f64(a, vdupq_n_f64(BIG_F64)), far, r);
+
+    copy_sign_f64(r, x)
 }
 
 /// Fast SIMD acosh for f32 using NEON
@@ -1189,14 +1321,38 @@ pub unsafe fn acosh_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD acosh for f64 using NEON
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. Forming `x² - 1` near x = 1 throws
+/// away half the significant bits of `x - 1`, which is the whole result there.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn acosh_f64(x: float64x2_t) -> float64x2_t {
+    use inv_hyperbolic_breakpoints::{BIG_F64, NEAR_F64};
+
     let one = vdupq_n_f64(1.0);
-    let x2 = vmulq_f64(x, x);
-    let sqrt_term = vsqrtq_f64(vsubq_f64(x2, one));
-    log_f64(vaddq_f64(x, sqrt_term))
+    let two = vdupq_n_f64(2.0);
+    let t = vsubq_f64(x, one);
+
+    // 1 <= x < 2: acosh(1+t) = log1p(t + sqrt(2t + t²)), which never forms a
+    // difference of two nearly equal quantities.
+    let disc = vsqrtq_f64(vfmaq_f64(vaddq_f64(t, t), t, t));
+    let near = log1p_f64(vaddq_f64(t, disc));
+    // 2 <= x <= 2^28.
+    let root = vsqrtq_f64(vfmaq_f64(vdupq_n_f64(-1.0), x, x));
+    let mid = log_f64(vsubq_f64(
+        vmulq_f64(two, x),
+        vdivq_f64(one, vaddq_f64(x, root)),
+    ));
+    // x > 2^28: sqrt(x²-1) equals x in double, so acosh collapses to log(2x).
+    let far = vaddq_f64(log_f64(x), vdupq_n_f64(std::f64::consts::LN_2));
+
+    let r = vbslq_f64(vcgeq_f64(x, vdupq_n_f64(NEAR_F64)), mid, near);
+    let r = vbslq_f64(vcgtq_f64(x, vdupq_n_f64(BIG_F64)), far, r);
+
+    // acosh is undefined below 1. NaN fails the ordered compare and keeps the
+    // NaN the log1p branch already produced.
+    vbslq_f64(vcltq_f64(x, one), vdupq_n_f64(f64::NAN), r)
 }
 
 /// Fast SIMD atanh for f32 using NEON
@@ -1214,16 +1370,32 @@ pub unsafe fn atanh_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD atanh for f64 using NEON
+///
+/// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `0.5*log((1+x)/(1-x))` rounds
+/// `1 + x` before the log, which at x = 7e-4 discards every bit the result is
+/// made of; log1p keeps them.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn atanh_f64(x: float64x2_t) -> float64x2_t {
-    let half = vdupq_n_f64(0.5);
+    use inv_hyperbolic_breakpoints::ATANH_SPLIT_F64;
+
     let one = vdupq_n_f64(1.0);
-    let one_plus_x = vaddq_f64(one, x);
-    let one_minus_x = vsubq_f64(one, x);
-    let ratio = vdivq_f64(one_plus_x, one_minus_x);
-    vmulq_f64(half, log_f64(ratio))
+    let a = vabsq_f64(x);
+    let t = vaddq_f64(a, a);
+    let den = vsubq_f64(one, a);
+
+    // a < 0.5: t + t*a/(1-a) is 2a/(1-a) written so the leading term stays
+    // exact, which is what carries atanh(x) == x through the subnormal range.
+    let small = log1p_f64(vaddq_f64(t, vdivq_f64(vmulq_f64(t, a), den)));
+    // 0.5 <= a: at a = 1 the quotient is +inf and log1p returns +inf; past 1 it
+    // is at most -2, so log1p of it is NaN.
+    let large = log1p_f64(vdivq_f64(t, den));
+
+    let picked = vbslq_f64(vcltq_f64(a, vdupq_n_f64(ATANH_SPLIT_F64)), small, large);
+    let r = vmulq_f64(vdupq_n_f64(0.5), picked);
+
+    copy_sign_f64(r, x)
 }
 
 /// Fast SIMD asin for f32 using NEON

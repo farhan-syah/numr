@@ -56,6 +56,77 @@ pub mod exp_coefficients {
     pub const MAX_F32: f32 = 88.0;
     pub const MIN_F64: f64 = -709.0;
     pub const MAX_F64: f64 = 709.0;
+
+    /// Input clamp range for the f64 expm1 reduction, wider than the exp clamp
+    /// because expm1 rebuilds the scale as `2^(n-1)`. At -708 the result is
+    /// already -1 to within half an ulp; at 710 it overflows, and the halved
+    /// scale keeps `n = 1024` representable so the overflow happens in the
+    /// final doubling instead of in `2^n`.
+    pub const EXPM1_MIN_F64: f64 = -708.0;
+    pub const EXPM1_MAX_F64: f64 = 710.0;
+}
+
+// ============================================================================
+// Polynomial Coefficients for exp2(x)
+// ============================================================================
+
+/// Taylor coefficients `ln(2)^k / k!` for `2^r` on r in [-0.5, 0.5], f64 only.
+///
+/// exp2 gets its own reduction rather than `exp(x * ln2)`: that premultiply
+/// rounds a value as large as 710 to one ulp, and the exponential turns that
+/// absolute error into a relative error of the same size — about 1e-13 near
+/// |x| = 1000. Splitting on `n = round(x)` leaves `r = x - n` exact, so the
+/// reduction contributes no error at all.
+///
+/// Degree 13 leaves `(ln2/2)^14/14! ≈ 4e-18` absolute, below f64 epsilon.
+///
+/// The f32 path keeps the `exp(x * ln2)` form: one f32 rounding of the product
+/// is already below the truncation error of the degree-6 exp kernel.
+pub mod exp2_coefficients {
+    pub const C0_F64: f64 = 1.0;
+    pub const C1_F64: f64 = std::f64::consts::LN_2;
+    pub const C2_F64: f64 = 2.402_265_069_591_007_2e-1;
+    pub const C3_F64: f64 = 5.550_410_866_482_158e-2;
+    pub const C4_F64: f64 = 9.618_129_107_628_477e-3;
+    pub const C5_F64: f64 = 1.333_355_814_642_844_3e-3;
+    pub const C6_F64: f64 = 1.540_353_039_338_161e-4;
+    pub const C7_F64: f64 = 1.525_273_380_405_984_1e-5;
+    pub const C8_F64: f64 = 1.321_548_679_014_431e-6;
+    pub const C9_F64: f64 = 1.017_808_600_923_97e-7;
+    pub const C10_F64: f64 = 7.054_911_620_801_123e-9;
+    pub const C11_F64: f64 = 4.445_538_271_870_811_6e-10;
+    pub const C12_F64: f64 = 2.567_843_599_348_820_6e-11;
+    pub const C13_F64: f64 = 1.369_148_885_390_412_8e-12;
+
+    /// Input clamp range. 2^1024 overflows and 2^-1075 rounds to zero, so
+    /// nothing outside carries information. The scale is applied as two halved
+    /// powers of two, which keeps both factors normal and lets a subnormal
+    /// result take exactly one rounding.
+    pub const MIN_F64: f64 = -1075.0;
+    pub const MAX_F64: f64 = 1024.0;
+}
+
+// ============================================================================
+// Breakpoints for the inverse hyperbolic functions
+// ============================================================================
+
+/// Branch points shared by the f64 asinh, acosh and atanh paths.
+pub mod inv_hyperbolic_breakpoints {
+    /// Above this, `sqrt(x² ± 1)` equals `|x|` in double, so asinh and acosh
+    /// both collapse to `log(|x|) + ln(2)`. Squaring past it would also
+    /// overflow before the log ever sees the argument.
+    pub const BIG_F64: f64 = 268_435_456.0; // 2^28
+
+    /// At or below this, asinh and acosh use their log1p forms. The direct
+    /// `log(x + sqrt(x² ± 1))` cancels here: at x = -49.6 the two addends
+    /// agree to twelve digits, and at x = 1.01 acosh's `x² - 1` loses half the
+    /// significant bits of `x - 1`.
+    pub const NEAR_F64: f64 = 2.0;
+
+    /// atanh switches to the plain `2a/(1-a)` argument at or above this.
+    /// Below it the `t + t*a/(1-a)` form keeps the low bits that forming
+    /// `(1+x)/(1-x)` would round away — the whole result at small |x|.
+    pub const ATANH_SPLIT_F64: f64 = 0.5;
 }
 
 // ============================================================================
@@ -483,3 +554,59 @@ pub const _ATAN_ALGORITHM_DOC: () = ();
 /// - asin(±1) = ±π/2, acos(1) = 0, acos(-1) = π
 /// - |x| > 1 or x = NaN: NaN
 pub const _ASIN_ACOS_ALGORITHM_DOC: () = ();
+
+/// Algorithm for exp2(x) and expm1(x) in f64:
+///
+/// **exp2**: `n = round(x)` and `r = x - n` are both exact, so the reduction
+/// costs nothing. `2^r` comes from the Taylor series in `exp2_coefficients`,
+/// and the scale is applied as `(poly * 2^(n/2)) * 2^(n - n/2)`. Splitting the
+/// power of two keeps both factors normal, so an overflow reaches infinity on
+/// its own and a subnormal result takes exactly one rounding.
+///
+/// **expm1**: the Cody-Waite reduction from `exp`, then
+/// `expm1(r) = r + r²*Q(r)` with `Q` the exp series from its r² term up. The
+/// result is rebuilt as `2 * (t*E + (t - 0.5))` with `t = 2^(n-1)`, which is
+/// exact at n = 0 and never forms `exp(x) - 1` where that subtraction cancels.
+///
+/// # Accuracy
+/// - f64: relative error below 2 ulps over the whole representable range
+///
+/// # Edge Cases
+/// - exp2(-inf) = 0, exp2(+inf) = +inf, exp2 of a subnormal result is exact
+/// - expm1(-inf) = -1, expm1(+inf) = +inf, expm1(±0) = ±0
+/// - NaN propagates; the clamp is undone for NaN because `max`/`min` return
+///   their second operand for it
+pub const _EXP2_EXPM1_ALGORITHM_DOC: () = ();
+
+/// Algorithm for the f64 hyperbolic and inverse hyperbolic functions:
+///
+/// Every one of them is written so that no step subtracts two nearly equal
+/// quantities. The naive forms all fail near zero, where the result itself is
+/// the difference that cancels.
+///
+/// - `sinh(x) = sign(x) * (u + u/(1+u))/2`, `u = expm1(|x|)`
+/// - `tanh(x) = sign(x) * u/(u+2)`, `u = expm1(2|x|)`
+/// - `asinh(x) = sign(x) * log1p(a + a²/(1 + sqrt(1+a²)))` for `a = |x| <= 2`,
+///   `log(2a + 1/(sqrt(a²+1) + a))` up to 2^28, `log(a) + ln2` above
+/// - `acosh(x) = log1p(t + sqrt(2t + t²))` with `t = x - 1` for x < 2, then the
+///   same two wider branches as asinh
+/// - `atanh(x) = sign(x) * 0.5 * log1p(t + t*a/(1-a))` with `t = 2a` for
+///   `a = |x| < 0.5`, and `0.5 * log1p(2a/(1-a))` above
+///
+/// The sign is carried by the sign bit rather than by negating the argument,
+/// so ±0 survives.
+///
+/// # Accuracy
+/// - f64: relative error below 2 ulps, including at |x| down to the subnormal
+///   range, where sinh(x), tanh(x), asinh(x) and atanh(x) all equal x
+///
+/// # Edge Cases
+/// - sinh(±inf) = ±inf, tanh(±inf) = ±1, all four odd functions map ±0 to ±0
+/// - acosh(x < 1) = NaN, acosh(1) = 0
+/// - atanh(±1) = ±inf, atanh(|x| > 1) = NaN
+/// - NaN propagates through every branch
+///
+/// # Input Range Warning
+/// sinh saturates where `expm1` does: |x| past 710 returns ±inf, which is the
+/// correct value, but the last binade below it inherits `expm1`'s own clamp.
+pub const _HYPERBOLIC_ALGORITHM_DOC: () = ();
