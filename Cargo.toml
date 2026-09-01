@@ -112,6 +112,10 @@ harness = false
 name = "gemm_epilogue"
 harness = false
 
+[[bench]]
+name = "conv"
+harness = false
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
