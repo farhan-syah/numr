@@ -30,7 +30,7 @@
 // F16 non-batched
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_wmma_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     __half*       __restrict__ C,
@@ -45,7 +45,7 @@ extern "C" __global__ void matmul_wmma_f16(
 // F16 batched
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_wmma_batched_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     __half*       __restrict__ C,
@@ -71,7 +71,7 @@ extern "C" __global__ void matmul_wmma_batched_f16(
 // narrowing store, so the result matches the CPU reference.
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_bias_wmma_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     const __half* __restrict__ bias,
@@ -90,7 +90,7 @@ extern "C" __global__ void matmul_bias_wmma_f16(
 // bias is [N] and broadcasts across rows AND batch slices.
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_bias_wmma_batched_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_batched_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     const __half* __restrict__ bias,
@@ -119,7 +119,7 @@ extern "C" __global__ void matmul_bias_wmma_batched_f16(
 // `activation_to_u32` (gemm_epilogue/launcher.rs).
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_act_wmma_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     const __half* __restrict__ bias,
@@ -140,7 +140,7 @@ extern "C" __global__ void gemm_bias_act_wmma_f16(
 // is [N] and broadcasts across rows and batch slices.
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_act_wmma_batched_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_batched_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     const __half* __restrict__ bias,
@@ -168,7 +168,7 @@ extern "C" __global__ void gemm_bias_act_wmma_batched_f16(
 // gemm_epilogue.cu.
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_residual_wmma_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     const __half* __restrict__ bias,
@@ -189,7 +189,7 @@ extern "C" __global__ void gemm_bias_residual_wmma_f16(
 // The residual carries one [M,N] slice per batch index, like C.
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_residual_wmma_batched_f16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_f16(
     const __half* __restrict__ A,
     const __half* __restrict__ B,
     const __half* __restrict__ bias,
@@ -223,7 +223,7 @@ extern "C" __global__ void gemm_bias_residual_wmma_batched_f16(
 
 #if __CUDA_ARCH__ >= 800
 
-extern "C" __global__ void matmul_wmma_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     __nv_bfloat16*       __restrict__ C,
@@ -238,7 +238,7 @@ extern "C" __global__ void matmul_wmma_bf16(
 // BF16 batched
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_wmma_batched_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     __nv_bfloat16*       __restrict__ C,
@@ -261,7 +261,7 @@ extern "C" __global__ void matmul_wmma_batched_bf16(
 // BF16 non-batched, fused bias
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_bias_wmma_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     const __nv_bfloat16* __restrict__ bias,
@@ -278,7 +278,7 @@ extern "C" __global__ void matmul_bias_wmma_bf16(
 // BF16 batched, fused bias
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void matmul_bias_wmma_batched_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_batched_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     const __nv_bfloat16* __restrict__ bias,
@@ -303,7 +303,7 @@ extern "C" __global__ void matmul_bias_wmma_batched_bf16(
 // BF16 non-batched, fused bias + activation
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_act_wmma_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     const __nv_bfloat16* __restrict__ bias,
@@ -321,7 +321,7 @@ extern "C" __global__ void gemm_bias_act_wmma_bf16(
 // BF16 batched, fused bias + activation
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_act_wmma_batched_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_batched_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     const __nv_bfloat16* __restrict__ bias,
@@ -345,7 +345,7 @@ extern "C" __global__ void gemm_bias_act_wmma_batched_bf16(
 // BF16 non-batched, fused bias + residual
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_residual_wmma_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     const __nv_bfloat16* __restrict__ bias,
@@ -364,7 +364,7 @@ extern "C" __global__ void gemm_bias_residual_wmma_bf16(
 // BF16 batched, fused bias + residual
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ void gemm_bias_residual_wmma_batched_bf16(
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_bf16(
     const __nv_bfloat16* __restrict__ A,
     const __nv_bfloat16* __restrict__ B,
     const __nv_bfloat16* __restrict__ bias,
