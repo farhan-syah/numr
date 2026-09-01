@@ -9,13 +9,14 @@
 //   gemm_bias_act_wmma_*      C = activation(A @ B + bias)
 //   gemm_bias_residual_wmma_* C = A @ B + bias + residual
 //
-// Every family is instantiated at two block tiles, 128x128 and 64x64, named
-// by the tile suffix on the symbol (matmul_wmma_f16_128x128,
-// matmul_wmma_f16_64x64, ...) the way matmul_f32_tiled.cu names its tiles.
-// The host chooses per launch; see loader/matmul_wmma.rs. The tiles differ
-// only in the per-warp fragment counts WM x WN passed to the body macro:
-// 2x2 for 128x128, 1x1 for 64x64. Thread count, launch bounds, staging loops
-// and epilogue are shared.
+// Every family is instantiated at three block tiles, 128x128, 128x64 and
+// 64x64, named by the tile suffix on the symbol (matmul_wmma_f16_128x128,
+// matmul_wmma_f16_128x64, matmul_wmma_f16_64x64, ...) the way
+// matmul_f32_tiled.cu names its tiles. The host chooses per launch; see
+// loader/matmul_wmma.rs. The tiles differ only in the per-warp fragment
+// counts WM x WN passed to the body macro: 2x2 for 128x128, 2x1 for 128x64,
+// 1x1 for 64x64. Thread count, launch bounds, staging loops and epilogue are
+// shared.
 //
 // Caller must guarantee M, N, K are all multiples of 16 before dispatching
 // here. The FMA fallback handles all other shapes.
@@ -204,10 +205,14 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_##
                                            STORE_FN, EPI_RESIDUAL)
 
 // ---------------------------------------------------------------------------
-// F16, both tiles.
+// F16, all three tiles.
 // ---------------------------------------------------------------------------
 
 DEFINE_WMMA_FAMILY(f16_128x128, 2, 2, __half, __float2half(0.0f), __float2half,
+                   WMMA_EPILOGUE_BIAS_F16, WMMA_EPILOGUE_BIAS_ACT_F16,
+                   WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
+
+DEFINE_WMMA_FAMILY(f16_128x64, 2, 1, __half, __float2half(0.0f), __float2half,
                    WMMA_EPILOGUE_BIAS_F16, WMMA_EPILOGUE_BIAS_ACT_F16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
 
@@ -216,7 +221,7 @@ DEFINE_WMMA_FAMILY(f16_64x64, 1, 1, __half, __float2half(0.0f), __float2half,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
 
 // ---------------------------------------------------------------------------
-// BF16, both tiles.
+// BF16, all three tiles.
 //
 // BF16 WMMA fragments (nvcuda::wmma::fragment<..., __nv_bfloat16, ...>) are
 // only a complete type from sm_80. Below that, `mma.h` declares them as an
@@ -229,6 +234,11 @@ DEFINE_WMMA_FAMILY(f16_64x64, 1, 1, __half, __float2half(0.0f), __float2half,
 #if __CUDA_ARCH__ >= 800
 
 DEFINE_WMMA_FAMILY(bf16_128x128, 2, 2, __nv_bfloat16, __float2bfloat16(0.0f),
+                   __float2bfloat16, WMMA_EPILOGUE_BIAS_BF16,
+                   WMMA_EPILOGUE_BIAS_ACT_BF16,
+                   WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
+
+DEFINE_WMMA_FAMILY(bf16_128x64, 2, 1, __nv_bfloat16, __float2bfloat16(0.0f),
                    __float2bfloat16, WMMA_EPILOGUE_BIAS_BF16,
                    WMMA_EPILOGUE_BIAS_ACT_BF16,
                    WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
