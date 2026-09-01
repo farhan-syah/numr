@@ -186,6 +186,92 @@ fn cuda_stack_8x_1000(b: &mut Bencher) {
 }
 
 // ---------------------------------------------------------------------------
+// contiguous: transposing views take the tiled strided_transpose.cu path
+// when TransposePlan::detect recognizes them; everything else (including a
+// full axis reversal, which detect declines) falls back to strided_copy.cu's
+// one div+mod per dimension.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "cuda_contiguous_f32")]
+fn cuda_contiguous_2d_transpose_4096x4096(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let t = rand_cuda(&[4096, 4096], &device);
+    let view = t.transpose(0, 1).unwrap();
+    b.iter(|| {
+        let r = black_box(view.contiguous().unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "cuda_contiguous_f32")]
+fn cuda_contiguous_3d_permute_256x256x256(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let t = rand_cuda(&[256, 256, 256], &device);
+    let view = t.permute(&[2, 0, 1]).unwrap();
+    b.iter(|| {
+        let r = black_box(view.contiguous().unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "cuda_contiguous_f32")]
+fn cuda_contiguous_4d_permute_64x64x64x64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let t = rand_cuda(&[64, 64, 64, 64], &device);
+    // Same element count as cuda_contiguous_3d_permute_256x256x256 (256^3 == 64^4)
+    // but one more dimension, isolating the per-dimension div+mod decode cost.
+    let view = t.permute(&[3, 2, 1, 0]).unwrap();
+    b.iter(|| {
+        let r = black_box(view.contiguous().unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "cuda_contiguous_f32")]
+fn cuda_contiguous_3d_swap_last_two_512x128x128(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let t = rand_cuda(&[512, 128, 128], &device);
+    // Outer dimension stays contiguous; only the last two axes swap strides.
+    let view = t.transpose(1, 2).unwrap();
+    b.iter(|| {
+        let r = black_box(view.contiguous().unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "cuda_contiguous_f32")]
+fn cuda_contiguous_2d_slice_8192x8192_half(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let t = rand_cuda(&[8192, 8192], &device);
+    // Contiguous-outer, strided-inner view: first half of the last axis.
+    let view = t.narrow(1, 0, 4096).unwrap();
+    b.iter(|| {
+        let r = black_box(view.contiguous().unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
 // ndarray comparison: repeat via broadcast + to_owned
 // ---------------------------------------------------------------------------
 

@@ -15,6 +15,7 @@ use std::sync::Arc;
 use super::loader::{
     BLOCK_SIZE, elementwise_launch_config, get_kernel_function, get_or_load_module, launch_config,
 };
+use super::strided_transpose::{TransposePlan, launch_strided_transpose};
 use crate::error::{Error, Result};
 
 /// Module name for strided copy operations
@@ -72,6 +73,24 @@ pub unsafe fn launch_strided_copy(
             "strided_copy supports at most {} dimensions, got {}",
             MAX_DIMS, ndim
         )));
+    }
+
+    // A permuted view materializes as a batched 2-D transpose once its other
+    // axes collapse, and the tiled kernel coalesces both the reads and the
+    // writes of that copy. Every layout `detect` declines - including the
+    // already-coalesced ones - uses the general kernel below.
+    if let Some(plan) = TransposePlan::detect(shape, strides, elem_size) {
+        return unsafe {
+            launch_strided_transpose(
+                context,
+                stream,
+                device_index,
+                src_ptr,
+                dst_ptr,
+                &plan,
+                src_byte_offset,
+            )
+        };
     }
 
     // Pad shape and strides to MAX_DIMS with zeros

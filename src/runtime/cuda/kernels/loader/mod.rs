@@ -36,8 +36,8 @@ pub use gemv::{launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr};
 pub use im2col::{im2col_has_kernel, launch_im2col1d};
 pub use im2col2d::{im2col2d_has_kernel, launch_im2col2d};
 pub use launch_dims::{
-    BLOCK_SIZE, LaunchConfig, check_shared_mem_fits, elementwise_launch_config, launch_config,
-    reduce_dim_launch_config, reduce_launch_config, softmax_launch_config,
+    BLOCK_SIZE, LaunchConfig, MAX_GRID_DIM_YZ, check_shared_mem_fits, elementwise_launch_config,
+    launch_config, reduce_dim_launch_config, reduce_launch_config, softmax_launch_config,
 };
 pub use matmul::{launch_matmul_batched_kernel, launch_matmul_kernel};
 pub use matmul_bias::{launch_matmul_bias_batched_kernel, launch_matmul_bias_kernel};

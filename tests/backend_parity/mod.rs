@@ -87,6 +87,7 @@ pub mod sparse_ops;
 pub mod special;
 pub mod statistics;
 pub mod statistics_var;
+pub mod strided_transpose;
 pub mod svd;
 pub mod unary;
 pub mod unary_signed_int;

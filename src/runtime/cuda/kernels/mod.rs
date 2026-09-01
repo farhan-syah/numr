@@ -97,6 +97,7 @@ mod special;
 mod spgemm;
 mod statistics;
 mod strided_copy;
+mod strided_transpose;
 mod ternary;
 mod unary;
 mod utility;
@@ -153,6 +154,7 @@ pub use special::*;
 pub use spgemm::*;
 pub use statistics::*;
 pub use strided_copy::*;
+pub use strided_transpose::*;
 pub use ternary::*;
 pub use unary::*;
 #[allow(unused_imports)] // Prepared for future tensor creation optimization

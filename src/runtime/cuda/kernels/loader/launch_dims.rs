@@ -61,7 +61,7 @@ pub fn reduce_launch_config(numel: usize) -> (u32, u32) {
 const MAX_GRID_DIM_X: u32 = 2_147_483_647;
 
 /// Maximum CUDA grid extent along `y` and `z`, for every compute capability numr targets.
-const MAX_GRID_DIM_YZ: u32 = 65_535;
+pub const MAX_GRID_DIM_YZ: u32 = 65_535;
 
 /// Calculate launch configuration for dimension-wise reduction.
 ///
