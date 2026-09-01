@@ -1007,6 +1007,176 @@ fn cuda_depthwise_conv2d_32ch_k3_112x112(b: &mut Bencher) {
     });
 }
 
+/// 32 channels, 3x3 kernel, 56x56 — half the spatial size of the 112x112 case.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_32ch_k3_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 56, 56], &device);
+    let weight = rand_cuda(&[32, 1, 3, 3], &device);
+    let bias = rand_cuda(&[32], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// 32 channels, 3x3 kernel, 28x28 — a late-stage mobile-net spatial size.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_32ch_k3_28x28(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 28, 28], &device);
+    let weight = rand_cuda(&[32, 1, 3, 3], &device);
+    let bias = rand_cuda(&[32], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// 64 channels, 3x3 kernel, 56x56 — doubled channel count vs the 32ch_56x56 case.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_64ch_k3_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 64, 56, 56], &device);
+    let weight = rand_cuda(&[64, 1, 3, 3], &device);
+    let bias = rand_cuda(&[64], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// 128 channels, 3x3 kernel, 28x28 — high channel count at a small spatial size.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_128ch_k3_28x28(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 128, 28, 28], &device);
+    let weight = rand_cuda(&[128, 1, 3, 3], &device);
+    let bias = rand_cuda(&[128], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// 32 channels, 5x5 kernel, 112x112 — larger kernel at the mobile-net-style
+/// early-layer spatial size.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_32ch_k5_112x112(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 112, 112], &device);
+    let weight = rand_cuda(&[32, 1, 5, 5], &device);
+    let bias = rand_cuda(&[32], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// 96 channels, 3x3 kernel, 112x112, batch 2 — batched dispatch at the
+/// mobile-net-style early-layer spatial size.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "depthwise_conv2d_f32")]
+fn cuda_depthwise_conv2d_96ch_k3_112x112_batch2(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[2, 96, 112, 112], &device);
+    let weight = rand_cuda(&[96, 1, 3, 3], &device);
+    let bias = rand_cuda(&[96], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .depthwise_conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
 fn main() {
     fluxbench::run().unwrap();
 }
