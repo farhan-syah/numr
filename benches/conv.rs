@@ -804,6 +804,151 @@ fn cuda_conv_transpose1d_1536ch_k7_groups4(b: &mut Bencher) {
 // conv2d / depthwise_conv2d — baseline coverage
 // ---------------------------------------------------------------------------
 
+/// Contraction 9 = 1*3*3, a first vision layer. Probes the small end.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv2d_f32")]
+fn cuda_conv2d_1_128ch_k3_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 1, 56, 56], &device);
+    let weight = rand_cuda(&[128, 1, 3, 3], &device);
+    let bias = rand_cuda(&[128], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                    1,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Contraction 27 = 3*3*3, a first vision layer. Probes the small end.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv2d_f32")]
+fn cuda_conv2d_3_128ch_k3_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 3, 56, 56], &device);
+    let weight = rand_cuda(&[128, 3, 3, 3], &device);
+    let bias = rand_cuda(&[128], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                    1,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Contraction 72 = 8*3*3. Brackets the conv2d im2col crossover.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv2d_f32")]
+fn cuda_conv2d_8_128ch_k3_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 8, 56, 56], &device);
+    let weight = rand_cuda(&[128, 8, 3, 3], &device);
+    let bias = rand_cuda(&[128], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                    1,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Contraction 144 = 16*3*3. Brackets the conv2d im2col crossover.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv2d_f32")]
+fn cuda_conv2d_16_128ch_k3_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 16, 56, 56], &device);
+    let weight = rand_cuda(&[128, 16, 3, 3], &device);
+    let bias = rand_cuda(&[128], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                    1,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Contraction 288 = 32*3*3. Brackets the conv2d im2col crossover.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv2d_f32")]
+fn cuda_conv2d_32_128ch_k3_56x56(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 32, 56, 56], &device);
+    let weight = rand_cuda(&[128, 32, 3, 3], &device);
+    let bias = rand_cuda(&[128], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv2d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    (1, 1),
+                    PaddingMode::Valid,
+                    (1, 1),
+                    1,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
 /// Representative image-conv shape: batch=1, c_in=64, c_out=128, 3x3 kernel, 56x56.
 #[cfg(feature = "cuda")]
 #[flux::bench(group = "conv2d_f32")]

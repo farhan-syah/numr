@@ -63,6 +63,7 @@ fn compile_cuda_kernels() {
         "fused_add_norm.cu",
         "fused_elementwise.cu",
         "im2col.cu",
+        "im2col2d.cu",
         "index.cu",
         "index_nd.cu",
         "linalg_advanced.cu",

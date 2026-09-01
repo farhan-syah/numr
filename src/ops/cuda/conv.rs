@@ -2,6 +2,7 @@
 
 use super::conv_transpose1d_gemm::{conv_transpose1d_gemm, use_conv_transpose1d_gemm};
 use super::conv1d_im2col::{conv1d_im2col, use_conv1d_im2col};
+use super::conv2d_im2col::{conv2d_im2col, use_conv2d_im2col};
 use crate::error::Result;
 use crate::ops::conv_common::{validate_conv1d, validate_conv2d, validate_depthwise_conv2d};
 use crate::ops::conv_transpose_common::validate_conv_transpose1d;
@@ -221,6 +222,12 @@ impl ConvOps<CudaRuntime> for CudaClient {
         let input = ensure_contiguous(input)?;
         let weight = ensure_contiguous(weight)?;
         let bias = bias.map(ensure_contiguous).transpose()?;
+
+        // Well-shaped convolutions run as im2col + GEMM; the direct kernel
+        // below stays the path for every other shape.
+        if use_conv2d_im2col(&params, dtype) {
+            return conv2d_im2col(self, &input, &weight, bias.as_ref(), &params);
+        }
 
         // Allocate output
         let output = Tensor::<CudaRuntime>::empty(
