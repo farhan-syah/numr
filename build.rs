@@ -50,6 +50,7 @@ fn compile_cuda_kernels() {
         "compare.cu",
         "complex.cu",
         "conv.cu",
+        "conv1d_ox.cu",
         "cumulative.cu",
         "cumulative_int.cu",
         "distance.cu",
@@ -248,6 +249,7 @@ fn compile_cuda_kernels() {
     for header in [
         "dtype_traits.cuh",
         "narrow_f64.cuh",
+        "conv1d_common.cuh",
         "activation_deriv.cuh",
         "binary_ops.cuh",
         "cumulative_ops.cuh",

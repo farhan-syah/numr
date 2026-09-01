@@ -12,6 +12,8 @@ use super::loader::{
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
+use crate::runtime::Device;
+use crate::runtime::cuda::CudaDevice;
 
 /// Module name for convolution operations
 pub const CONV_MODULE: &str = "conv";
@@ -45,6 +47,31 @@ const CONV1D_BLOCK_THREADS: u32 = 128;
 
 /// Output channels each thread of `conv1d_oc4_*` accumulates.
 const CONV1D_OC_BLOCK: usize = 4;
+
+/// Consecutive output positions each thread of `conv1d_ox_*` accumulates.
+/// Must match `CONV1D_OX_BLOCK` in `conv1d_ox.cu`.
+const CONV1D_OX_BLOCK: usize = 4;
+
+/// Module name for the position-blocked conv1d kernel (`conv1d_ox.cu` compiles
+/// to its own fatbin, separate from [`CONV_MODULE`]).
+const CONV1D_OX_MODULE: &str = "conv1d_ox";
+
+/// Minimum `output_length` before `conv1d_ox` is preferred over the scalar
+/// `conv1d` kernel for depthwise/narrow-group shapes (the oc4 kernel is
+/// unavailable there). Guarantees the row covers at least one full
+/// [`CONV1D_OX_BLOCK`]-wide chunk plus a remainder.
+const CONV1D_OX_MIN_OUTPUT_LENGTH: usize = 2 * CONV1D_OX_BLOCK;
+
+/// Device waves the position-blocked grid must still reach after blocking.
+///
+/// `output_length` alone does not gate this kernel. Blocking divides the thread
+/// count by [`CONV1D_OX_BLOCK`], so a shape with few channels can have a long
+/// row and still be left with too few threads to fill the device: a narrow,
+/// low-channel-count shape can regress badly versus the untiled kernel once
+/// blocking leaves only a handful of warps to hide memory latency. One wave is
+/// `compute_units * CONV1D_BLOCK_THREADS`; two is the smallest count that
+/// rejects that shape while keeping every depthwise case that gains.
+const CONV1D_OX_MIN_WAVES: usize = 2;
 
 /// CUDA caps the y and z grid dimensions at 65535 blocks.
 const CUDA_MAX_GRID_YZ: usize = 65535;
@@ -94,39 +121,72 @@ pub unsafe fn launch_conv1d(
     }
 
     unsafe {
-        let module = get_or_load_module(context, device_index, CONV_MODULE)?;
-
         // Register-block over output channels when a group holds at least
         // CONV1D_OC_BLOCK of them. Depthwise (c_out_per_group == 1) and other
-        // narrow-group shapes fall back to the scalar kernel, which is the
-        // untiled kernel's work exactly.
+        // narrow-group shapes fall back to conv1d_ox (position-blocked) when
+        // the row is wide enough, else the untiled scalar kernel.
         let c_out_per_group = c_out.checked_div(groups).unwrap_or(0);
         let c_in_per_group = c_in.checked_div(groups).unwrap_or(0);
-        let oc_blocked =
-            !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2) && c_out_per_group >= CONV1D_OC_BLOCK;
+        let is_fp8 = matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2);
+        let oc_blocked = !is_fp8 && c_out_per_group >= CONV1D_OC_BLOCK;
+        // Threads the position-blocked grid would launch, and the wave it must
+        // fill. `compute_units` is 0 on an unknown profile, which makes the
+        // wave test trivially true and leaves the row-length gate deciding.
+        let compute_units = CudaDevice::new(device_index).profile().compute_units as usize;
+        let ox_threads = batch
+            .saturating_mul(c_out)
+            .saturating_mul(output_length.div_ceil(CONV1D_OX_BLOCK));
+        let ox_wave = compute_units
+            .saturating_mul(CONV1D_BLOCK_THREADS as usize)
+            .saturating_mul(CONV1D_OX_MIN_WAVES);
+        let ox_blocked = !is_fp8
+            && !oc_blocked
+            && output_length >= CONV1D_OX_MIN_OUTPUT_LENGTH
+            && ox_threads >= ox_wave;
 
-        let base = if oc_blocked { "conv1d_oc4" } else { "conv1d" };
+        let base = if oc_blocked {
+            "conv1d_oc4"
+        } else if ox_blocked {
+            "conv1d_ox"
+        } else {
+            "conv1d"
+        };
+        let module_name = if ox_blocked {
+            CONV1D_OX_MODULE
+        } else {
+            CONV_MODULE
+        };
+        let module = get_or_load_module(context, device_index, module_name)?;
         let func_name = kernel_name(base, dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
         // The FP8 conv1d kernel keeps its own legacy flat launch over a linear
         // index; only the macro-generated float kernels take the (ox, slot,
         // batch) grid that removes the per-thread integer division.
-        let three_d_grid = !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2);
+        let three_d_grid = !is_fp8;
 
         let cfg = if three_d_grid {
-            // oc4 keeps the warp floor; the scalar kernel may go narrower.
+            // conv1d_ox packs CONV1D_OX_BLOCK output positions per thread, so
+            // the x axis walks blocks-of-CONV1D_OX_BLOCK, not raw positions.
+            let x_extent = if ox_blocked {
+                output_length.div_ceil(CONV1D_OX_BLOCK)
+            } else {
+                output_length
+            };
+
+            // oc4 keeps the warp floor; the scalar and ox kernels may go
+            // narrower.
             let narrow = if oc_blocked {
                 None
             } else {
                 CONV1D_BLOCK_NARROW
                     .into_iter()
-                    .find(|&w| output_length <= w as usize)
+                    .find(|&w| x_extent <= w as usize)
             };
             let block_x = narrow.unwrap_or_else(|| {
                 CONV1D_BLOCK_CANDIDATES
                     .into_iter()
-                    .find(|&w| output_length <= w as usize)
+                    .find(|&w| x_extent <= w as usize)
                     .unwrap_or(CONV1D_BLOCK_MAX)
             });
             let block_y = (CONV1D_BLOCK_THREADS / block_x).max(1);
@@ -149,7 +209,7 @@ pub unsafe fn launch_conv1d(
             }
 
             let grid = (
-                (output_length as u32).div_ceil(block_x),
+                (x_extent as u32).div_ceil(block_x),
                 grid_y as u32,
                 batch as u32,
             );

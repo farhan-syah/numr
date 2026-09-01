@@ -8,6 +8,7 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 #include "dtype_traits.cuh"
+#include "conv1d_common.cuh"
 
 // ============================================================================
 // Conv1d Kernel Templates
@@ -15,26 +16,27 @@
 // Weight: (C_out, C_in/groups, K)
 // Output: (N, C_out, L_out)
 //
-// Two variants per dtype:
+// Two variants per dtype in this file:
 //   conv1d_<dt>      - one output channel per thread (grouped/depthwise/tail)
 //   conv1d_oc4_<dt>  - four output channels per thread (register-blocked)
+// A third variant, conv1d_ox_<dt> (position-blocked, for the depthwise/narrow
+// case conv1d_oc4 can't cover), lives in the sibling file conv1d_ox.cu.
 //
-// THREAD MAP (both variants). threadIdx.x walks CONSECUTIVE output positions
+// THREAD MAP (both variants below). threadIdx.x walks CONSECUTIVE output positions
 // because L is the fastest-varying axis of [N, C, L], so the output row a warp
 // writes and the input span it reads are contiguous and coalesce. threadIdx.y
 // and blockIdx.y pin the output-channel slot, blockIdx.z pins the batch item.
-// blockDim.x is always >= 32, so every warp owns ONE slot and the weight loads
-// stay warp-uniform broadcasts. Packing slots into threadIdx.y keeps the block
-// at 128 threads even when output_length is tiny (26 at the hot shape), which
-// keeps warps-per-SM off the 16-resident-blocks limit.
+// For conv1d_oc4 blockDim.x is >= 32, so every warp owns ONE slot and the
+// weight loads stay warp-uniform broadcasts. Packing slots into threadIdx.y
+// keeps the block at 128 threads even when output_length is tiny, which keeps
+// warps-per-SM off the 16-resident-blocks limit. The scalar kernel has no such
+// requirement and the launcher may give it a sub-warp width instead.
 //
-// WHY REGISTER-BLOCK OVER oc. At the hot shape (batch 1, c_in = c_out = 1536,
-// K = 7, L_out = 26) the arithmetic is 429 M MACs - ~0.07 ms of FMA issue - yet
-// the kernel measures ~7 ms. It is not compute-bound. With one output channel
-// per thread the inner step is 1 input load + 1 weight load + 1 FMA, so every
-// MAC drags ~160 B of L1/L2 traffic (a 104 B input row plus a 32 B weight
-// sector) behind it. Each of the 1536 output channels re-reads the WHOLE input
-// independently: ~1.7 GB of L2 traffic per launch.
+// WHY REGISTER-BLOCK OVER oc. The arithmetic is a small fraction of the
+// runtime, so this is not compute-bound. With one output channel per thread the
+// inner step is 1 input load + 1 weight load + 1 FMA, so every MAC drags a
+// whole input row and a weight sector of L1/L2 traffic behind it. Each output
+// channel re-reads the WHOLE input independently.
 //
 // Holding OC_BLOCK accumulators for OC_BLOCK output channels at the same ox
 // loads the input value ONCE and multiplies it into all of them, so input
@@ -68,68 +70,8 @@
 // flips a downstream FSQ code index.
 // ============================================================================
 
-// Shared parameter list for both conv1d variants.
-// c_in_per_group and c_out_per_group are loop-invariant per launch (they don't
-// depend on the thread's oc/ox), so the host computes them once and passes them
-// in rather than every thread repeating an integer division in its prologue.
-#define CONV1D_PARAMS(dtype) \
-    const dtype* __restrict__ input, \
-    const dtype* __restrict__ weight, \
-    const dtype* __restrict__ bias, \
-    dtype* __restrict__ output, \
-    unsigned int batch, \
-    unsigned int c_in, \
-    unsigned int length, \
-    unsigned int c_out, \
-    unsigned int kernel_size, \
-    unsigned int output_length, \
-    unsigned int stride, \
-    unsigned int padding, \
-    unsigned int dilation, \
-    unsigned int groups, \
-    unsigned int c_in_per_group, \
-    unsigned int c_out_per_group, \
-    unsigned int has_bias
-
-/* Valid tap range for this thread: ix = ix_base + kx*dilation must land in
-   [0, length). Both bounds are loop-invariant, so the inner loop is branch-free. */
-// At dilation == 1 the general ceil-division formulas reduce exactly (no
-// rounding change): ((-ix_base) + dil - 1) / dil == -ix_base, and
-// (room + dil - 1) / dil == room. That branch is taken free of runtime
-// division; dilation > 1 keeps the general division-based formula.
-#define CONV1D_TAP_RANGE() \
-    int ix_base = (int)(ox * stride) - (int)padding; \
-    int dil = (int)dilation; \
-    unsigned int kx_lo = 0u; \
-    unsigned int kx_hi = kernel_size; \
-    if (dil == 1) { \
-        if (ix_base < 0) { \
-            kx_lo = (unsigned int)(-ix_base); \
-        } \
-        { \
-            int room = (int)length - ix_base; \
-            if (room <= 0) { \
-                kx_hi = 0u; \
-            } else { \
-                unsigned int hi = (unsigned int)room; \
-                if (hi < kx_hi) { kx_hi = hi; } \
-            } \
-        } \
-    } else { \
-        if (ix_base < 0) { \
-            kx_lo = (unsigned int)(((-ix_base) + dil - 1) / dil); \
-        } \
-        { \
-            int room = (int)length - ix_base; \
-            if (room <= 0) { \
-                kx_hi = 0u; \
-            } else { \
-                unsigned int hi = (unsigned int)((room + dil - 1) / dil); \
-                if (hi < kx_hi) { kx_hi = hi; } \
-            } \
-        } \
-    } \
-    if (kx_lo > kx_hi) { kx_lo = kx_hi; }
+// CONV1D_PARAMS and CONV1D_TAP_RANGE are shared with conv1d_ox.cu and live in
+// conv1d_common.cuh so both translation units stay byte-identical.
 
 // ----------------------------------------------------------------------------
 // Scalar variant: one output channel per thread.
