@@ -3,15 +3,15 @@
 // (F16/BF16).
 //
 // `use_wmma` (src/runtime/cuda/kernels/loader/matmul_wmma.rs) selects the
-// fused WMMA kernel only when `caps.f16_mma`/`caps.bf16`, `m > 16`, and M/N/K
-// are all 16-multiples. Unaligned shapes are padded up to 16-multiples by
-// src/ops/cuda/gemm_epilogue.rs — A, B and the bias vector in 1-D, and the
-// residual in 2-D, since it is [M,N]-shaped — and sliced back afterward.
-// The existing gemm_epilogue tests are F32-only or use shapes below the
-// `m > 16` gate, so none of them reach this path. These cases do: aligned
-// sizes that dispatch straight to WMMA, sizes that force the padding path,
-// sizes below the gate that must still fall back to the generic kernel, and
-// batched shapes.
+// fused WMMA kernel whenever `caps.f16_mma`/`caps.bf16` and M/N/K are all
+// 16-multiples, for any m >= 1. Unaligned shapes (including small m) are
+// padded up to 16-multiples by src/ops/cuda/gemm_epilogue.rs — A, B and the
+// bias vector in 1-D, and the residual in 2-D, since it is [M,N]-shaped —
+// and sliced back afterward. The existing gemm_epilogue tests are F32-only,
+// so none of them reach this path. These cases do: aligned sizes that
+// dispatch straight to WMMA, sizes that force the padding path, small m
+// (aligned and padded) that now reaches WMMA through padding, and batched
+// shapes.
 
 #[cfg(feature = "f16")]
 use crate::backend_parity::dtype_helpers::tensor_from_f64;
@@ -297,31 +297,49 @@ fn gemm_bias_act_bf16_wmma_padded_100_match_cpu() {
     );
 }
 
-// --- bias + activation: below the m > 16 gate, stays on the generic kernel ---
+// --- bias + activation: small m, reaches WMMA through padding ---
 
 #[cfg(feature = "f16")]
 #[test]
-fn gemm_bias_act_f16_below_wmma_gate_m16_match_cpu() {
+fn gemm_bias_act_f16_wmma_small_m_aligned16_match_cpu() {
+    // m == 16, k/n already 16-multiples: dispatches to WMMA with no padding.
     assert_bias_act_2d(
         DType::F16,
         GemmActivation::ReLU,
         16,
         32,
         32,
-        "gemm_bias_act_f16_below_wmma_gate_m16 CUDA vs CPU",
+        "gemm_bias_act_f16_wmma_small_m_aligned16 CUDA vs CPU",
     );
 }
 
 #[cfg(feature = "f16")]
 #[test]
-fn gemm_bias_act_bf16_below_wmma_gate_m8_match_cpu() {
+fn gemm_bias_act_bf16_wmma_small_m_padded8_match_cpu() {
+    // m == 8, k == 30, n == 20: every dim needs padding up to 16-multiples.
     assert_bias_act_2d(
         DType::BF16,
         GemmActivation::ReLU,
         8,
         30,
         20,
-        "gemm_bias_act_bf16_below_wmma_gate_m8 CUDA vs CPU",
+        "gemm_bias_act_bf16_wmma_small_m_padded8 CUDA vs CPU",
+    );
+}
+
+// --- bias + activation: m=1, single-token LLM decode. m pads to 16;      ---
+// --- K/N are 16-multiples so only m needs padding.                       ---
+
+#[cfg(feature = "f16")]
+#[test]
+fn gemm_bias_act_f16_wmma_m1_decode_match_cpu() {
+    assert_bias_act_2d(
+        DType::F16,
+        GemmActivation::GELU,
+        1,
+        64,
+        128,
+        "gemm_bias_act_f16_wmma_m1_decode CUDA vs CPU",
     );
 }
 
@@ -457,17 +475,18 @@ fn gemm_bias_residual_bf16_wmma_padded_100_match_cpu() {
     );
 }
 
-// --- bias + residual: below the m > 16 gate, stays on the generic kernel ---
+// --- bias + residual: small m, reaches WMMA through padding ---
 
 #[cfg(feature = "f16")]
 #[test]
-fn gemm_bias_residual_f16_below_wmma_gate_m16_match_cpu() {
+fn gemm_bias_residual_f16_wmma_small_m_aligned16_match_cpu() {
+    // m == 16, k/n already 16-multiples: dispatches to WMMA with no padding.
     assert_bias_residual_2d(
         DType::F16,
         16,
         32,
         32,
-        "gemm_bias_residual_f16_below_wmma_gate_m16 CUDA vs CPU",
+        "gemm_bias_residual_f16_wmma_small_m_aligned16 CUDA vs CPU",
     );
 }
 

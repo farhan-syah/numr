@@ -545,6 +545,57 @@ fn test_matmul_f32_tiled_non_tile_multiple_parity() {
     test_matmul_parity(&cases, DType::F32);
 }
 
+// ============================================================================
+// Single-Token Decode (m=1..8) Parity
+// ============================================================================
+//
+// `use_wmma` used to require m > 16, so decode-shaped matmuls (m=1, the
+// single-token LLM decode step) stayed on the GEMV path. That gate is gone:
+// small m now pads up to 16 and runs on the WMMA kernel. These cases
+// bracket m=1 (the target shape), plus m=2 and m=8, to cover the padded
+// small-m range rather than probing a single point.
+
+#[test]
+#[cfg(feature = "f16")]
+fn test_matmul_m1_decode_f16() {
+    // m=1: single-token decode; m pads to 16. K, N are 16-multiples so only
+    // m needs padding.
+    let cases = [make_f32_test_data(1, 64, 0.0013, 128, 0.0017)];
+    test_matmul_parity(&cases, numr::dtype::DType::F16);
+}
+
+#[test]
+#[cfg(feature = "f16")]
+fn test_matmul_m1_decode_bf16() {
+    let cases = [make_f32_test_data(1, 64, 0.0013, 128, 0.0017)];
+    test_matmul_parity(&cases, numr::dtype::DType::BF16);
+}
+
+#[test]
+#[cfg(feature = "f16")]
+fn test_matmul_m1_decode_unaligned_nk_f16() {
+    // m=1 with K=70, N=50 (neither a 16-multiple): exercises the full
+    // pad-all-dims path, not just the m pad.
+    let cases = [make_f32_test_data(1, 70, 0.0011, 50, 0.0019)];
+    test_matmul_parity(&cases, numr::dtype::DType::F16);
+}
+
+#[test]
+#[cfg(feature = "f16")]
+fn test_matmul_m2_decode_f16() {
+    // m=2: brackets m=1 from above within the padded small-m range.
+    let cases = [make_f32_test_data(2, 64, 0.0013, 128, 0.0017)];
+    test_matmul_parity(&cases, numr::dtype::DType::F16);
+}
+
+#[test]
+#[cfg(feature = "f16")]
+fn test_matmul_m8_decode_f16() {
+    // m=8: upper bracket, still padded (not yet a 16-multiple).
+    let cases = [make_f32_test_data(8, 64, 0.0013, 128, 0.0017)];
+    test_matmul_parity(&cases, numr::dtype::DType::F16);
+}
+
 #[test]
 fn test_cpu_matmul_parallelism_config_matches_default() {
     let device = CpuDevice::new();

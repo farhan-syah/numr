@@ -48,6 +48,7 @@ use super::names::{kernel_name, kernel_names};
 fn gemv_m_max(dtype: DType) -> usize {
     match dtype {
         DType::F32 => 4,
+        DType::F16 | DType::BF16 => 0,
         _ => 16,
     }
 }

@@ -2,16 +2,16 @@
 // MatmulOps::matmul_bias (F16/BF16).
 //
 // `use_wmma` (src/ops/cuda/matmul.rs) dispatches the fused bias-in-epilogue
-// WMMA kernel only when `caps.f16_mma`/`caps.bf16`, `m > 16`, and M/N/K are
-// all 16-multiples; unaligned shapes are padded up to 16-multiples (A, B, and
-// the bias vector) and sliced back afterward. `matmul_bias.rs`'s existing
-// tests all use 2x2 shapes, so `m > 16` never held and none of them ever
-// reached this path. These cases do: aligned sizes that dispatch straight to
-// WMMA, a ragged block edge that stays 16-aligned, sizes below and at
-// 16-multiples that force the padding path, sizes below the `m > 16` gate
-// that must still fall back to the generic kernel, batched broadcast at a
-// WMMA-eligible size, and a bias-dominant case where a dropped or
-// mis-indexed bias fails loudly.
+// WMMA kernel whenever `caps.f16_mma`/`caps.bf16` and M/N/K are all
+// 16-multiples, for any m >= 1; unaligned shapes (including small m) are
+// padded up to 16-multiples (A, B, and the bias vector) and sliced back
+// afterward. `matmul_bias.rs`'s existing tests all use 2x2 shapes, so none
+// of them ever reached this path. These cases do: aligned sizes that
+// dispatch straight to WMMA, a ragged block edge that stays 16-aligned,
+// sizes below and at 16-multiples that force the padding path, small m
+// (aligned and padded) that now reaches WMMA through padding, batched
+// broadcast at a WMMA-eligible size, and a bias-dominant case where a
+// dropped or mis-indexed bias fails loudly.
 
 #[cfg(feature = "f16")]
 use crate::backend_parity::dtype_helpers::tensor_from_f64;
@@ -219,57 +219,57 @@ fn matmul_bias_bf16_wmma_padded_130x70x50_match_cpu() {
     );
 }
 
-// --- Case 4: below the `m > 16` WMMA gate: must still route through the  ---
-// --- generic kernel and match CPU. A regression here means the dispatch  ---
-// --- guard itself is wrong, not the WMMA kernel.                         ---
+// --- Case 4: small M, still reaches WMMA. `use_wmma` no longer gates on   ---
+// --- `m > 16` — any m >= 1 dispatches to WMMA, padded up to 16 first if   ---
+// --- needed. m=16 is already aligned; m=8 is padded up to 16.            ---
 
 #[cfg(feature = "f16")]
 #[test]
-fn matmul_bias_f16_below_wmma_gate_m16_match_cpu() {
-    // m == 16 exactly: use_wmma requires m > 16, so this must NOT reach WMMA
-    // even though 16 is itself a 16-multiple.
+fn matmul_bias_f16_wmma_small_m_aligned16_match_cpu() {
+    // m == 16: already a 16-multiple, dispatches to WMMA with no padding.
     assert_matmul_bias_wmma_2d(
         DType::F16,
         16,
         64,
         64,
-        "matmul_bias_f16_below_wmma_gate_m16 CUDA vs CPU",
+        "matmul_bias_f16_wmma_small_m_aligned16 CUDA vs CPU",
     );
 }
 
 #[cfg(feature = "f16")]
 #[test]
-fn matmul_bias_f16_below_wmma_gate_m8_match_cpu() {
+fn matmul_bias_f16_wmma_small_m_padded8_match_cpu() {
+    // m == 8: padded up to 16 before WMMA dispatch.
     assert_matmul_bias_wmma_2d(
         DType::F16,
         8,
         64,
         64,
-        "matmul_bias_f16_below_wmma_gate_m8 CUDA vs CPU",
+        "matmul_bias_f16_wmma_small_m_padded8 CUDA vs CPU",
     );
 }
 
 #[cfg(feature = "f16")]
 #[test]
-fn matmul_bias_bf16_below_wmma_gate_m16_match_cpu() {
+fn matmul_bias_bf16_wmma_small_m_aligned16_match_cpu() {
     assert_matmul_bias_wmma_2d(
         DType::BF16,
         16,
         64,
         64,
-        "matmul_bias_bf16_below_wmma_gate_m16 CUDA vs CPU",
+        "matmul_bias_bf16_wmma_small_m_aligned16 CUDA vs CPU",
     );
 }
 
 #[cfg(feature = "f16")]
 #[test]
-fn matmul_bias_bf16_below_wmma_gate_m8_match_cpu() {
+fn matmul_bias_bf16_wmma_small_m_padded8_match_cpu() {
     assert_matmul_bias_wmma_2d(
         DType::BF16,
         8,
         64,
         64,
-        "matmul_bias_bf16_below_wmma_gate_m8 CUDA vs CPU",
+        "matmul_bias_bf16_wmma_small_m_padded8 CUDA vs CPU",
     );
 }
 
@@ -410,5 +410,32 @@ fn matmul_bias_bf16_wmma_bias_dominant_match_cpu() {
         &bias_data,
         &[n],
         "matmul_bias_bf16_wmma_bias_dominant CUDA vs CPU",
+    );
+}
+
+// --- Case 7: m=1, single-token LLM decode. m pads to 16 before WMMA      ---
+// --- dispatch; K/N are 16-multiples so only m needs padding.             ---
+
+#[cfg(feature = "f16")]
+#[test]
+fn matmul_bias_f16_wmma_m1_decode_match_cpu() {
+    assert_matmul_bias_wmma_2d(
+        DType::F16,
+        1,
+        64,
+        128,
+        "matmul_bias_f16_wmma_m1_decode CUDA vs CPU",
+    );
+}
+
+#[cfg(feature = "f16")]
+#[test]
+fn matmul_bias_bf16_wmma_m1_decode_match_cpu() {
+    assert_matmul_bias_wmma_2d(
+        DType::BF16,
+        1,
+        64,
+        128,
+        "matmul_bias_bf16_wmma_m1_decode CUDA vs CPU",
     );
 }

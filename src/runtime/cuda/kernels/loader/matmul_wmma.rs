@@ -45,7 +45,7 @@ pub(crate) fn use_wmma(dtype: DType, caps: DeviceCaps, m: usize, n: usize, k: us
         DType::BF16 => caps.bf16,
         _ => false,
     };
-    dtype_ok && m > 16 && m.is_multiple_of(16) && n.is_multiple_of(16) && k.is_multiple_of(16)
+    dtype_ok && m >= 1 && m.is_multiple_of(16) && n.is_multiple_of(16) && k.is_multiple_of(16)
 }
 
 /// Returns true when padding M/N/K up to 16-multiples would make
@@ -347,11 +347,13 @@ mod tests {
     }
 
     #[test]
-    fn m_boundary_at_16_stays_on_gemv_path() {
-        // m == 16 is exactly aligned but must NOT take WMMA — it stays on the
-        // GEMV fast path (see use_wmma's `m > 16` condition).
-        assert!(!use_wmma(DType::F16, ampere_caps(), 16, 32, 32));
+    fn small_aligned_m_takes_wmma() {
+        // Small m reaches the tensor-core kernel once it is 16-aligned. It used
+        // to be held on the GEMV path, which measured slower at every m here.
+        assert!(use_wmma(DType::F16, ampere_caps(), 16, 32, 32));
         assert!(use_wmma(DType::F16, ampere_caps(), 32, 32, 32));
+        // Still refused when m is not 16-aligned; the op pads before dispatch.
+        assert!(!use_wmma(DType::F16, ampere_caps(), 8, 32, 32));
     }
 
     #[test]
@@ -409,9 +411,9 @@ mod tests {
     }
 
     #[test]
-    fn padding_below_gemv_boundary_never_reaches_wmma() {
-        // m <= 16 stays on the GEMV path regardless of alignment or caps.
-        assert!(!use_wmma_after_padding(
+    fn small_m_reaches_wmma_after_padding() {
+        // A small m pads up to 16 and then takes the tensor-core kernel.
+        assert!(use_wmma_after_padding(
             DType::F16,
             ampere_caps(),
             16,
