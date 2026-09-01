@@ -74,16 +74,26 @@
 
 #define DEFINE_DEPTHWISE_CONV2D_OX_KERNEL(suffix, dtype) \
 __global__ void depthwise_conv2d_ox_##suffix(DEPTHWISE_CONV2D_OX_PARAMS(dtype)) { \
-    unsigned int ox_base = (blockIdx.x * blockDim.x + threadIdx.x) * DEPTHWISE_CONV2D_OX_BLOCK; \
-    /* The y axis carries (channel, oy) folded together: output_h is often too \
-       small to fill a grid dimension on its own, and folding keeps channels \
-       off the z axis, which the batch already uses. */ \
-    unsigned int row = blockIdx.y * blockDim.y + threadIdx.y; \
+    /* The x axis carries (oy, column-block) folded together and is launched as \
+       flat CONV_BLOCK_THREADS-wide blocks. A block shaped to the column-block \
+       count alone rounds that count up to a candidate width, so every warp \
+       carries idle lanes for the whole launch; folding leaves only the single \
+       partial block at the tail of the work. Consecutive threadIdx.x still map \
+       to consecutive column-blocks of one output row, so coalescing holds \
+       except at the row-wrap boundary. Channel and batch stay on grid y and z: \
+       folding them in as well would cost three more integer divisions, which \
+       does not pay against the lanes recovered. */ \
+    unsigned int x_extent = (output_w + (DEPTHWISE_CONV2D_OX_BLOCK - 1u)) / DEPTHWISE_CONV2D_OX_BLOCK; \
+    unsigned int wid = blockIdx.x * blockDim.x + threadIdx.x; \
+    unsigned int c = blockIdx.y; \
     unsigned int b = blockIdx.z; \
-    if (ox_base >= output_w || row >= channels * output_h) return; \
+    if (wid >= output_h * x_extent) return; \
     \
-    unsigned int oy = row % output_h; \
-    unsigned int c = row / output_h; \
+    unsigned int oy = wid / x_extent; \
+    /* Subtract rather than take a second modulus: one division serves both. */ \
+    unsigned int cb = wid - oy * x_extent; \
+    /* cb <= x_extent - 1, so ox_base < output_w and `active` is at least 1. */ \
+    unsigned int ox_base = cb * DEPTHWISE_CONV2D_OX_BLOCK; \
     \
     unsigned int active = output_w - ox_base; \
     if (active > DEPTHWISE_CONV2D_OX_BLOCK) { active = DEPTHWISE_CONV2D_OX_BLOCK; } \

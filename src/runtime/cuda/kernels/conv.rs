@@ -40,11 +40,12 @@ const CONV1D_BLOCK_NARROW: [u32; 5] = [1, 2, 4, 8, 16];
 const CONV1D_BLOCK_MAX: u32 = 256;
 
 /// Target threads per block, shared by conv1d and depthwise_conv2d's
-/// row/position-indexed kernels. A narrow row is padded out along the second
-/// grid axis (`blockDim.y`, output channels for conv1d or folded
-/// channel/output-row for depthwise_conv2d) instead of being launched as a
-/// 32-thread block, because an SM holds at most 16 blocks and 32-thread
-/// blocks would cap it at 16 of its 48 warp slots.
+/// row/position-indexed kernels. conv1d pads a narrow row out along the second
+/// grid axis (`blockDim.y`, output channels) instead of launching a 32-thread
+/// block, because an SM holds at most 16 blocks and 32-thread blocks would cap
+/// it at 16 of its 48 warp slots. `depthwise_conv2d_ox` reaches the same count
+/// with a flat block: it folds the output-row axis into x, so it needs no
+/// second block axis to pad with.
 const CONV_BLOCK_THREADS: u32 = 128;
 
 /// Output channels each thread of `conv1d_oc4_*` accumulates.
@@ -560,25 +561,22 @@ pub unsafe fn launch_depthwise_conv2d(
         // test trivially true and leaves the row-width gate deciding.
         let compute_units = CudaDevice::new(device_index).profile().compute_units as usize;
         let x_extent = output_w.div_ceil(DEPTHWISE_CONV2D_OX_BLOCK);
-        // The blocked kernel folds (channel, oy) onto one grid axis.
-        let rows = channels.saturating_mul(output_h);
-        let ox_threads = batch.saturating_mul(rows).saturating_mul(x_extent);
+        // The blocked kernel folds (oy, column-block) onto the x axis and keeps
+        // channel and batch on y and z.
+        let x_work = output_h.saturating_mul(x_extent);
+        let ox_threads = batch.saturating_mul(channels).saturating_mul(x_work);
         let ox_wave = compute_units
             .saturating_mul(CONV_BLOCK_THREADS as usize)
             .saturating_mul(DEPTHWISE_CONV2D_OX_MIN_WAVES);
 
-        // Same target block size as conv1d: a narrow row is padded out along
-        // the row axis rather than launched as a 32-thread block.
-        let block_x = position_block_width(x_extent);
-        let block_y = (CONV_BLOCK_THREADS / block_x).max(1);
-        let grid_y = rows.div_ceil(block_y as usize);
-
         let ox_blocked = !is_fp8
             && output_w >= DEPTHWISE_CONV2D_OX_MIN_OUTPUT_WIDTH
             && ox_threads >= ox_wave
-            // A shape that overflows the folded y axis or the batch z axis
-            // falls back to the flat kernel instead of failing.
-            && grid_y <= CUDA_MAX_GRID_YZ
+            // A shape that overflows the channel y axis or the batch z axis
+            // falls back to the flat kernel instead of failing. The x axis
+            // carries the folded work and is bounded far higher, so it needs
+            // no gate.
+            && channels <= CUDA_MAX_GRID_YZ
             && batch <= CUDA_MAX_GRID_YZ;
 
         let base = if ox_blocked {
@@ -597,11 +595,11 @@ pub unsafe fn launch_depthwise_conv2d(
 
         let cfg = if ox_blocked {
             let grid = (
-                (x_extent as u32).div_ceil(block_x),
-                grid_y as u32,
+                (x_work as u32).div_ceil(CONV_BLOCK_THREADS),
+                channels as u32,
                 batch as u32,
             );
-            launch_config(grid, (block_x, block_y, 1), 0)
+            launch_config(grid, (CONV_BLOCK_THREADS, 1, 1), 0)
         } else {
             let grid = elementwise_launch_config(total)?;
             launch_config(grid, (BLOCK_SIZE, 1, 1), 0)
