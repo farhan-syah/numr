@@ -3,7 +3,8 @@
 //! `gemm_bias_act` and `gemm_bias_residual` for F16 and BF16, 2-D and batched.
 //! The kernels are instantiated in `kernels/matmul_wmma.cu` and share the
 //! block tile, thread count, and launch geometry of the plain WMMA GEMM, so
-//! the grid comes from [`super::matmul_wmma::wmma_launch_config`]. Dispatch is
+//! the grid comes from [`super::matmul_wmma_tile::wmma_launch_config`], which
+//! also picks the block tile. Dispatch is
 //! gated by [`super::matmul_wmma::use_wmma`], the same predicate plain matmul
 //! and matmul_bias use.
 
@@ -14,9 +15,9 @@ use std::sync::Arc;
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
-use super::matmul_wmma::wmma_launch_config;
+use super::matmul_wmma_tile::{select_wmma_tile, wmma_kernel_name, wmma_launch_config};
 use super::module_cache::{get_kernel_function, get_or_load_module};
-use super::names::{dtype_suffix, kernel_names};
+use super::names::kernel_names;
 
 /// Launch 2-D (non-batched) WMMA GEMM with fused bias and activation for F16
 /// or BF16: `C[M,N] = activation(A[M,K] @ B[K,N] + bias[N])`.
@@ -46,10 +47,11 @@ pub unsafe fn launch_gemm_bias_act_wmma_kernel(
     activation_type: u32,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!("gemm_bias_act_wmma_{}", dtype_suffix(dtype));
+    let tile = select_wmma_tile(m, n, k, 1, device_index);
+    let func_name = wmma_kernel_name("gemm_bias_act_wmma", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, 1);
+    let cfg = wmma_launch_config(m, n, 1, tile);
 
     let m_u32 = m as u32;
     let n_u32 = n as u32;
@@ -103,10 +105,11 @@ pub unsafe fn launch_gemm_bias_act_wmma_batched_kernel(
     activation_type: u32,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!("gemm_bias_act_wmma_batched_{}", dtype_suffix(dtype));
+    let tile = select_wmma_tile(m, n, k, batch, device_index);
+    let func_name = wmma_kernel_name("gemm_bias_act_wmma_batched", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, batch);
+    let cfg = wmma_launch_config(m, n, batch, tile);
 
     let batch_u32 = batch as u32;
     let m_u32 = m as u32;
@@ -163,10 +166,11 @@ pub unsafe fn launch_gemm_bias_residual_wmma_kernel(
     k: usize,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!("gemm_bias_residual_wmma_{}", dtype_suffix(dtype));
+    let tile = select_wmma_tile(m, n, k, 1, device_index);
+    let func_name = wmma_kernel_name("gemm_bias_residual_wmma", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, 1);
+    let cfg = wmma_launch_config(m, n, 1, tile);
 
     let m_u32 = m as u32;
     let n_u32 = n as u32;
@@ -221,10 +225,11 @@ pub unsafe fn launch_gemm_bias_residual_wmma_batched_kernel(
     k: usize,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!("gemm_bias_residual_wmma_batched_{}", dtype_suffix(dtype));
+    let tile = select_wmma_tile(m, n, k, batch, device_index);
+    let func_name = wmma_kernel_name("gemm_bias_residual_wmma_batched", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, batch);
+    let cfg = wmma_launch_config(m, n, batch, tile);
 
     let batch_u32 = batch as u32;
     let m_u32 = m as u32;

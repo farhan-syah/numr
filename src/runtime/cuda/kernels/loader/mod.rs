@@ -17,6 +17,7 @@ mod matmul_f32;
 mod matmul_fp8;
 mod matmul_int;
 mod matmul_wmma;
+mod matmul_wmma_tile;
 mod module_cache;
 mod names;
 mod semiring_matmul;

@@ -8,32 +8,42 @@
 // to satisfy the fragment-alignment requirement (sidesteps the
 // CUDA_ERROR_MISALIGNED_ADDRESS class of bug that float4 global loads hit).
 //
-// Warp tiling (128x128 block tile, 4x4 warp grid, 16 warps, 512 threads):
+// Warp tiling. The warp grid is fixed at WARP_ROWS x WARP_COLS = 4x4 warps
+// (16 warps, 512 threads); the block tile is a parameter of the kernel body
+// macro, carried as the per-warp fragment counts WM x WN:
 //   warp_row = warp_id / WARP_COLS  (0..3)
 //   warp_col = warp_id % WARP_COLS  (0..3)
-//   Each warp computes WARP_M×WARP_N = 2×2 fragments (32×32 outputs).
-//   BLOCK_TILE_M = WARP_ROWS*WARP_M*16 = 4*2*16 = 128 ✓
-//   BLOCK_TILE_N = WARP_COLS*WARP_N*16 = 4*2*16 = 128 ✓
-//   16 warps × 32×32 = 128×128 block ✓
+//   Each warp computes WM x WN fragments of 16x16 outputs.
+//   BLOCK_TILE_M = WARP_ROWS * WM * 16
+//   BLOCK_TILE_N = WARP_COLS * WN * 16
+// Two tiles are instantiated in matmul_wmma.cu:
+//   WM=2, WN=2 -> 128x128 block tile, 4 mma_syncs per warp per K-step
+//   WM=1, WN=1 ->   64x64 block tile, 1 mma_sync  per warp per K-step
+// The tile is part of every kernel symbol name (matmul_wmma_f16_128x128,
+// matmul_wmma_f16_64x64, ...), the same convention matmul_f32_tiled.cu uses.
+// The host picks one per launch; see
+// src/runtime/cuda/kernels/loader/matmul_wmma.rs.
 //
 // Epilogue: per-warp float scratch in shared memory.
 //   store_matrix_sync requires float* for a float accumulator fragment; we
 //   cannot store an F32 fragment directly into an F16/BF16 global buffer.
-//   Each warp stores its F32 fragment into a dedicated 16×16 float scratch
+//   Each warp stores its F32 fragment into a dedicated 16x16 float scratch
 //   region, then each lane converts + writes elements to global C via STORE_FN
-//   (float→HALF_T). No cross-warp collisions.
+//   (float->HALF_T). No cross-warp collisions. One fragment is in flight per
+//   warp at a time, so the scratch is 16 warps x 16x16 floats = 16 384 bytes
+//   for every tile shape, independent of WM and WN.
 //
 // Static smem (2-stage ping-pong staging, aliased with the epilogue scratch).
 // BLOCK_K (below) is chosen per architecture, so the staging footprint varies
-// by build target; figures here are for BLOCK_K=16 (SMEM_STRIDE_A=24):
-//   staging (per stage): smem_A 128 × 24 × 2 = 6 144 bytes
-//                        smem_B  16 × 136 × 2 = 4 352 bytes
-//   staging (two stages):                        20 992 bytes
-//   scratch: 16 warps × 256 × 4 bytes =         16 384 bytes
-//   The scratch is written only after the K-loop ends, so it overlays the
-//   staging buffers. Total = max(20 992, 16 384) = 20 992 bytes.
-//   At BLOCK_K=32 (SMEM_STRIDE_A=40) the staging total is 37 888 bytes,
-//   which also exceeds the scratch, so total = 37 888 bytes.
+// by build target. Per stage the staging holds
+//   smem_A: BLOCK_TILE_M x SMEM_STRIDE_A halves
+//   smem_B: BLOCK_K      x SMEM_STRIDE_B halves
+// and the total is max(two stages, scratch), because the scratch is written
+// only after the K-loop ends and therefore overlays the staging buffers:
+//   BLOCK_K=16 (SMEM_STRIDE_A=24): 128x128 -> 20 992 B, 64x64 -> 16 384 B
+//   BLOCK_K=32 (SMEM_STRIDE_A=40): 128x128 -> 37 888 B, 64x64 -> 19 456 B
+// The 64x64 tile never needs more smem than the 128x128 one, so it never
+// lowers the resident-block count.
 //
 // Scalar staging (bounds-checked zero-pad loops):
 //   Each thread iterates over its share of tile elements with strided loops,
@@ -70,14 +80,11 @@ using namespace nvcuda::wmma;
 #define WMMA_N 16
 #define WMMA_K 16
 
-// Warp grid: 4 rows × 4 cols = 16 warps = 512 threads.
+// Warp grid: 4 rows × 4 cols = 16 warps = 512 threads. Fixed for every tile;
+// the tile is varied through the per-warp fragment counts WM and WN instead,
+// so the thread count and the launch bounds stay the same across tiles.
 #define WARP_ROWS 4
 #define WARP_COLS 4
-
-// Warp tile: each warp computes WARP_M × WARP_N fragments.
-// WARP_M=2, WARP_N=2 → 4 mma_syncs/warp/K-step.
-#define WARP_M 2
-#define WARP_N 2
 
 // NOTE: BLOCK_K is a free parameter. The K-loop below steps by WMMA_K, so
 // BLOCK_K > WMMA_K just adds more mma_sync calls per K-tile, no rewrite
@@ -104,25 +111,25 @@ using namespace nvcuda::wmma;
 // resident block. Applied to every kernel in matmul_wmma.cu.
 #define WMMA_LAUNCH_BOUNDS __launch_bounds__(WARP_ROWS * WARP_COLS * 32, 2)
 
-// Block tile:
-//   BLOCK_TILE_M = WARP_ROWS * WARP_M * WMMA_M = 4 * 2 * 16 = 128 ✓
-//   BLOCK_TILE_N = WARP_COLS * WARP_N * WMMA_N = 4 * 2 * 16 = 128 ✓
-#define BLOCK_TILE_M  (WARP_ROWS * WARP_M * WMMA_M)   // 128
-#define BLOCK_TILE_N  (WARP_COLS * WARP_N * WMMA_N)   // 128
+/* Tile-derived compile-time constants, declared inside the kernel body so the
+   tile can vary per instantiation. Smem strides carry +8 padding to avoid
+   32-bank conflicts; both stay multiples of 8 halves (16 bytes), the alignment
+   load_matrix_sync/store_matrix_sync require of their leading dimension. */
+#define WMMA_TILE_CONSTANTS(WM, WN)                                          \
+    constexpr unsigned int BLOCK_TILE_M = WARP_ROWS * (WM) * WMMA_M;         \
+    constexpr unsigned int BLOCK_TILE_N = WARP_COLS * (WN) * WMMA_N;         \
+    constexpr unsigned int SMEM_STRIDE_A = BLOCK_K + 8;                      \
+    constexpr unsigned int SMEM_STRIDE_B = BLOCK_TILE_N + 8;                 \
+    constexpr unsigned int SMEM_A_ELEMS = BLOCK_TILE_M * SMEM_STRIDE_A;      \
+    constexpr unsigned int SMEM_B_ELEMS = BLOCK_K * SMEM_STRIDE_B;           \
+    /* One 16x16 float region per warp; one fragment is in flight at a time. */ \
+    constexpr unsigned int SMEM_SCRATCH_ELEMS =                              \
+        (WARP_ROWS * WARP_COLS) * WMMA_M * WMMA_N;
 
-// Smem strides with +8 padding to avoid 32-bank conflicts.
-#define SMEM_STRIDE_A (BLOCK_K       + 8)   // 24 halves
-#define SMEM_STRIDE_B (BLOCK_TILE_N  + 8)   // 136 halves
-
-// Element counts for one staging stage and for the epilogue scratch.
-#define SMEM_A_ELEMS  (BLOCK_TILE_M * SMEM_STRIDE_A)                 // 3072
-#define SMEM_B_ELEMS  (BLOCK_K      * SMEM_STRIDE_B)                 // 2176
-#define SMEM_SCRATCH_ELEMS ((WARP_ROWS * WARP_COLS) * WMMA_M * WMMA_N)  // 4096
-
-// One byte array backs both the two staging stages and the epilogue scratch.
-// The four staging bases sit at byte offsets 0, 6144, 10496 and 16640, all
-// multiples of 16, so every wmma fragment pointer keeps the 16-byte alignment
-// load_matrix_sync/store_matrix_sync require.
+/* One byte array backs both the two staging stages and the epilogue scratch.
+   The four staging bases sit at multiples of 16 bytes for every instantiated
+   tile, so every wmma fragment pointer keeps the 16-byte alignment
+   load_matrix_sync/store_matrix_sync require. */
 #define SMEM_STAGE_BYTES(HALF_T) \
     (2 * (SMEM_A_ELEMS + SMEM_B_ELEMS) * sizeof(HALF_T))
 #define SMEM_SCRATCH_BYTES (SMEM_SCRATCH_ELEMS * sizeof(float))
@@ -132,7 +139,8 @@ using namespace nvcuda::wmma;
 
 
 /* Stage one K-tile into the given A/B buffers. Bounds-checked: positions    \
-   past the M/N/K edge are zero-padded. */                                   \
+   past the M/N/K edge are zero-padded. Reads the tile constants declared by \
+   WMMA_TILE_CONSTANTS in the enclosing scope. */                            \
 #define WMMA_STAGE_TILE(HALF_T, ZERO_EXPR, A_ptr, B_ptr, DST_A, DST_B, K_OFF) \
 {                                                                            \
     /* A tile [BLOCK_TILE_M x BLOCK_K]. */                                   \
@@ -161,8 +169,11 @@ using namespace nvcuda::wmma;
 
 // ---------------------------------------------------------------------------
 // Kernel body macro — instantiated for F16 (non-batched), F16 (batched),
-// BF16 (non-batched), BF16 (batched), each with and without a fused bias.
+// BF16 (non-batched), BF16 (batched), each with and without a fused bias, and
+// each at both block tiles.
 //
+// WM, WN  : per-warp fragment counts; the block tile is
+//           WARP_ROWS*WM*16 by WARP_COLS*WN*16.
 // HALF_T  : __half | __nv_bfloat16
 // ZERO    : __float2half(0.0f) | __float2bfloat16(0.0f)
 // STORE   : __float2half | __float2bfloat16
@@ -195,11 +206,11 @@ using namespace nvcuda::wmma;
    generic gemm_bias_act_* kernels call.
 
    The transcendental in the GELU/SiLU/Sigmoid/Tanh cases makes the front end
-   give the accumulator array a 128-byte local depot: ptxas -v reports a
-   128-byte stack frame and 0 spills. The K loop still keeps the accumulators
-   in registers — the local traffic is one store and one load per thread, in
-   the epilogue only. WMMA_LAUNCH_BOUNDS caps registers for these kernels the
-   same way it does for the rest. */
+   give the accumulator array a local depot: ptxas -v reports a stack frame and
+   0 spills. The K loop still keeps the accumulators in registers — the local
+   traffic is one store and one load per thread, in the epilogue only.
+   WMMA_LAUNCH_BOUNDS caps registers for these kernels the same way it does for
+   the rest. */
 #define WMMA_EPILOGUE_BIAS_ACT_F16(VAL, ROW, COL)                            \
     apply_activation_f32((VAL) + __half2float(bias[(COL)]), activation_type)
 #define WMMA_EPILOGUE_BIAS_ACT_BF16(VAL, ROW, COL)                           \
@@ -215,12 +226,14 @@ using namespace nvcuda::wmma;
            + __bfloat162float(res_ptr[(ROW) * N + (COL)]))
 
 /* No-bias body: the epilogue transform is the identity. */
-#define WMMA_KERNEL_BODY(HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr)   \
-    WMMA_KERNEL_BODY_EPI(HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr,   \
-                         WMMA_EPILOGUE_PLAIN)
+#define WMMA_KERNEL_BODY(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr) \
+    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN,                \
+                         A_ptr, B_ptr, C_ptr, WMMA_EPILOGUE_PLAIN)
 
-#define WMMA_KERNEL_BODY_EPI(HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr, EPI_FN) \
+#define WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr, EPI_FN) \
 {                                                                            \
+    WMMA_TILE_CONSTANTS(WM, WN)                                              \
+                                                                             \
     const unsigned int warp_id  = threadIdx.x / 32;                          \
     const unsigned int warp_row = warp_id / WARP_COLS;                       \
     const unsigned int warp_col = warp_id % WARP_COLS;                       \
@@ -243,10 +256,10 @@ using namespace nvcuda::wmma;
        Each warp owns scratch[warp_id][256]; no cross-warp collision. */     \
     float* const smem_scratch = reinterpret_cast<float*>(smem_raw);          \
                                                                              \
-    /* Warp-tiled accumulators: WARP_M x WARP_N fragments per warp. */       \
-    fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> frag_c[WARP_M][WARP_N]; \
-    for (unsigned int wi = 0; wi < WARP_M; wi++) {                           \
-        for (unsigned int wj = 0; wj < WARP_N; wj++) {                       \
+    /* Warp-tiled accumulators: WM x WN fragments per warp. */               \
+    fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> frag_c[WM][WN];     \
+    for (unsigned int wi = 0; wi < (WM); wi++) {                             \
+        for (unsigned int wj = 0; wj < (WN); wj++) {                         \
             fill_fragment(frag_c[wi][wj], 0.0f);                             \
         }                                                                    \
     }                                                                        \
@@ -276,28 +289,28 @@ using namespace nvcuda::wmma;
                                 smem_A_nxt, smem_B_nxt, (bk + 1) * BLOCK_K)  \
             }                                                                \
                                                                              \
-            /* WMMA compute: load frag_a[WARP_M] and frag_b[WARP_N], then    \
-               WARP_M x WARP_N = 4 mma_syncs. */                             \
+            /* WMMA compute: load frag_a[WM] and frag_b[WN], then            \
+               WM x WN mma_syncs. */                                         \
             for (unsigned int k = 0; k < BLOCK_K; k += WMMA_K) {             \
                 fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, HALF_T, row_major> \
-                    frag_a[WARP_M];                                          \
+                    frag_a[WM];                                              \
                 fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, HALF_T, row_major> \
-                    frag_b[WARP_N];                                          \
+                    frag_b[WN];                                              \
                                                                              \
-                /* Load WARP_M A fragments (one per M-row of this warp). */  \
-                for (unsigned int wi = 0; wi < WARP_M; wi++) {               \
-                    unsigned int row = (warp_row * WARP_M + wi) * WMMA_M;    \
+                /* Load WM A fragments (one per M-row of this warp). */      \
+                for (unsigned int wi = 0; wi < (WM); wi++) {                 \
+                    unsigned int row = (warp_row * (WM) + wi) * WMMA_M;      \
                     const HALF_T* a_ptr = smem_A_cur + row * SMEM_STRIDE_A + k; \
                     load_matrix_sync(frag_a[wi], a_ptr, SMEM_STRIDE_A);      \
                 }                                                            \
-                /* Load WARP_N B fragments (one per N-col of this warp). */  \
-                for (unsigned int wj = 0; wj < WARP_N; wj++) {               \
-                    unsigned int col = (warp_col * WARP_N + wj) * WMMA_N;    \
+                /* Load WN B fragments (one per N-col of this warp). */      \
+                for (unsigned int wj = 0; wj < (WN); wj++) {                 \
+                    unsigned int col = (warp_col * (WN) + wj) * WMMA_N;      \
                     const HALF_T* b_ptr = smem_B_cur + k * SMEM_STRIDE_B + col; \
                     load_matrix_sync(frag_b[wj], b_ptr, SMEM_STRIDE_B);      \
                 }                                                            \
-                for (unsigned int wi = 0; wi < WARP_M; wi++) {               \
-                    for (unsigned int wj = 0; wj < WARP_N; wj++) {           \
+                for (unsigned int wi = 0; wi < (WM); wi++) {                 \
+                    for (unsigned int wj = 0; wj < (WN); wj++) {             \
                         mma_sync(frag_c[wi][wj], frag_a[wi], frag_b[wj],     \
                                  frag_c[wi][wj]);                            \
                     }                                                        \
@@ -321,17 +334,18 @@ using namespace nvcuda::wmma;
     /* Epilogue: F32 frag -> per-warp float scratch -> STORE_FN -> global C. \
        store_matrix_sync requires float* for a float accumulator fragment;   \
        we cannot pass C_ptr (HALF_T*) directly. Each warp uses its own       \
-       16x16 scratch region (indexed by warp_id) so warps never collide.     \
-       __syncwarp() orders the warp-collective store vs the per-lane reads   \
-       (and again after the per-lane writes before scratch is reused). */    \
+       16x16 scratch region (indexed by warp_id) so warps never collide,     \
+       for every tile shape. __syncwarp() orders the warp-collective store   \
+       vs the per-lane reads (and again after the per-lane writes before     \
+       scratch is reused). */                                                \
     float* warp_scratch = smem_scratch + warp_id * (WMMA_M * WMMA_N);        \
     const unsigned int lane = threadIdx.x % 32;                              \
-    for (unsigned int wi = 0; wi < WARP_M; wi++) {                           \
-        for (unsigned int wj = 0; wj < WARP_N; wj++) {                       \
+    for (unsigned int wi = 0; wi < (WM); wi++) {                             \
+        for (unsigned int wj = 0; wj < (WN); wj++) {                         \
             unsigned int gr = block_row                                      \
-                + (warp_row * WARP_M + wi) * WMMA_M;                         \
+                + (warp_row * (WM) + wi) * WMMA_M;                           \
             unsigned int gc = block_col                                      \
-                + (warp_col * WARP_N + wj) * WMMA_N;                         \
+                + (warp_col * (WN) + wj) * WMMA_N;                           \
             /* Store F32 fragment into warp's float scratch (stride=16). */  \
             store_matrix_sync(warp_scratch, frag_c[wi][wj],                  \
                               WMMA_N, mem_row_major);                        \

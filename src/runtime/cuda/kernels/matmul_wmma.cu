@@ -2,12 +2,20 @@
 //
 // Instantiations only: the tile geometry, the epilogue transforms, and the
 // kernel body macro live in matmul_wmma.cuh. Each kernel below picks a dtype,
-// a batched or 2-D operand setup, and one epilogue transform.
+// a batched or 2-D operand setup, one epilogue transform, and one block tile.
 //
 //   matmul_wmma_*             C = A @ B
 //   matmul_bias_wmma_*        C = A @ B + bias
 //   gemm_bias_act_wmma_*      C = activation(A @ B + bias)
 //   gemm_bias_residual_wmma_* C = A @ B + bias + residual
+//
+// Every family is instantiated at two block tiles, 128x128 and 64x64, named
+// by the tile suffix on the symbol (matmul_wmma_f16_128x128,
+// matmul_wmma_f16_64x64, ...) the way matmul_f32_tiled.cu names its tiles.
+// The host chooses per launch; see loader/matmul_wmma.rs. The tiles differ
+// only in the per-warp fragment counts WM x WN passed to the body macro:
+// 2x2 for 128x128, 1x1 for 64x64. Thread count, launch bounds, staging loops
+// and epilogue are shared.
 //
 // Caller must guarantee M, N, K are all multiples of 16 before dispatching
 // here. The FMA fallback handles all other shapes.
@@ -27,363 +35,208 @@
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// F16 non-batched
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    __half*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    WMMA_KERNEL_BODY(__half, __float2half(0.0f), __float2half, A, B, C)
-}
-
-// ---------------------------------------------------------------------------
-// F16 batched
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    __half*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __half* A_b = A + (b % a_batch_count) * (M * K);
-    const __half* B_b = B + (b % b_batch_count) * (K * N);
-    __half*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY(__half, __float2half(0.0f), __float2half, A_b, B_b, C_b)
-}
-
-// ---------------------------------------------------------------------------
-// F16 non-batched, fused bias
+// Entry-point generators. NAME carries the dtype and the tile
+// (e.g. f16_128x128); WM/WN carry the tile itself.
 //
-// bias is [N] and broadcasts across rows. It is added in F32, before the
-// narrowing store, so the result matches the CPU reference.
+// bias is [N] and broadcasts across rows, and across batch slices in the
+// batched forms. It is added in F32, before the narrowing store, so the result
+// matches the CPU reference. The residual is [M,N] elementwise, read at the
+// flat output offset — the same indexing as `gemm_bias_residual_*` in
+// gemm_epilogue.cu — and its slice advances with the batch. `activation_type`
+// carries the code from `activation_to_u32` (gemm_epilogue/launcher.rs).
 // ---------------------------------------------------------------------------
 
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    const __half* __restrict__ bias,
-    __half*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A, B, C,
-                         WMMA_EPILOGUE_BIAS_F16)
+#define DEFINE_WMMA_MATMUL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN)         \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_##NAME(             \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K                                                            \
+) {                                                                           \
+    WMMA_KERNEL_BODY(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C)            \
 }
 
-// ---------------------------------------------------------------------------
-// F16 batched, fused bias
-//
-// bias is [N] and broadcasts across rows AND batch slices.
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_batched_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    const __half* __restrict__ bias,
-    __half*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __half* A_b = A + (b % a_batch_count) * (M * K);
-    const __half* B_b = B + (b % b_batch_count) * (K * N);
-    __half*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A_b, B_b, C_b,
-                         WMMA_EPILOGUE_BIAS_F16)
+#define DEFINE_WMMA_MATMUL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_##NAME(     \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int batch,                                                       \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K,                                                           \
+    unsigned int a_batch_count,                                               \
+    unsigned int b_batch_count                                                \
+) {                                                                           \
+    const unsigned int b = blockIdx.z;                                        \
+    if (b >= batch) return;                                                   \
+    const HALF_T* A_b = A + (b % a_batch_count) * (M * K);                    \
+    const HALF_T* B_b = B + (b % b_batch_count) * (K * N);                    \
+    HALF_T*       C_b = C + b * (M * N);                                      \
+    WMMA_KERNEL_BODY(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b)      \
 }
 
-// ---------------------------------------------------------------------------
-// F16 non-batched, fused bias + activation
-//
-// C = activation(A @ B + bias). The bias add and the activation both run in
-// F32 before the narrowing store. `activation_type` carries the code from
-// `activation_to_u32` (gemm_epilogue/launcher.rs).
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    const __half* __restrict__ bias,
-    __half*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int activation_type
-) {
-    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A, B, C,
-                         WMMA_EPILOGUE_BIAS_ACT_F16)
+#define DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_##NAME(        \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const HALF_T* __restrict__ bias,                                          \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K                                                            \
+) {                                                                           \
+    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C, EPI_FN) \
 }
 
-// ---------------------------------------------------------------------------
-// F16 batched, fused bias + activation
-//
-// A, B and C advance one [M,K] / [K,N] / [M,N] slice per batch index; the bias
-// is [N] and broadcasts across rows and batch slices.
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_batched_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    const __half* __restrict__ bias,
-    __half*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int activation_type
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __half* A_b = A + b * (M * K);
-    const __half* B_b = B + b * (K * N);
-    __half*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A_b, B_b, C_b,
-                         WMMA_EPILOGUE_BIAS_ACT_F16)
+#define DEFINE_WMMA_MATMUL_BIAS_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_batched_##NAME( \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const HALF_T* __restrict__ bias,                                          \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int batch,                                                       \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K,                                                           \
+    unsigned int a_batch_count,                                               \
+    unsigned int b_batch_count                                                \
+) {                                                                           \
+    const unsigned int b = blockIdx.z;                                        \
+    if (b >= batch) return;                                                   \
+    const HALF_T* A_b = A + (b % a_batch_count) * (M * K);                    \
+    const HALF_T* B_b = B + (b % b_batch_count) * (K * N);                    \
+    HALF_T*       C_b = C + b * (M * N);                                      \
+    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b,  \
+                         EPI_FN)                                              \
 }
 
-// ---------------------------------------------------------------------------
-// F16 non-batched, fused bias + residual
-//
-// C = A @ B + bias + residual. The residual is [M,N], elementwise, read at the
-// flat output offset — the same indexing as `gemm_bias_residual_f16` in
-// gemm_epilogue.cu.
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    const __half* __restrict__ bias,
-    const __half* __restrict__ residual,
-    __half*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    const __half* res_ptr = residual;
-    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A, B, C,
-                         WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
+#define DEFINE_WMMA_GEMM_BIAS_ACT(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_##NAME(      \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const HALF_T* __restrict__ bias,                                          \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K,                                                           \
+    unsigned int activation_type                                              \
+) {                                                                           \
+    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C, EPI_FN) \
 }
 
-// ---------------------------------------------------------------------------
-// F16 batched, fused bias + residual
-//
-// The residual carries one [M,N] slice per batch index, like C.
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_f16(
-    const __half* __restrict__ A,
-    const __half* __restrict__ B,
-    const __half* __restrict__ bias,
-    const __half* __restrict__ residual,
-    __half*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __half* A_b = A + b * (M * K);
-    const __half* B_b = B + b * (K * N);
-    const __half* res_ptr = residual + b * (M * N);
-    __half*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY_EPI(__half, __float2half(0.0f), __float2half, A_b, B_b, C_b,
-                         WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
+#define DEFINE_WMMA_GEMM_BIAS_ACT_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_batched_##NAME( \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const HALF_T* __restrict__ bias,                                          \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int batch,                                                       \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K,                                                           \
+    unsigned int activation_type                                              \
+) {                                                                           \
+    const unsigned int b = blockIdx.z;                                        \
+    if (b >= batch) return;                                                   \
+    const HALF_T* A_b = A + b * (M * K);                                      \
+    const HALF_T* B_b = B + b * (K * N);                                      \
+    HALF_T*       C_b = C + b * (M * N);                                      \
+    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b,  \
+                         EPI_FN)                                              \
 }
 
+#define DEFINE_WMMA_GEMM_BIAS_RESIDUAL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_##NAME( \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const HALF_T* __restrict__ bias,                                          \
+    const HALF_T* __restrict__ residual,                                      \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K                                                            \
+) {                                                                           \
+    const HALF_T* res_ptr = residual;                                         \
+    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A, B, C, EPI_FN) \
+}
+
+#define DEFINE_WMMA_GEMM_BIAS_RESIDUAL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, EPI_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_##NAME( \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const HALF_T* __restrict__ bias,                                          \
+    const HALF_T* __restrict__ residual,                                      \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int batch,                                                       \
+    unsigned int M,                                                           \
+    unsigned int N,                                                           \
+    unsigned int K                                                            \
+) {                                                                           \
+    const unsigned int b = blockIdx.z;                                        \
+    if (b >= batch) return;                                                   \
+    const HALF_T* A_b = A + b * (M * K);                                      \
+    const HALF_T* B_b = B + b * (K * N);                                      \
+    const HALF_T* res_ptr = residual + b * (M * N);                           \
+    HALF_T*       C_b = C + b * (M * N);                                      \
+    WMMA_KERNEL_BODY_EPI(WM, WN, HALF_T, ZERO_EXPR, STORE_FN, A_b, B_b, C_b,  \
+                         EPI_FN)                                              \
+}
+
+/* All eight families at one dtype and one tile. */
+#define DEFINE_WMMA_FAMILY(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,          \
+                           EPI_BIAS, EPI_ACT, EPI_RESIDUAL)                    \
+    DEFINE_WMMA_MATMUL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN)              \
+    DEFINE_WMMA_MATMUL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN)      \
+    DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,         \
+                            EPI_BIAS)                                          \
+    DEFINE_WMMA_MATMUL_BIAS_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN, \
+                                    EPI_BIAS)                                  \
+    DEFINE_WMMA_GEMM_BIAS_ACT(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,       \
+                              EPI_ACT)                                         \
+    DEFINE_WMMA_GEMM_BIAS_ACT_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR,         \
+                                      STORE_FN, EPI_ACT)                       \
+    DEFINE_WMMA_GEMM_BIAS_RESIDUAL(NAME, WM, WN, HALF_T, ZERO_EXPR, STORE_FN,  \
+                                   EPI_RESIDUAL)                               \
+    DEFINE_WMMA_GEMM_BIAS_RESIDUAL_BATCHED(NAME, WM, WN, HALF_T, ZERO_EXPR,    \
+                                           STORE_FN, EPI_RESIDUAL)
+
 // ---------------------------------------------------------------------------
-// BF16 non-batched
+// F16, both tiles.
+// ---------------------------------------------------------------------------
+
+DEFINE_WMMA_FAMILY(f16_128x128, 2, 2, __half, __float2half(0.0f), __float2half,
+                   WMMA_EPILOGUE_BIAS_F16, WMMA_EPILOGUE_BIAS_ACT_F16,
+                   WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
+
+DEFINE_WMMA_FAMILY(f16_64x64, 1, 1, __half, __float2half(0.0f), __float2half,
+                   WMMA_EPILOGUE_BIAS_F16, WMMA_EPILOGUE_BIAS_ACT_F16,
+                   WMMA_EPILOGUE_BIAS_RESIDUAL_F16)
+
+// ---------------------------------------------------------------------------
+// BF16, both tiles.
 //
 // BF16 WMMA fragments (nvcuda::wmma::fragment<..., __nv_bfloat16, ...>) are
 // only a complete type from sm_80. Below that, `mma.h` declares them as an
-// incomplete type and the kernel fails to compile. Guard so these two
-// symbols are absent by design on sm_75 fatbin slices; the launcher
+// incomplete type and the kernel fails to compile. Guard so these symbols are
+// absent by design on sm_75 fatbin slices; the launcher
 // (src/runtime/cuda/kernels/loader/matmul_wmma.rs) must not request them on
 // a device that lacks `caps.bf16`.
 // ---------------------------------------------------------------------------
 
 #if __CUDA_ARCH__ >= 800
 
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    WMMA_KERNEL_BODY(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A, B, C)
-}
+DEFINE_WMMA_FAMILY(bf16_128x128, 2, 2, __nv_bfloat16, __float2bfloat16(0.0f),
+                   __float2bfloat16, WMMA_EPILOGUE_BIAS_BF16,
+                   WMMA_EPILOGUE_BIAS_ACT_BF16,
+                   WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
 
-// ---------------------------------------------------------------------------
-// BF16 batched
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __nv_bfloat16* A_b = A + (b % a_batch_count) * (M * K);
-    const __nv_bfloat16* B_b = B + (b % b_batch_count) * (K * N);
-    __nv_bfloat16*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A_b, B_b, C_b)
-}
-
-// ---------------------------------------------------------------------------
-// BF16 non-batched, fused bias
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    const __nv_bfloat16* __restrict__ bias,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A, B, C,
-                         WMMA_EPILOGUE_BIAS_BF16)
-}
-
-// ---------------------------------------------------------------------------
-// BF16 batched, fused bias
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_batched_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    const __nv_bfloat16* __restrict__ bias,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int a_batch_count,
-    unsigned int b_batch_count
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __nv_bfloat16* A_b = A + (b % a_batch_count) * (M * K);
-    const __nv_bfloat16* B_b = B + (b % b_batch_count) * (K * N);
-    __nv_bfloat16*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A_b, B_b, C_b,
-                         WMMA_EPILOGUE_BIAS_BF16)
-}
-
-// ---------------------------------------------------------------------------
-// BF16 non-batched, fused bias + activation
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    const __nv_bfloat16* __restrict__ bias,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int activation_type
-) {
-    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A, B, C,
-                         WMMA_EPILOGUE_BIAS_ACT_BF16)
-}
-
-// ---------------------------------------------------------------------------
-// BF16 batched, fused bias + activation
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_act_wmma_batched_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    const __nv_bfloat16* __restrict__ bias,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K,
-    unsigned int activation_type
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __nv_bfloat16* A_b = A + b * (M * K);
-    const __nv_bfloat16* B_b = B + b * (K * N);
-    __nv_bfloat16*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A_b, B_b, C_b,
-                         WMMA_EPILOGUE_BIAS_ACT_BF16)
-}
-
-// ---------------------------------------------------------------------------
-// BF16 non-batched, fused bias + residual
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    const __nv_bfloat16* __restrict__ bias,
-    const __nv_bfloat16* __restrict__ residual,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    const __nv_bfloat16* res_ptr = residual;
-    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A, B, C,
-                         WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
-}
-
-// ---------------------------------------------------------------------------
-// BF16 batched, fused bias + residual
-// ---------------------------------------------------------------------------
-
-extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_bf16(
-    const __nv_bfloat16* __restrict__ A,
-    const __nv_bfloat16* __restrict__ B,
-    const __nv_bfloat16* __restrict__ bias,
-    const __nv_bfloat16* __restrict__ residual,
-    __nv_bfloat16*       __restrict__ C,
-    unsigned int batch,
-    unsigned int M,
-    unsigned int N,
-    unsigned int K
-) {
-    const unsigned int b = blockIdx.z;
-    if (b >= batch) return;
-    const __nv_bfloat16* A_b = A + b * (M * K);
-    const __nv_bfloat16* B_b = B + b * (K * N);
-    const __nv_bfloat16* res_ptr = residual + b * (M * N);
-    __nv_bfloat16*       C_b = C + b * (M * N);
-    WMMA_KERNEL_BODY_EPI(__nv_bfloat16, __float2bfloat16(0.0f), __float2bfloat16, A_b, B_b, C_b,
-                         WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
-}
+DEFINE_WMMA_FAMILY(bf16_64x64, 1, 1, __nv_bfloat16, __float2bfloat16(0.0f),
+                   __float2bfloat16, WMMA_EPILOGUE_BIAS_BF16,
+                   WMMA_EPILOGUE_BIAS_ACT_BF16,
+                   WMMA_EPILOGUE_BIAS_RESIDUAL_BF16)
 
 #endif  // __CUDA_ARCH__ >= 800
 

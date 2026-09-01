@@ -3,8 +3,10 @@
 //! `use_wmma` decides when the path is legal; the launchers below cover the
 //! 2-D and batched forms, each with and without a fused bias. The bias +
 //! activation and bias + residual forms live in `gemm_epilogue_wmma.rs` and
-//! share this module's launch geometry. The kernels use only static shared
-//! memory, so the dynamic request is always zero.
+//! share this module's launch geometry. Every kernel family is instantiated at
+//! two block tiles; `matmul_wmma_tile` owns the launch geometry and picks the
+//! tile per launch. The kernels use only static shared memory, so the dynamic
+//! request is always zero.
 
 use cudarc::driver::PushKernelArg;
 use cudarc::driver::safe::{CudaContext, CudaStream};
@@ -14,20 +16,9 @@ use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::runtime::traits::profile::DeviceCaps;
 
-use super::launch_dims::LaunchConfig;
+use super::matmul_wmma_tile::{select_wmma_tile, wmma_kernel_name, wmma_launch_config};
 use super::module_cache::{get_kernel_function, get_or_load_module};
-use super::names::{dtype_suffix, kernel_names};
-
-//
-// Block: WARP_ROWS*WARP_COLS warps × 32 threads = 16 warps × 32 = 512 threads.
-//   Warp grid: 4 rows × 4 cols. Each warp: WARP_M=2 × WARP_N=2 frags (32×32).
-//   16 warps × 32×32 = 128×128 block tile. ✓
-// Grid:  ceil(N/128) × ceil(M/128) [× batch]
-// Static shared memory per block (single-buffered, no cp.async):
-//   smem_A:   128 × 24 × 2 bytes =  6 144
-//   smem_B:    16 × 136 × 2 bytes =  4 352
-//   scratch:   16 × 256 × 4 bytes = 16 384
-//   Total:    26 880 bytes ≈ 26.25 KB  (well within 48 KB)
+use super::names::kernel_names;
 
 /// Returns true when the WMMA path should be taken for this dtype, device,
 /// and shape. This is the SINGLE source of truth for the decision — both the
@@ -82,41 +73,6 @@ pub(crate) fn use_wmma_after_padding(
         )
 }
 
-// WMMA block: 16 warps (4×4 warp grid), each warp = 32 threads → 512 threads.
-// Each warp computes WARP_M=2 × WARP_N=2 fragments (32×32 outputs).
-// 16 warps × 32×32 = 128×128. ✓
-const WMMA_BLOCK_THREADS: u32 = 512;
-const WMMA_BLOCK_TILE_M: u32 = 128;
-const WMMA_BLOCK_TILE_N: u32 = 128;
-
-/// Shared-memory per WMMA block in bytes.
-///
-/// Single-buffered A+B staging + per-warp F32 epilogue scratch:
-///   smem_A:   128 × 24 × 2 bytes =  6 144 bytes
-///   smem_B:    16 × 136 × 2 bytes =  4 352 bytes
-///   scratch:   16 warps × 256 × 4 bytes = 16 384 bytes = 16 KB
-///   Total:    26 880 bytes ≈ 26.25 KB  (well within 48 KB)
-// WMMA kernels use only statically-declared __shared__ arrays; there is no
-// extern __shared__ (dynamic) allocation.  Pass 0 so CUDA does not add
-// extra dynamic smem on top of the static pool (which would push total over
-// the 48 KB default per-block limit on sm_86).
-const WMMA_SMEM_BYTES: u32 = 0;
-
-/// Grid and block for one WMMA launch: one block per 128x128 output tile, one
-/// grid-z slice per batch index (`batch` is 1 for the 2-D forms).
-#[inline]
-pub(super) fn wmma_launch_config(m: usize, n: usize, batch: usize) -> LaunchConfig {
-    LaunchConfig {
-        grid_dim: (
-            ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N,
-            ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M,
-            batch as u32,
-        ),
-        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
-        shared_mem_bytes: WMMA_SMEM_BYTES,
-    }
-}
-
 /// Launch 2-D (non-batched) WMMA GEMM for F16 or BF16.
 ///
 /// # Safety
@@ -135,10 +91,11 @@ pub unsafe fn launch_matmul_wmma_kernel(
     k: usize,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!("matmul_wmma_{}", dtype_suffix(dtype));
+    let tile = select_wmma_tile(m, n, k, 1, device_index);
+    let func_name = wmma_kernel_name("matmul_wmma", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, 1);
+    let cfg = wmma_launch_config(m, n, 1, tile);
 
     let m_u32 = m as u32;
     let n_u32 = n as u32;
@@ -181,13 +138,11 @@ pub unsafe fn launch_matmul_wmma_batched_kernel(
     b_batch: usize,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!(
-        "matmul_wmma_batched_{}",
-        crate::runtime::cuda::kernels::loader::dtype_suffix(dtype)
-    );
+    let tile = select_wmma_tile(m, n, k, batch, device_index);
+    let func_name = wmma_kernel_name("matmul_wmma_batched", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, batch);
+    let cfg = wmma_launch_config(m, n, batch, tile);
 
     let batch_u32 = batch as u32;
     let m_u32 = m as u32;
@@ -241,10 +196,11 @@ pub unsafe fn launch_matmul_bias_wmma_kernel(
     k: usize,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!("matmul_bias_wmma_{}", dtype_suffix(dtype));
+    let tile = select_wmma_tile(m, n, k, 1, device_index);
+    let func_name = wmma_kernel_name("matmul_bias_wmma", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, 1);
+    let cfg = wmma_launch_config(m, n, 1, tile);
 
     let m_u32 = m as u32;
     let n_u32 = n as u32;
@@ -294,10 +250,11 @@ pub unsafe fn launch_matmul_bias_wmma_batched_kernel(
     b_batch: usize,
 ) -> Result<()> {
     let module = get_or_load_module(context, device_index, kernel_names::MATMUL_WMMA_MODULE)?;
-    let func_name = format!("matmul_bias_wmma_batched_{}", dtype_suffix(dtype));
+    let tile = select_wmma_tile(m, n, k, batch, device_index);
+    let func_name = wmma_kernel_name("matmul_bias_wmma_batched", dtype, tile);
     let func = get_kernel_function(&module, &func_name)?;
 
-    let cfg = wmma_launch_config(m, n, batch);
+    let cfg = wmma_launch_config(m, n, batch, tile);
 
     let batch_u32 = batch as u32;
     let m_u32 = m as u32;

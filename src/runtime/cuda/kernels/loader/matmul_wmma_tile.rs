@@ -1,0 +1,234 @@
+//! Block-tile choice for the tensor-core WMMA GEMM kernels.
+//!
+//! `kernels/matmul_wmma.cu` instantiates every WMMA kernel family at two block
+//! tiles and puts the tile in the symbol name. This module owns the launch
+//! geometry and the rule that picks one tile per launch; the launchers in
+//! `matmul_wmma.rs` and `gemm_epilogue_wmma.rs` both go through it.
+
+use crate::dtype::DType;
+use crate::runtime::Device;
+use crate::runtime::cuda::CudaDevice;
+
+use super::launch_dims::LaunchConfig;
+use super::names::dtype_suffix;
+
+// WMMA block: 16 warps (4×4 warp grid), each warp = 32 threads → 512 threads.
+// The thread count is identical for every block tile: the tile varies through
+// the per-warp fragment count, not through the warp grid (matmul_wmma.cuh).
+const WMMA_BLOCK_THREADS: u32 = 512;
+
+/// Resident blocks per SM the WMMA kernels are compiled for. This is the
+/// `minBlocksPerMultiprocessor` argument of `WMMA_LAUNCH_BOUNDS`
+/// (`matmul_wmma.cuh`): ptxas caps registers so at least this many blocks stay
+/// resident, and the shared-memory footprint of both tiles is small enough not
+/// to lower it.
+const WMMA_BLOCKS_PER_UNIT: u32 = 2;
+
+/// Device waves the larger tile's grid must reach before it is preferred.
+/// One wave is `compute_units * WMMA_BLOCKS_PER_UNIT` blocks.
+const WMMA_MIN_WAVES: u32 = 2;
+
+/// Block tile of a WMMA kernel instantiation.
+///
+/// `matmul_wmma.cu` instantiates every kernel family at both tiles and puts
+/// the tile in the symbol name, so a launch selects a tile by picking a
+/// symbol. Both tiles use the same block size and launch geometry.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub(super) enum WmmaTile {
+    /// 128x128 outputs per block, 2x2 fragments per warp.
+    Tile128,
+    /// 64x64 outputs per block, one fragment per warp.
+    Tile64,
+}
+
+impl WmmaTile {
+    /// Rows of C one block computes.
+    #[inline]
+    const fn tile_m(self) -> u32 {
+        match self {
+            WmmaTile::Tile128 => 128,
+            WmmaTile::Tile64 => 64,
+        }
+    }
+
+    /// Columns of C one block computes.
+    #[inline]
+    const fn tile_n(self) -> u32 {
+        match self {
+            WmmaTile::Tile128 => 128,
+            WmmaTile::Tile64 => 64,
+        }
+    }
+
+    /// Symbol-name suffix of the kernels built at this tile.
+    #[inline]
+    const fn suffix(self) -> &'static str {
+        match self {
+            WmmaTile::Tile128 => "128x128",
+            WmmaTile::Tile64 => "64x64",
+        }
+    }
+}
+
+/// Symbol name of one WMMA kernel instantiation: `{base}_{dtype}_{tile}`, e.g.
+/// `matmul_wmma_f16_128x128`. The single place that builds this name, so the
+/// launchers in `matmul_wmma.rs` and `gemm_epilogue_wmma.rs` cannot drift
+/// apart on the naming convention `matmul_wmma.cu` instantiates against.
+#[inline]
+pub(super) fn wmma_kernel_name(base: &str, dtype: DType, tile: WmmaTile) -> String {
+    format!("{base}_{}_{}", dtype_suffix(dtype), tile.suffix())
+}
+
+/// Blocks `tile` launches for this output shape.
+#[inline]
+fn wmma_grid_blocks(m: usize, n: usize, batch: usize, tile: WmmaTile) -> u64 {
+    let tiles_m = (m as u64).div_ceil(u64::from(tile.tile_m()));
+    let tiles_n = (n as u64).div_ceil(u64::from(tile.tile_n()));
+    tiles_m * tiles_n * (batch as u64)
+}
+
+/// Pick the block tile for one WMMA launch.
+///
+/// Both tiles run the same kernel body and trade parallelism against reuse.
+/// The larger tile computes four times the output per block and reads each
+/// operand element into shared memory fewer times, so it wins once the device
+/// is already full of blocks. The smaller tile emits four times as many blocks
+/// for the same output, so it wins when the larger tile's grid is too short to
+/// keep every SM busy for more than about one wave: the launch is then bound
+/// by how few blocks are in flight, and the extra reuse buys nothing.
+///
+/// The larger tile is taken only when both conditions hold:
+/// - the output covers it in both dimensions. A tile wider or taller than the
+///   problem still stages, multiplies and accumulates the overhanging
+///   fragments, then discards their stores — pure waste.
+/// - its grid reaches `WMMA_MIN_WAVES` device waves, a wave being
+///   `compute_units * WMMA_BLOCKS_PER_UNIT` blocks.
+///
+/// K does not enter the rule: both tiles iterate the whole K extent, so K
+/// scales the per-block work of both by the same factor.
+///
+/// `compute_units` comes from the cached device profile — an atomic load, not
+/// a driver query per launch. An unknown profile reports zero compute units,
+/// which makes the wave test trivially true and leaves the larger tile as the
+/// default.
+///
+/// This runs only after [`super::matmul_wmma::use_wmma`] has already chosen
+/// the WMMA path; it never changes whether that path is taken.
+#[inline]
+pub(super) fn select_wmma_tile(
+    m: usize,
+    n: usize,
+    _k: usize,
+    batch: usize,
+    device_index: usize,
+) -> WmmaTile {
+    // CudaDevice::new is a zero-cost index wrapper; profile() reads the cached
+    // profile, so this is an atomic load rather than a driver query.
+    let compute_units = CudaDevice::new(device_index).profile().compute_units;
+    wmma_tile_for_units(m, n, batch, compute_units)
+}
+
+/// The tile rule itself, separated from the device query so it is testable
+/// without a device.
+#[inline]
+fn wmma_tile_for_units(m: usize, n: usize, batch: usize, compute_units: u32) -> WmmaTile {
+    const LARGE: WmmaTile = WmmaTile::Tile128;
+    const SMALL: WmmaTile = WmmaTile::Tile64;
+
+    if m < LARGE.tile_m() as usize || n < LARGE.tile_n() as usize {
+        return SMALL;
+    }
+
+    let wave_blocks = u64::from(compute_units) * u64::from(WMMA_BLOCKS_PER_UNIT);
+    let needed = wave_blocks * u64::from(WMMA_MIN_WAVES);
+
+    if wmma_grid_blocks(m, n, batch, LARGE) >= needed {
+        LARGE
+    } else {
+        SMALL
+    }
+}
+
+// WMMA kernels use only statically-declared __shared__ arrays; there is no
+// extern __shared__ (dynamic) allocation.  Pass 0 so CUDA does not add
+// extra dynamic smem on top of the static pool (which would push total over
+// the 48 KB default per-block limit on sm_86).
+const WMMA_SMEM_BYTES: u32 = 0;
+
+/// Grid and block for one WMMA launch: one block per `tile` output tile, one
+/// grid-z slice per batch index (`batch` is 1 for the 2-D forms).
+#[inline]
+pub(super) fn wmma_launch_config(m: usize, n: usize, batch: usize, tile: WmmaTile) -> LaunchConfig {
+    LaunchConfig {
+        grid_dim: (
+            (n as u32).div_ceil(tile.tile_n()),
+            (m as u32).div_ceil(tile.tile_m()),
+            batch as u32,
+        ),
+        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
+        shared_mem_bytes: WMMA_SMEM_BYTES,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- tile selection ----
+
+    // A mid-size device; the rule scales with this number, it is not tuned to
+    // any particular value.
+    const UNITS: u32 = 28;
+
+    #[test]
+    fn small_grid_takes_the_smaller_tile() {
+        // The large tile covers this output, but its grid is under the
+        // minimum wave count, so the device would run barely one wave.
+        assert_eq!(wmma_tile_for_units(1024, 1024, 1, UNITS), WmmaTile::Tile64);
+    }
+
+    #[test]
+    fn large_grid_takes_the_larger_tile() {
+        // Batching multiplies the grid past the wave threshold.
+        assert_eq!(wmma_tile_for_units(512, 1024, 4, UNITS), WmmaTile::Tile128);
+        assert_eq!(wmma_tile_for_units(512, 512, 64, UNITS), WmmaTile::Tile128);
+    }
+
+    #[test]
+    fn overhanging_output_takes_the_smaller_tile() {
+        // N below the large tile width: half of every block's columns would be
+        // computed and then discarded, however long the grid is.
+        assert_eq!(wmma_tile_for_units(512, 64, 64, UNITS), WmmaTile::Tile64);
+        // Same in the M direction.
+        assert_eq!(wmma_tile_for_units(64, 512, 64, UNITS), WmmaTile::Tile64);
+    }
+
+    #[test]
+    fn threshold_is_exactly_the_wave_count() {
+        // Needed blocks = UNITS * WMMA_BLOCKS_PER_UNIT * WMMA_MIN_WAVES.
+        let needed = (UNITS * WMMA_BLOCKS_PER_UNIT * WMMA_MIN_WAVES) as usize;
+        // One 128x128 tile per batch slice, so batch == grid blocks.
+        assert_eq!(
+            wmma_tile_for_units(128, 128, needed, UNITS),
+            WmmaTile::Tile128
+        );
+        assert_eq!(
+            wmma_tile_for_units(128, 128, needed - 1, UNITS),
+            WmmaTile::Tile64
+        );
+    }
+
+    #[test]
+    fn unknown_profile_keeps_the_larger_tile() {
+        // DeviceProfile::unknown reports zero compute units; the wave test is
+        // then trivially satisfied and the default tile stands.
+        assert_eq!(wmma_tile_for_units(1024, 1024, 1, 0), WmmaTile::Tile128);
+    }
+
+    #[test]
+    fn grid_blocks_counts_partial_tiles() {
+        assert_eq!(wmma_grid_blocks(129, 129, 1, WmmaTile::Tile128), 4);
+        assert_eq!(wmma_grid_blocks(129, 129, 1, WmmaTile::Tile64), 9);
+        assert_eq!(wmma_grid_blocks(256, 256, 3, WmmaTile::Tile128), 12);
+    }
+}
