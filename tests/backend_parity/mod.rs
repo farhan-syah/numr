@@ -24,6 +24,7 @@ pub mod conv_oc4;
 pub mod conv_transpose1d_gemm;
 pub mod conv_transpose1d_multichannel;
 pub mod cumulative;
+pub mod depthwise_conv2d;
 pub mod distance;
 pub mod distance_narrow_float;
 pub mod eigen;
