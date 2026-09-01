@@ -39,11 +39,13 @@ const CONV1D_BLOCK_NARROW: [u32; 5] = [1, 2, 4, 8, 16];
 /// Fallback conv1d block width when `output_length` exceeds every candidate.
 const CONV1D_BLOCK_MAX: u32 = 256;
 
-/// Target threads per conv1d block. A narrow row is padded out along the
-/// output-channel axis (`blockDim.y`) instead of being launched as a 32-thread
-/// block, because an SM holds at most 16 blocks and 32-thread blocks would cap
-/// it at 16 of its 48 warp slots.
-const CONV1D_BLOCK_THREADS: u32 = 128;
+/// Target threads per block, shared by conv1d and depthwise_conv2d's
+/// row/position-indexed kernels. A narrow row is padded out along the second
+/// grid axis (`blockDim.y`, output channels for conv1d or folded
+/// channel/output-row for depthwise_conv2d) instead of being launched as a
+/// 32-thread block, because an SM holds at most 16 blocks and 32-thread
+/// blocks would cap it at 16 of its 48 warp slots.
+const CONV_BLOCK_THREADS: u32 = 128;
 
 /// Output channels each thread of `conv1d_oc4_*` accumulates.
 const CONV1D_OC_BLOCK: usize = 4;
@@ -69,12 +71,49 @@ const CONV1D_OX_MIN_OUTPUT_LENGTH: usize = 2 * CONV1D_OX_BLOCK;
 /// row and still be left with too few threads to fill the device: a narrow,
 /// low-channel-count shape can regress badly versus the untiled kernel once
 /// blocking leaves only a handful of warps to hide memory latency. One wave is
-/// `compute_units * CONV1D_BLOCK_THREADS`; two is the smallest count that
+/// `compute_units * CONV_BLOCK_THREADS`; two is the smallest count that
 /// rejects that shape while keeping every depthwise case that gains.
 const CONV1D_OX_MIN_WAVES: usize = 2;
 
+/// Consecutive output columns each thread of `depthwise_conv2d_ox_*`
+/// accumulates. Must match `DEPTHWISE_CONV2D_OX_BLOCK` in
+/// `depthwise_conv2d_ox.cu`.
+const DEPTHWISE_CONV2D_OX_BLOCK: usize = 4;
+
+/// Module name for the column-blocked depthwise conv2d kernel
+/// (`depthwise_conv2d_ox.cu` compiles to its own fatbin, separate from
+/// [`CONV_MODULE`]).
+const DEPTHWISE_CONV2D_OX_MODULE: &str = "depthwise_conv2d_ox";
+
+/// Minimum `output_w` before `depthwise_conv2d_ox` is preferred over the flat
+/// kernel. Guarantees the row covers at least one full
+/// [`DEPTHWISE_CONV2D_OX_BLOCK`]-wide chunk plus a remainder.
+const DEPTHWISE_CONV2D_OX_MIN_OUTPUT_WIDTH: usize = 2 * DEPTHWISE_CONV2D_OX_BLOCK;
+
+/// Device waves the column-blocked depthwise grid must still reach after
+/// blocking. Same reasoning as [`CONV1D_OX_MIN_WAVES`]: blocking divides the
+/// thread count by [`DEPTHWISE_CONV2D_OX_BLOCK`], so a wide row is not on its
+/// own enough to keep the device fed once channels and rows are few.
+const DEPTHWISE_CONV2D_OX_MIN_WAVES: usize = 2;
+
 /// CUDA caps the y and z grid dimensions at 65535 blocks.
 const CUDA_MAX_GRID_YZ: usize = 65535;
+
+/// Block width (threads along the output-position axis) for the kernels that
+/// index position, channel and batch independently, so may go below a warp.
+/// `x_extent` is the number of thread slots the axis needs, already divided by
+/// the per-thread blocking factor where one applies.
+fn position_block_width(x_extent: usize) -> u32 {
+    CONV1D_BLOCK_NARROW
+        .into_iter()
+        .find(|&w| x_extent <= w as usize)
+        .unwrap_or_else(|| {
+            CONV1D_BLOCK_CANDIDATES
+                .into_iter()
+                .find(|&w| x_extent <= w as usize)
+                .unwrap_or(CONV1D_BLOCK_MAX)
+        })
+}
 
 // ============================================================================
 // Conv1d
@@ -137,7 +176,7 @@ pub unsafe fn launch_conv1d(
             .saturating_mul(c_out)
             .saturating_mul(output_length.div_ceil(CONV1D_OX_BLOCK));
         let ox_wave = compute_units
-            .saturating_mul(CONV1D_BLOCK_THREADS as usize)
+            .saturating_mul(CONV_BLOCK_THREADS as usize)
             .saturating_mul(CONV1D_OX_MIN_WAVES);
         let ox_blocked = !is_fp8
             && !oc_blocked
@@ -176,20 +215,15 @@ pub unsafe fn launch_conv1d(
 
             // oc4 keeps the warp floor; the scalar and ox kernels may go
             // narrower.
-            let narrow = if oc_blocked {
-                None
-            } else {
-                CONV1D_BLOCK_NARROW
-                    .into_iter()
-                    .find(|&w| x_extent <= w as usize)
-            };
-            let block_x = narrow.unwrap_or_else(|| {
+            let block_x = if oc_blocked {
                 CONV1D_BLOCK_CANDIDATES
                     .into_iter()
                     .find(|&w| x_extent <= w as usize)
                     .unwrap_or(CONV1D_BLOCK_MAX)
-            });
-            let block_y = (CONV1D_BLOCK_THREADS / block_x).max(1);
+            } else {
+                position_block_width(x_extent)
+            };
+            let block_y = (CONV_BLOCK_THREADS / block_x).max(1);
 
             // One slot per output channel, or per chunk of CONV1D_OC_BLOCK
             // channels when the register-blocked kernel runs. Chunking is per
@@ -518,13 +552,60 @@ pub unsafe fn launch_depthwise_conv2d(
     }
 
     unsafe {
-        let module = get_or_load_module(context, device_index, CONV_MODULE)?;
-        let func_name = kernel_name("depthwise_conv2d", dtype);
+        // Register-block over output columns when the row is wide enough and
+        // the blocked grid still fills the device. FP8 keeps its own legacy
+        // flat kernel, as it does for conv1d.
+        let is_fp8 = matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2);
+        // `compute_units` is 0 on an unknown profile, which makes the wave
+        // test trivially true and leaves the row-width gate deciding.
+        let compute_units = CudaDevice::new(device_index).profile().compute_units as usize;
+        let x_extent = output_w.div_ceil(DEPTHWISE_CONV2D_OX_BLOCK);
+        // The blocked kernel folds (channel, oy) onto one grid axis.
+        let rows = channels.saturating_mul(output_h);
+        let ox_threads = batch.saturating_mul(rows).saturating_mul(x_extent);
+        let ox_wave = compute_units
+            .saturating_mul(CONV_BLOCK_THREADS as usize)
+            .saturating_mul(DEPTHWISE_CONV2D_OX_MIN_WAVES);
+
+        // Same target block size as conv1d: a narrow row is padded out along
+        // the row axis rather than launched as a 32-thread block.
+        let block_x = position_block_width(x_extent);
+        let block_y = (CONV_BLOCK_THREADS / block_x).max(1);
+        let grid_y = rows.div_ceil(block_y as usize);
+
+        let ox_blocked = !is_fp8
+            && output_w >= DEPTHWISE_CONV2D_OX_MIN_OUTPUT_WIDTH
+            && ox_threads >= ox_wave
+            // A shape that overflows the folded y axis or the batch z axis
+            // falls back to the flat kernel instead of failing.
+            && grid_y <= CUDA_MAX_GRID_YZ
+            && batch <= CUDA_MAX_GRID_YZ;
+
+        let base = if ox_blocked {
+            "depthwise_conv2d_ox"
+        } else {
+            "depthwise_conv2d"
+        };
+        let module_name = if ox_blocked {
+            DEPTHWISE_CONV2D_OX_MODULE
+        } else {
+            CONV_MODULE
+        };
+        let module = get_or_load_module(context, device_index, module_name)?;
+        let func_name = kernel_name(base, dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let grid = elementwise_launch_config(total)?;
-        let block = (BLOCK_SIZE, 1, 1);
-        let cfg = launch_config(grid, block, 0);
+        let cfg = if ox_blocked {
+            let grid = (
+                (x_extent as u32).div_ceil(block_x),
+                grid_y as u32,
+                batch as u32,
+            );
+            launch_config(grid, (block_x, block_y, 1), 0)
+        } else {
+            let grid = elementwise_launch_config(total)?;
+            launch_config(grid, (BLOCK_SIZE, 1, 1), 0)
+        };
 
         let batch_u32 = batch as u32;
         let channels_u32 = channels as u32;
@@ -577,7 +658,7 @@ pub unsafe fn launch_depthwise_conv2d(
 
 #[cfg(test)]
 mod tests {
-    use super::{CONV1D_OC_BLOCK, CONV1D_OX_BLOCK};
+    use super::{CONV1D_OC_BLOCK, CONV1D_OX_BLOCK, DEPTHWISE_CONV2D_OX_BLOCK};
 
     /// Blocking factors that appear in BOTH the kernel source and this
     /// launcher. The launcher sizes the grid from them and the kernel decides
@@ -613,6 +694,16 @@ mod tests {
             kernel_define(source, "CONV1D_OX_BLOCK"),
             CONV1D_OX_BLOCK,
             "conv1d_ox.cu and conv.rs disagree on the position blocking factor"
+        );
+    }
+
+    #[test]
+    fn depthwise_ox_block_matches_the_kernel() {
+        let source = include_str!("depthwise_conv2d_ox.cu");
+        assert_eq!(
+            kernel_define(source, "DEPTHWISE_CONV2D_OX_BLOCK"),
+            DEPTHWISE_CONV2D_OX_BLOCK,
+            "depthwise_conv2d_ox.cu and conv.rs disagree on the column blocking factor"
         );
     }
 }

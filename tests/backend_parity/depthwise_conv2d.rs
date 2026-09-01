@@ -188,3 +188,80 @@ fn depthwise_conv2d_batch_multichannel_parity() {
         (1, 1),
     );
 }
+
+// The cases above all sit below the `depthwise_conv2d_ox` dispatch floors in
+// `src/runtime/cuda/kernels/conv.rs`, so every one of them runs the flat
+// fallback kernel. The cases below are sized to cross both floors — a minimum
+// output width and a minimum blocked thread count — so the column-blocked
+// kernel is the one under test.
+//
+// If either constant is ever raised, raise these shapes with it. A shape that
+// falls below a floor does not fail; it quietly runs the flat kernel and stops
+// covering the blocked path at all.
+
+/// Fast path (`stride_w == 1 && dilation_w == 1`) with `kh != kw`, `H != W`,
+/// and an output width that is not a multiple of the blocking factor, so the
+/// partial final block is exercised alongside the sliding-window run.
+#[test]
+fn depthwise_conv2d_ox_fast_path_partial_block_parity() {
+    let input_shape = [1usize, 32, 30, 36];
+    let weight_shape = [32usize, 1, 5, 3];
+    let input = dw_input(input_shape.iter().product());
+    let weight = dw_weight(weight_shape.iter().product());
+    assert_depthwise_conv2d_parity(
+        "depthwise_conv2d_ox_fast_path_partial_block",
+        &input,
+        &input_shape,
+        &weight,
+        &weight_shape,
+        None,
+        (1, 1),
+        PaddingMode::Valid,
+        (1, 1),
+    );
+}
+
+/// Fast path with asymmetric `Custom` padding and a bias, so a pad component
+/// applied to the wrong edge of the sliding-window run is caught, and the
+/// per-channel bias is confirmed on the blocked path.
+#[test]
+fn depthwise_conv2d_ox_fast_path_padded_parity() {
+    let input_shape = [1usize, 32, 30, 34];
+    let weight_shape = [32usize, 1, 3, 5];
+    let input = dw_input(input_shape.iter().product());
+    let weight = dw_weight(weight_shape.iter().product());
+    let bias = dw_bias(weight_shape[0]);
+    assert_depthwise_conv2d_parity(
+        "depthwise_conv2d_ox_fast_path_padded",
+        &input,
+        &input_shape,
+        &weight,
+        &weight_shape,
+        Some(&bias),
+        (1, 1),
+        PaddingMode::Custom(2, 0, 1, 3),
+        (1, 1),
+    );
+}
+
+/// General path: `dilation_w != 1` disables the sliding-window run, so the
+/// blocked kernel's fallback branch is covered rather than only its fast one.
+#[test]
+fn depthwise_conv2d_ox_general_path_parity() {
+    let input_shape = [1usize, 32, 30, 80];
+    let weight_shape = [32usize, 1, 3, 3];
+    let input = dw_input(input_shape.iter().product());
+    let weight = dw_weight(weight_shape.iter().product());
+    let bias = dw_bias(weight_shape[0]);
+    assert_depthwise_conv2d_parity(
+        "depthwise_conv2d_ox_general_path",
+        &input,
+        &input_shape,
+        &weight,
+        &weight_shape,
+        Some(&bias),
+        (1, 2),
+        PaddingMode::Valid,
+        (1, 2),
+    );
+}

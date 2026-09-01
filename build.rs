@@ -54,6 +54,7 @@ fn compile_cuda_kernels() {
         "conv1d_ox.cu",
         "cumulative.cu",
         "cumulative_int.cu",
+        "depthwise_conv2d_ox.cu",
         "distance.cu",
         "distributions.cu",
         "fft.cu",
