@@ -4,9 +4,11 @@
 //
 //
 // Uses nvcuda::wmma 16x16x16 fragments with F32 accumulation.
-// Shared-memory staging of A and B tiles means global addresses never need
-// to satisfy the fragment-alignment requirement (sidesteps the
-// CUDA_ERROR_MISALIGNED_ADDRESS class of bug that float4 global loads hit).
+// Shared-memory staging of A and B tiles means the wmma fragment pointers are
+// always shared-memory addresses, so global addresses never need to satisfy
+// the fragment-alignment requirement. The staging loads themselves are 128-bit
+// where the operand allows it, and fall back to element-at-a-time otherwise;
+// see WMMA_VEC_OK below for why that fallback is a correctness path.
 //
 // Warp tiling. The warp grid is fixed at WARP_ROWS x WARP_COLS = 4x4 warps
 // (16 warps, 512 threads); the block tile is a parameter of the kernel body
@@ -45,10 +47,16 @@
 // The 64x64 tile never needs more smem than the 128x128 one, so it never
 // lowers the resident-block count.
 //
-// Scalar staging (bounds-checked zero-pad loops):
-//   Each thread iterates over its share of tile elements with strided loops,
-//   loading one element at a time with explicit bounds checks. Out-of-bounds
-//   positions are zero-padded. This is deterministic and correct for all shapes.
+// Staging (bounds-checked zero-pad loops, vectorised where legal):
+//   Threads cooperatively copy the tile with strided loops. The fast path
+//   moves eight halves (128 bits) per access, so the loop trip count and the
+//   address arithmetic and branching that go with it drop by 8x; this is where
+//   nearly all of the kernel's non-mma instructions used to go. It is taken
+//   only when the global operand is 16-byte aligned with a row stride that is
+//   a multiple of eight halves, and the tile does not overhang the contraction
+//   (A) or N (B) edge. Everything else takes the element-at-a-time path.
+//   Out-of-bounds positions are zero-padded identically on both paths, so the
+//   two agree bit-for-bit. Both are deterministic and correct for all shapes.
 //
 // Caller must guarantee M, N, K are all multiples of 16 before dispatching here.
 // FMA fallback handles all other shapes. Given that guarantee, the K-direction
@@ -124,7 +132,19 @@ using namespace nvcuda::wmma;
     constexpr unsigned int SMEM_B_ELEMS = BLOCK_K * SMEM_STRIDE_B;           \
     /* One 16x16 float region per warp; one fragment is in flight at a time. */ \
     constexpr unsigned int SMEM_SCRATCH_ELEMS =                              \
-        (WARP_ROWS * WARP_COLS) * WMMA_M * WMMA_N;
+        (WARP_ROWS * WARP_COLS) * WMMA_M * WMMA_N;                           \
+    /* The 128-bit staging path below writes shared memory at                \
+       r * SMEM_STRIDE_* + c with c a multiple of WMMA_VEC_HALVES, so both   \
+       strides must be multiples of WMMA_VEC_HALVES for the destination to   \
+       stay 16-byte aligned. The same holds for the four staging bases,      \
+       which sit at multiples of SMEM_A_ELEMS / SMEM_B_ELEMS. Changing       \
+       BLOCK_K or the tile without keeping these true faults the kernel. */  \
+    static_assert(SMEM_STRIDE_A % 8 == 0 && SMEM_STRIDE_B % 8 == 0,          \
+                  "smem strides must be multiples of 8 halves");             \
+    static_assert(SMEM_A_ELEMS % 8 == 0 && SMEM_B_ELEMS % 8 == 0,            \
+                  "smem staging bases must be 16-byte aligned");             \
+    static_assert(BLOCK_K % 8 == 0 && BLOCK_TILE_N % 8 == 0,                 \
+                  "tile inner dims must be whole 128-bit groups");
 
 /* One byte array backs both the two staging stages and the epilogue scratch.
    The four staging bases sit at multiples of 16 bytes for every instantiated
@@ -138,32 +158,100 @@ using namespace nvcuda::wmma;
         ? SMEM_STAGE_BYTES(HALF_T) : SMEM_SCRATCH_BYTES)
 
 
-/* Stage one K-tile into the given A/B buffers. Bounds-checked: positions    \
-   past the M/N/K edge are zero-padded. Reads the tile constants declared by \
-   WMMA_TILE_CONSTANTS in the enclosing scope. */                            \
+/* Number of halves in a 128-bit access. Both staging loops move whole
+   WMMA_VEC_HALVES-wide groups so the shared-memory destination lands on a
+   16-byte boundary. */
+#define WMMA_VEC_HALVES 8
+
+/* Guard for the 128-bit staging path on a row-major global operand.
+   A 128-bit load FAULTS on a non-16-byte-aligned address, so both tests are
+   correctness conditions, not tuning:
+     - the operand base must itself be 16-byte aligned (a batch slice, a view
+       offset, or any caller-supplied sub-buffer can break this);
+     - every row start is base + row * ROW_STRIDE, so ROW_STRIDE must be a
+       multiple of WMMA_VEC_HALVES for rows past the first to stay aligned.
+   The column offsets the loops generate are already multiples of
+   WMMA_VEC_HALVES. Drop either test and the kernel takes a misaligned-address
+   fault, or silently reads the wrong bytes. */
+#define WMMA_VEC_OK(PTR, ROW_STRIDE)                                         \
+    (((reinterpret_cast<unsigned long long>(PTR)) & 15ull) == 0ull &&        \
+     (((ROW_STRIDE) % WMMA_VEC_HALVES) == 0u))
+
+/* Stage one K-tile into the given A/B buffers. Bounds-checked: positions      \
+   past the M/N/K edge are zero-padded. Reads the tile constants declared by   \
+   WMMA_TILE_CONSTANTS in the enclosing scope.                                 \
+                                                                              \
+   Two paths per tile. The fast path moves WMMA_VEC_HALVES halves per access   \
+   and carries one branch per vector instead of one per element; it runs when  \
+   the global operand satisfies WMMA_VEC_OK and the tile does not overhang the \
+   contraction edge (A) or the N edge (B). Every term of that condition is     \
+   block-uniform, so the branch costs nothing and hoists out of the loops.     \
+   Anything else — a misaligned operand, a row stride that is not a multiple   \
+   of WMMA_VEC_HALVES, a ragged trailing tile — takes the scalar path, which   \
+   is the original element-at-a-time code and defines the semantics the fast   \
+   path must match.                                                            \
+                                                                              \
+   Zero-padding is identical on both paths: an all-zero 128-bit word is eight  \
+   halves of +0.0 in both F16 and BF16, the same value ZERO_EXPR produces.     \
+   The M/N-edge row test stays inside the fast path, so partial tiles still    \
+   zero-fill without falling back. */
 #define WMMA_STAGE_TILE(HALF_T, ZERO_EXPR, A_ptr, B_ptr, DST_A, DST_B, K_OFF) \
 {                                                                            \
+    const unsigned int k_off = (K_OFF);                                      \
     /* A tile [BLOCK_TILE_M x BLOCK_K]. */                                   \
-    for (unsigned int idx = tid;                                             \
-         idx < BLOCK_TILE_M * BLOCK_K; idx += num_threads) {                 \
-        unsigned int r  = idx / BLOCK_K;                                     \
-        unsigned int c  = idx % BLOCK_K;                                     \
-        unsigned int gr = block_row + r;                                     \
-        unsigned int gc = (K_OFF) + c;                                       \
-        HALF_T val = ZERO_EXPR;                                              \
-        if (gr < M && gc < K) val = (A_ptr)[gr * K + gc];                    \
-        (DST_A)[r * SMEM_STRIDE_A + c] = val;                                \
+    if (WMMA_VEC_OK(A_ptr, K) && k_off + BLOCK_K <= K) {                     \
+        constexpr unsigned int A_VECS_PER_ROW = BLOCK_K / WMMA_VEC_HALVES;   \
+        for (unsigned int vi = tid;                                          \
+             vi < BLOCK_TILE_M * A_VECS_PER_ROW; vi += num_threads) {        \
+            unsigned int r  = vi / A_VECS_PER_ROW;                           \
+            unsigned int c  = (vi % A_VECS_PER_ROW) * WMMA_VEC_HALVES;       \
+            unsigned int gr = block_row + r;                                 \
+            int4 v = make_int4(0, 0, 0, 0);                                  \
+            if (gr < M) {                                                    \
+                v = *reinterpret_cast<const int4*>(                          \
+                        (A_ptr) + gr * K + k_off + c);                       \
+            }                                                                \
+            *reinterpret_cast<int4*>((DST_A) + r * SMEM_STRIDE_A + c) = v;   \
+        }                                                                    \
+    } else {                                                                 \
+        for (unsigned int idx = tid;                                         \
+             idx < BLOCK_TILE_M * BLOCK_K; idx += num_threads) {             \
+            unsigned int r  = idx / BLOCK_K;                                 \
+            unsigned int c  = idx % BLOCK_K;                                 \
+            unsigned int gr = block_row + r;                                 \
+            unsigned int gc = k_off + c;                                     \
+            HALF_T val = ZERO_EXPR;                                          \
+            if (gr < M && gc < K) val = (A_ptr)[gr * K + gc];                \
+            (DST_A)[r * SMEM_STRIDE_A + c] = val;                            \
+        }                                                                    \
     }                                                                        \
     /* B tile [BLOCK_K x BLOCK_TILE_N]. */                                   \
-    for (unsigned int idx = tid;                                             \
-         idx < BLOCK_K * BLOCK_TILE_N; idx += num_threads) {                 \
-        unsigned int r  = idx / BLOCK_TILE_N;                                \
-        unsigned int c  = idx % BLOCK_TILE_N;                                \
-        unsigned int gr = (K_OFF) + r;                                       \
-        unsigned int gc = block_col + c;                                     \
-        HALF_T val = ZERO_EXPR;                                              \
-        if (gr < K && gc < N) val = (B_ptr)[gr * N + gc];                    \
-        (DST_B)[r * SMEM_STRIDE_B + c] = val;                                \
+    if (WMMA_VEC_OK(B_ptr, N) && block_col + BLOCK_TILE_N <= N) {            \
+        constexpr unsigned int B_VECS_PER_ROW =                              \
+            BLOCK_TILE_N / WMMA_VEC_HALVES;                                  \
+        for (unsigned int vi = tid;                                          \
+             vi < BLOCK_K * B_VECS_PER_ROW; vi += num_threads) {             \
+            unsigned int r  = vi / B_VECS_PER_ROW;                           \
+            unsigned int c  = (vi % B_VECS_PER_ROW) * WMMA_VEC_HALVES;       \
+            unsigned int gr = k_off + r;                                     \
+            int4 v = make_int4(0, 0, 0, 0);                                  \
+            if (gr < K) {                                                    \
+                v = *reinterpret_cast<const int4*>(                          \
+                        (B_ptr) + gr * N + block_col + c);                   \
+            }                                                                \
+            *reinterpret_cast<int4*>((DST_B) + r * SMEM_STRIDE_B + c) = v;   \
+        }                                                                    \
+    } else {                                                                 \
+        for (unsigned int idx = tid;                                         \
+             idx < BLOCK_K * BLOCK_TILE_N; idx += num_threads) {             \
+            unsigned int r  = idx / BLOCK_TILE_N;                            \
+            unsigned int c  = idx % BLOCK_TILE_N;                            \
+            unsigned int gr = k_off + r;                                     \
+            unsigned int gc = block_col + c;                                 \
+            HALF_T val = ZERO_EXPR;                                          \
+            if (gr < K && gc < N) val = (B_ptr)[gr * N + gc];                \
+            (DST_B)[r * SMEM_STRIDE_B + c] = val;                            \
+        }                                                                    \
     }                                                                        \
 }
 
