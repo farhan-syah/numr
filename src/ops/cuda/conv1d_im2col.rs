@@ -43,21 +43,6 @@ const MIN_CONTRACTION: usize = 2048;
 /// direct kernel. Depthwise convolution sits at one and always stays direct.
 const MIN_C_OUT_PER_GROUP: usize = 4;
 
-/// Shortest `output_length` routed through im2col.
-///
-/// Measured, and the previous value of 16 was not: on a large-channel family
-/// im2col was faster than the direct kernel at EVERY output length swept, from
-/// 1 up to 300. The old threshold sent the short end of that range to the
-/// slower path for no reason.
-///
-/// Kept above 1 because the sweep covered only that family. The opposite
-/// corner — `c_out` at its floor of MIN_C_OUT_PER_GROUP with contraction at
-/// MIN_CONTRACTION — makes a degenerate GEMM whose col buffer may not pay for
-/// itself, and no measurement covers it. Gating on the GEMM's output element
-/// count rather than on length alone would express that better; that is a
-/// follow-up, not a tuned number.
-const MIN_OUTPUT_LENGTH: usize = 4;
-
 /// Largest column buffer, in elements. im2col trades memory for arithmetic
 /// intensity; past this the extra allocation and traffic outweigh the GEMM.
 const MAX_COL_ELEMENTS: usize = 1 << 26;
@@ -98,9 +83,10 @@ pub fn use_conv1d_im2col(params: &Conv1dParams, dtype: DType) -> bool {
         return false;
     }
 
-    contraction >= MIN_CONTRACTION
-        && c_out_per_group >= MIN_C_OUT_PER_GROUP
-        && params.output_length >= MIN_OUTPUT_LENGTH
+    // No output-length term. Contraction decides this, and once it clears
+    // MIN_CONTRACTION the GEMM won at every length swept from 1 to 300. A
+    // length floor here would only block wins.
+    contraction >= MIN_CONTRACTION && c_out_per_group >= MIN_C_OUT_PER_GROUP
 }
 
 /// Run conv1d as im2col followed by a batched GEMM.
