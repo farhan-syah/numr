@@ -71,6 +71,52 @@ fn cuda_conv1d_oc4_1536ch_k7_lout300(b: &mut Bencher) {
     });
 }
 
+/// Brackets MIN_OUTPUT_LENGTH, the im2col dispatch threshold in
+/// `src/ops/cuda/conv1d_im2col.rs`. Same family as the oc4 cases above, so only
+/// output_length varies: length 18 - (kernel 7 - 1) = 12.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_oc4_1536ch_k7_lout12(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 1536, 18], &device);
+    let weight = rand_cuda(&[1536, 1536, 7], &device);
+    let bias = rand_cuda(&[1536], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Brackets MIN_OUTPUT_LENGTH, the im2col dispatch threshold in
+/// `src/ops/cuda/conv1d_im2col.rs`. Same family as the oc4 cases above, so only
+/// output_length varies: length 26 - (kernel 7 - 1) = 20.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_oc4_1536ch_k7_lout20(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 1536, 26], &device);
+    let weight = rand_cuda(&[1536, 1536, 7], &device);
+    let bias = rand_cuda(&[1536], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
 // ---------------------------------------------------------------------------
 // conv1d — scalar path (c_out_per_group < 4)
 // ---------------------------------------------------------------------------

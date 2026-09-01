@@ -33,9 +33,20 @@ const MIN_CONTRACTION: usize = 64;
 /// direct kernel. Depthwise convolution sits at one and always stays direct.
 const MIN_C_OUT_PER_GROUP: usize = 4;
 
-/// Smallest output length. A very short row makes the GEMM narrower than one
-/// tile, so the column buffer is materialised for almost no reuse.
-const MIN_OUTPUT_LENGTH: usize = 16;
+/// Shortest `output_length` routed through im2col.
+///
+/// Measured, and the previous value of 16 was not: on a large-channel family
+/// im2col was faster than the direct kernel at EVERY output length swept, from
+/// 1 up to 300. The old threshold sent the short end of that range to the
+/// slower path for no reason.
+///
+/// Kept above 1 because the sweep covered only that family. The opposite
+/// corner — `c_out` at its floor of MIN_C_OUT_PER_GROUP with contraction at
+/// MIN_CONTRACTION — makes a degenerate GEMM whose col buffer may not pay for
+/// itself, and no measurement covers it. Gating on the GEMM's output element
+/// count rather than on length alone would express that better; that is a
+/// follow-up, not a tuned number.
+const MIN_OUTPUT_LENGTH: usize = 4;
 
 /// Largest column buffer, in elements. im2col trades memory for arithmetic
 /// intensity; past this the extra allocation and traffic outweigh the GEMM.
