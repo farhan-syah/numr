@@ -6,6 +6,7 @@
 
 mod dtype_modules;
 mod elementwise;
+mod gemm_epilogue_wmma;
 mod gemv;
 mod launch_dims;
 mod matmul;
@@ -22,6 +23,10 @@ mod semiring_matmul;
 
 pub(crate) use dtype_modules::{cumulative_module, reduce_module, unary_module};
 pub use elementwise::{launch_binary_kernel, launch_unary_kernel};
+pub(crate) use gemm_epilogue_wmma::{
+    launch_gemm_bias_act_wmma_batched_kernel, launch_gemm_bias_act_wmma_kernel,
+    launch_gemm_bias_residual_wmma_batched_kernel, launch_gemm_bias_residual_wmma_kernel,
+};
 pub use gemv::{launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr};
 pub use launch_dims::{
     BLOCK_SIZE, LaunchConfig, check_shared_mem_fits, elementwise_launch_config, launch_config,
@@ -34,7 +39,7 @@ pub use matmul_config::{
     matmul_batched_launch_config, matmul_launch_config,
 };
 pub use matmul_int::{int_matmul_has_kernel, int_matmul_output_dtype};
-pub(crate) use matmul_wmma::use_wmma_after_padding;
+pub(crate) use matmul_wmma::{use_wmma, use_wmma_after_padding};
 pub use module_cache::{get_kernel_function, get_or_load_module, preload_modules};
 pub use names::{dtype_suffix, kernel_name, kernel_names};
 pub use semiring_matmul::{launch_semiring_matmul_batched_kernel, launch_semiring_matmul_kernel};

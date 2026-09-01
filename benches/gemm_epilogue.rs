@@ -156,8 +156,11 @@ fn cuda_gemm_bias_residual_512m_4096k_1024n(b: &mut Bencher) {
 }
 
 // ---------------------------------------------------------------------------
-// matmul_bias_activation: F16/BF16 — generic fallback kernel, no tiled
-// specialization (unlike F32, which just got a 26-59x faster tiled kernel).
+// matmul_bias_activation and matmul_bias_residual: F16/BF16.
+//
+// 16-aligned shapes take the WMMA tensor-core epilogue kernels; the unaligned
+// case below is padded up to 16-multiples to reach the same path, so it also
+// carries the pad and slice cost.
 // ---------------------------------------------------------------------------
 
 /// F16: M=N=K=1024, GELU.
@@ -196,6 +199,64 @@ fn cuda_gemm_bias_act_bf16_1024x1024(b: &mut Bencher) {
                 .matmul_bias_activation(&a, &bm, &bias, GemmActivation::GELU)
                 .unwrap(),
         );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// F16, unaligned M/K/N: padded up to 16-multiples to reach WMMA, so this
+/// measures the pad + GEMM + slice path rather than the GEMM alone.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "gemm_epilogue_bias_act_f16")]
+fn cuda_gemm_bias_act_f16_1000x1000_unaligned(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[1000, 1000], &device);
+    let bm = rand_cuda_f16(&[1000, 1000], &device);
+    let bias = rand_cuda_f16(&[1000], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .matmul_bias_activation(&a, &bm, &bias, GemmActivation::GELU)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// F16 residual: M=N=K=1024.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "gemm_epilogue_bias_residual_f16")]
+fn cuda_gemm_bias_residual_f16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16(&[1024, 1024], &device);
+    let bm = rand_cuda_f16(&[1024, 1024], &device);
+    let bias = rand_cuda_f16(&[1024], &device);
+    let res = rand_cuda_f16(&[1024, 1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias_residual(&a, &bm, &bias, &res).unwrap());
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// BF16 residual: M=N=K=1024.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "gemm_epilogue_bias_residual_bf16")]
+fn cuda_gemm_bias_residual_bf16_1024x1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_bf16(&[1024, 1024], &device);
+    let bm = rand_cuda_bf16(&[1024, 1024], &device);
+    let bias = rand_cuda_bf16(&[1024], &device);
+    let res = rand_cuda_bf16(&[1024, 1024], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul_bias_residual(&a, &bm, &bias, &res).unwrap());
         // Sync to get accurate wall-clock time.
         client.synchronize();
         r

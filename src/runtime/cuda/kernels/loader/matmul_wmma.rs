@@ -1,8 +1,10 @@
 //! Tensor-core WMMA GEMM launchers for F16 and BF16.
 //!
 //! `use_wmma` decides when the path is legal; the launchers below cover the
-//! 2-D and batched forms, each with and without a fused bias. The kernels use
-//! only static shared memory, so the dynamic request is always zero.
+//! 2-D and batched forms, each with and without a fused bias. The bias +
+//! activation and bias + residual forms live in `gemm_epilogue_wmma.rs` and
+//! share this module's launch geometry. The kernels use only static shared
+//! memory, so the dynamic request is always zero.
 
 use cudarc::driver::PushKernelArg;
 use cudarc::driver::safe::{CudaContext, CudaStream};
@@ -100,6 +102,21 @@ const WMMA_BLOCK_TILE_N: u32 = 128;
 // the 48 KB default per-block limit on sm_86).
 const WMMA_SMEM_BYTES: u32 = 0;
 
+/// Grid and block for one WMMA launch: one block per 128x128 output tile, one
+/// grid-z slice per batch index (`batch` is 1 for the 2-D forms).
+#[inline]
+pub(super) fn wmma_launch_config(m: usize, n: usize, batch: usize) -> LaunchConfig {
+    LaunchConfig {
+        grid_dim: (
+            ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N,
+            ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M,
+            batch as u32,
+        ),
+        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
+        shared_mem_bytes: WMMA_SMEM_BYTES,
+    }
+}
+
 /// Launch 2-D (non-batched) WMMA GEMM for F16 or BF16.
 ///
 /// # Safety
@@ -121,13 +138,7 @@ pub unsafe fn launch_matmul_wmma_kernel(
     let func_name = format!("matmul_wmma_{}", dtype_suffix(dtype));
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid_x = ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N;
-    let grid_y = ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M;
-    let cfg = LaunchConfig {
-        grid_dim: (grid_x, grid_y, 1),
-        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
-        shared_mem_bytes: WMMA_SMEM_BYTES,
-    };
+    let cfg = wmma_launch_config(m, n, 1);
 
     let m_u32 = m as u32;
     let n_u32 = n as u32;
@@ -176,14 +187,7 @@ pub unsafe fn launch_matmul_wmma_batched_kernel(
     );
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid_x = ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N;
-    let grid_y = ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M;
-    let grid_z = batch as u32;
-    let cfg = LaunchConfig {
-        grid_dim: (grid_x, grid_y, grid_z),
-        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
-        shared_mem_bytes: WMMA_SMEM_BYTES,
-    };
+    let cfg = wmma_launch_config(m, n, batch);
 
     let batch_u32 = batch as u32;
     let m_u32 = m as u32;
@@ -240,13 +244,7 @@ pub unsafe fn launch_matmul_bias_wmma_kernel(
     let func_name = format!("matmul_bias_wmma_{}", dtype_suffix(dtype));
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid_x = ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N;
-    let grid_y = ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M;
-    let cfg = LaunchConfig {
-        grid_dim: (grid_x, grid_y, 1),
-        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
-        shared_mem_bytes: WMMA_SMEM_BYTES,
-    };
+    let cfg = wmma_launch_config(m, n, 1);
 
     let m_u32 = m as u32;
     let n_u32 = n as u32;
@@ -299,14 +297,7 @@ pub unsafe fn launch_matmul_bias_wmma_batched_kernel(
     let func_name = format!("matmul_bias_wmma_batched_{}", dtype_suffix(dtype));
     let func = get_kernel_function(&module, &func_name)?;
 
-    let grid_x = ((n as u32) + WMMA_BLOCK_TILE_N - 1) / WMMA_BLOCK_TILE_N;
-    let grid_y = ((m as u32) + WMMA_BLOCK_TILE_M - 1) / WMMA_BLOCK_TILE_M;
-    let grid_z = batch as u32;
-    let cfg = LaunchConfig {
-        grid_dim: (grid_x, grid_y, grid_z),
-        block_dim: (WMMA_BLOCK_THREADS, 1, 1),
-        shared_mem_bytes: WMMA_SMEM_BYTES,
-    };
+    let cfg = wmma_launch_config(m, n, batch);
 
     let batch_u32 = batch as u32;
     let m_u32 = m as u32;

@@ -29,6 +29,7 @@ pub mod fft;
 pub mod fp8_matmul;
 pub mod fused_elementwise;
 pub mod gemm_epilogue;
+pub mod gemm_epilogue_wmma;
 pub mod indexing;
 pub mod indexing_advanced;
 pub mod int_accumulate_wgpu;

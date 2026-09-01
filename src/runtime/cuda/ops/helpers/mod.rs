@@ -5,6 +5,7 @@
 
 mod binary;
 mod compare;
+mod gemm_epilogue;
 mod matmul;
 mod matmul_bias;
 mod reduce;
@@ -14,6 +15,10 @@ mod unary;
 
 pub(crate) use binary::{native_binary_op, native_binary_op_into};
 pub(crate) use compare::native_compare_op;
+pub(crate) use gemm_epilogue::{
+    gemm_bias_act_batched_native, gemm_bias_act_native, gemm_bias_residual_batched_native,
+    gemm_bias_residual_native,
+};
 pub(crate) use matmul::{matmul_batched_native, matmul_native};
 pub(crate) use matmul_bias::{matmul_bias_batched_native, matmul_bias_native};
 pub(crate) use reduce::native_reduce_op;

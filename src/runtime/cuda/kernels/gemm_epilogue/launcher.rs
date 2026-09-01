@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use super::super::loader::{
     default_tile_config, f32_batched_tile_config, get_kernel_function, get_or_load_module,
-    kernel_name, matmul_batched_launch_config, matmul_launch_config,
+    kernel_name, launch_gemm_bias_act_wmma_batched_kernel, launch_gemm_bias_act_wmma_kernel,
+    launch_gemm_bias_residual_wmma_batched_kernel, launch_gemm_bias_residual_wmma_kernel,
+    matmul_batched_launch_config, matmul_launch_config, use_wmma,
 };
 use super::tiled_f32::{
     launch_gemm_bias_act_f32_tiled, launch_gemm_bias_residual_f32_tiled, tiled_f32_kernel_name,
@@ -14,6 +16,8 @@ use super::tiled_f32::{
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::GemmActivation;
+use crate::runtime::Device;
+use crate::runtime::cuda::CudaDevice;
 
 pub(super) const GEMM_EPILOGUE_MODULE: &str = "gemm_epilogue";
 
@@ -73,6 +77,31 @@ pub unsafe fn launch_gemm_bias_act_kernel(
                 k,
                 act_u32,
                 &tile_cfg,
+            );
+        }
+    }
+
+    // Tensor-core WMMA path: F16/BF16 with 16-aligned dims, the same predicate
+    // plain matmul and matmul_bias use. Unaligned operands are padded to
+    // 16-multiples by `src/ops/cuda/gemm_epilogue.rs` before they reach here.
+    // CudaDevice::new is a zero-cost index wrapper; profile() serves the
+    // per-index cache.
+    let caps = CudaDevice::new(device_index).profile().caps;
+    if use_wmma(dtype, caps, m, n, k) {
+        unsafe {
+            return launch_gemm_bias_act_wmma_kernel(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                c_ptr,
+                m,
+                n,
+                k,
+                act_u32,
             );
         }
     }
@@ -167,6 +196,32 @@ pub unsafe fn launch_gemm_bias_act_batched_kernel(
                 k,
                 act_u32,
                 &tile_cfg,
+            );
+        }
+    }
+
+    // Tensor-core WMMA path: F16/BF16 with 16-aligned dims, the same predicate
+    // plain matmul and matmul_bias use. Unaligned operands are padded to
+    // 16-multiples by `src/ops/cuda/gemm_epilogue.rs` before they reach here.
+    // CudaDevice::new is a zero-cost index wrapper; profile() serves the
+    // per-index cache.
+    let caps = CudaDevice::new(device_index).profile().caps;
+    if use_wmma(dtype, caps, m, n, k) {
+        unsafe {
+            return launch_gemm_bias_act_wmma_batched_kernel(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                c_ptr,
+                batch,
+                m,
+                n,
+                k,
+                act_u32,
             );
         }
     }
@@ -268,6 +323,31 @@ pub unsafe fn launch_gemm_bias_residual_kernel(
         }
     }
 
+    // Tensor-core WMMA path: F16/BF16 with 16-aligned dims, the same predicate
+    // plain matmul and matmul_bias use. Unaligned operands are padded to
+    // 16-multiples by `src/ops/cuda/gemm_epilogue.rs` before they reach here.
+    // CudaDevice::new is a zero-cost index wrapper; profile() serves the
+    // per-index cache.
+    let caps = CudaDevice::new(device_index).profile().caps;
+    if use_wmma(dtype, caps, m, n, k) {
+        unsafe {
+            return launch_gemm_bias_residual_wmma_kernel(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                residual_ptr,
+                c_ptr,
+                m,
+                n,
+                k,
+            );
+        }
+    }
+
     let module = get_or_load_module(context, device_index, GEMM_EPILOGUE_MODULE)?;
     let func_name = kernel_name("gemm_bias_residual", dtype);
     let func = get_kernel_function(&module, &func_name)?;
@@ -360,6 +440,32 @@ pub unsafe fn launch_gemm_bias_residual_batched_kernel(
                 n,
                 k,
                 &tile_cfg,
+            );
+        }
+    }
+
+    // Tensor-core WMMA path: F16/BF16 with 16-aligned dims, the same predicate
+    // plain matmul and matmul_bias use. Unaligned operands are padded to
+    // 16-multiples by `src/ops/cuda/gemm_epilogue.rs` before they reach here.
+    // CudaDevice::new is a zero-cost index wrapper; profile() serves the
+    // per-index cache.
+    let caps = CudaDevice::new(device_index).profile().caps;
+    if use_wmma(dtype, caps, m, n, k) {
+        unsafe {
+            return launch_gemm_bias_residual_wmma_batched_kernel(
+                context,
+                stream,
+                device_index,
+                dtype,
+                a_ptr,
+                b_ptr,
+                bias_ptr,
+                residual_ptr,
+                c_ptr,
+                batch,
+                m,
+                n,
+                k,
             );
         }
     }
