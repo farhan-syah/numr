@@ -538,6 +538,328 @@ fn cuda_proj_512k1024n4096_b4(b: &mut Bencher) {
 }
 
 // ---------------------------------------------------------------------------
+// GEMV/tiled-GEMM crossover — F32.
+//
+// loader/matmul.rs routes m <= 16 to a GEMV kernel instead of tiled GEMM.
+// These cases bracket that threshold at fixed K=N=4096, batch=1.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m1(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[1, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m2(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[2, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m4(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[4, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m8(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[8, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m12(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[12, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m16(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[16, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m20(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[20, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m24(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[24, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m32(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[32, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m48(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[48, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "matmul_gemv_crossover_f32")]
+fn cuda_matmul_gemv_crossover_f32_m64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda(&[64, 4096], &device);
+    let bm = rand_cuda(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
+// GEMV/tiled-GEMM crossover — F16.
+//
+// matmul.rs and matmul_wmma.rs both route m <= 16 to GEMV. These cases
+// bracket that threshold at fixed K=N=4096, batch=1, on the F16/WMMA path.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m1(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[1, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m2(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[2, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m4(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[4, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m8(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[8, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m12(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[12, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m16(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[16, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m20(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[20, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m24(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[24, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m32(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[32, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m48(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[48, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[flux::bench(group = "matmul_gemv_crossover_f16")]
+fn cuda_matmul_gemv_crossover_f16_m64(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let a = rand_cuda_f16_seeded(&[64, 4096], &device);
+    let bm = rand_cuda_f16_seeded(&[4096, 4096], &device);
+    b.iter(|| {
+        let r = black_box(client.matmul(&a, &bm).unwrap());
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Comparisons
 // ---------------------------------------------------------------------------
 

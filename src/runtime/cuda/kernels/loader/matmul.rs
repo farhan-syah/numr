@@ -28,6 +28,30 @@ use super::matmul_wmma::{launch_matmul_wmma_batched_kernel, launch_matmul_wmma_k
 use super::module_cache::{get_kernel_function, get_or_load_module};
 use super::names::{kernel_name, kernel_names};
 
+/// Largest `m` routed to the GEMV kernel instead of a tiled GEMM.
+///
+/// Dtype-dependent, because what the alternative IS differs by dtype.
+///
+/// F32 has a tiled kernel that handles small `m` well, and it beats GEMV from
+/// about `m == 8` upward — GEMV was measurably worse at 8, 12 and 16.
+///
+/// F16/BF16 have NO tiled path below this point: `use_wmma` requires
+/// `m > 16`, so dropping the gate sends them to the generic runtime-parameter
+/// kernel, which is orders of magnitude slower. GEMV is their only sane option
+/// here, so the threshold stays. F64 and the integer dtypes likewise have no
+/// specialised small-`m` path.
+///
+/// Raising the F16/BF16 case needs `use_wmma`'s `m > 16` relaxed first, so a
+/// padded small `m` can reach the tensor-core kernel. That is worth doing —
+/// the WMMA path just above this boundary is faster than GEMV below it — but it
+/// is a change to WMMA selection, not to this constant.
+fn gemv_m_max(dtype: DType) -> usize {
+    match dtype {
+        DType::F32 => 4,
+        _ => 16,
+    }
+}
+
 /// Launch native tiled matmul kernel: C[M,N] = A[M,K] @ B[K,N]
 ///
 /// # Safety
@@ -76,7 +100,7 @@ pub unsafe fn launch_matmul_kernel(
     // I8 is excluded: its matmul writes I32, and `gemv_int.cu` has no
     // kernel that widens. CPU excludes I8 from its own GEMV-BT fast path for the
     // same reason, so both backends reach the tiled kernel at every M.
-    if m <= 16 && dtype != DType::I8 {
+    if m <= gemv_m_max(dtype) && dtype != DType::I8 {
         unsafe {
             return launch_gemv_kernel(
                 context,
@@ -295,7 +319,7 @@ pub unsafe fn launch_matmul_batched_kernel(
     // Use GEMV kernel for small M (batched case). I8 is excluded for the same
     // reason as in `launch_matmul_kernel`: it widens to I32 and `gemv_int.cu`
     // has no widening kernel.
-    if m <= 16 && dtype != DType::I8 {
+    if m <= gemv_m_max(dtype) && dtype != DType::I8 {
         unsafe {
             return launch_gemv_kernel(
                 context,
