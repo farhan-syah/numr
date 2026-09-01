@@ -19,9 +19,20 @@ pub const CONV_MODULE: &str = "conv";
 /// Candidate conv1d block widths (threads per block along the output axis),
 /// narrowest first. `output_length` is as small as ~26 at some hot shapes, so a
 /// fixed 256-wide block would leave most lanes idle; the launcher picks the
-/// narrowest width that still covers the row. The minimum is a full warp, which
-/// the kernel relies on to keep each warp on a single output-channel slot.
+/// narrowest width that still covers the row.
+///
+/// A full warp is the floor for `conv1d_oc4` only, which needs each warp on one
+/// output-channel slot so its four stores stay coalesced. The scalar kernel
+/// indexes `ox`, `oc` and `batch` independently and carries no such assumption,
+/// so it takes [`CONV1D_BLOCK_NARROW`] below a warp instead of leaving most of
+/// the warp idle.
 const CONV1D_BLOCK_CANDIDATES: [u32; 4] = [32, 64, 128, 256];
+
+/// Sub-warp block widths for the scalar kernel, narrowest first. Decode-shaped
+/// convolutions run at `output_length` of 1, where a 32-wide block retires 31
+/// lanes at the bounds check before they do any work. Threads freed here go to
+/// the output-channel axis, which always has work.
+const CONV1D_BLOCK_NARROW: [u32; 5] = [1, 2, 4, 8, 16];
 
 /// Fallback conv1d block width when `output_length` exceeds every candidate.
 const CONV1D_BLOCK_MAX: u32 = 256;
@@ -104,10 +115,20 @@ pub unsafe fn launch_conv1d(
         let three_d_grid = !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2);
 
         let cfg = if three_d_grid {
-            let block_x = CONV1D_BLOCK_CANDIDATES
-                .into_iter()
-                .find(|&w| output_length <= w as usize)
-                .unwrap_or(CONV1D_BLOCK_MAX);
+            // oc4 keeps the warp floor; the scalar kernel may go narrower.
+            let narrow = if oc_blocked {
+                None
+            } else {
+                CONV1D_BLOCK_NARROW
+                    .into_iter()
+                    .find(|&w| output_length <= w as usize)
+            };
+            let block_x = narrow.unwrap_or_else(|| {
+                CONV1D_BLOCK_CANDIDATES
+                    .into_iter()
+                    .find(|&w| output_length <= w as usize)
+                    .unwrap_or(CONV1D_BLOCK_MAX)
+            });
             let block_y = (CONV1D_BLOCK_THREADS / block_x).max(1);
 
             // One slot per output channel, or per chunk of CONV1D_OC_BLOCK
