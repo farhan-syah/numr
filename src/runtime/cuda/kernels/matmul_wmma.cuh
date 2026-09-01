@@ -35,13 +35,16 @@
 //   warp at a time, so the scratch is 16 warps x 16x16 floats = 16 384 bytes
 //   for every tile shape, independent of WM and WN.
 //
-// Static smem (2-stage ping-pong staging, aliased with the epilogue scratch).
-// BLOCK_K (below) is chosen per architecture, so the staging footprint varies
-// by build target. Per stage the staging holds
+// Static smem (WMMA_STAGES-stage ring, aliased with the epilogue scratch).
+// WMMA_STAGES is 2 today (classic ping-pong); the ring shape is what would
+// let a later multi-stage pipeline raise it without reshaping this staging
+// code. BLOCK_K (below) is chosen per architecture, so the staging footprint
+// varies by build target. Per stage the staging holds
 //   smem_A: BLOCK_TILE_M x SMEM_STRIDE_A halves
 //   smem_B: BLOCK_K      x SMEM_STRIDE_B halves
-// and the total is max(two stages, scratch), because the scratch is written
-// only after the K-loop ends and therefore overlays the staging buffers:
+// and the total is max(WMMA_STAGES stages, scratch), because the scratch is
+// written only after the K-loop ends and therefore overlays the staging
+// buffers:
 //   BLOCK_K=16 (SMEM_STRIDE_A=24): 128x128 -> 20 992 B, 64x64 -> 16 384 B
 //   BLOCK_K=32 (SMEM_STRIDE_A=40): 128x128 -> 37 888 B, 64x64 -> 19 456 B
 // The 64x64 tile never needs more smem than the 128x128 one, so it never
@@ -100,13 +103,13 @@ using namespace nvcuda::wmma;
 // regression at BLOCK_K=32; that regression belonged to a since-removed
 // cp.async double-buffered kernel, not this synchronous scalar-staging one.
 //
-// BLOCK_K sets the two-stage staging footprint (see the smem accounting
-// above), which bounds how many blocks can be resident per SM at once — and
-// the shared-memory budget per SM differs by architecture. A single BLOCK_K
-// cannot be optimal everywhere, so it is chosen per architecture: this file
-// compiles once per target arch into the fatbin, and __CUDA_ARCH__ is only
-// defined during device compilation, so this stays a compile-time constant
-// with no host-side effect.
+// BLOCK_K sets the WMMA_STAGES-stage staging footprint (see the smem
+// accounting above), which bounds how many blocks can be resident per SM at
+// once — and the shared-memory budget per SM differs by architecture. A
+// single BLOCK_K cannot be optimal everywhere, so it is chosen per
+// architecture: this file compiles once per target arch into the fatbin, and
+// __CUDA_ARCH__ is only defined during device compilation, so this stays a
+// compile-time constant with no host-side effect.
 #if __CUDA_ARCH__ >= 800
 #define BLOCK_K   32
 #else
@@ -118,6 +121,16 @@ using namespace nvcuda::wmma;
 // picks up to 72 registers on some arches, which drops those kernels to one
 // resident block. Applied to every kernel in matmul_wmma.cu.
 #define WMMA_LAUNCH_BOUNDS __launch_bounds__(WARP_ROWS * WARP_COLS * 32, 2)
+
+// Number of shared-memory staging buffers in the ring. 2 today: while the
+// K-loop computes on stage bk % WMMA_STAGES, the global loads for the next
+// K-tile land in stage (bk+1) % WMMA_STAGES. Kept as its own constant, and
+// threaded through the smem sizing below, so a later multi-stage pipeline
+// changes only this value instead of reshaping the staging code.
+#define WMMA_STAGES 2
+static_assert(WMMA_STAGES >= 2,
+              "ring needs >= 2 distinct stages so stage bk and stage bk+1 "
+              "never alias the same buffer while bk is still being read");
 
 /* Tile-derived compile-time constants, declared inside the kernel body so the
    tile can vary per instantiation. Smem strides carry +8 padding to avoid
@@ -136,8 +149,8 @@ using namespace nvcuda::wmma;
     /* The 128-bit staging path below writes shared memory at                \
        r * SMEM_STRIDE_* + c with c a multiple of WMMA_VEC_HALVES, so both   \
        strides must be multiples of WMMA_VEC_HALVES for the destination to   \
-       stay 16-byte aligned. The same holds for the four staging bases,      \
-       which sit at multiples of SMEM_A_ELEMS / SMEM_B_ELEMS. Changing       \
+       stay 16-byte aligned. The same holds for the WMMA_STAGES staging      \
+       bases, which sit at multiples of SMEM_A_ELEMS / SMEM_B_ELEMS. Changing\
        BLOCK_K or the tile without keeping these true faults the kernel. */  \
     static_assert(SMEM_STRIDE_A % 8 == 0 && SMEM_STRIDE_B % 8 == 0,          \
                   "smem strides must be multiples of 8 halves");             \
@@ -146,12 +159,12 @@ using namespace nvcuda::wmma;
     static_assert(BLOCK_K % 8 == 0 && BLOCK_TILE_N % 8 == 0,                 \
                   "tile inner dims must be whole 128-bit groups");
 
-/* One byte array backs both the two staging stages and the epilogue scratch.
-   The four staging bases sit at multiples of 16 bytes for every instantiated
-   tile, so every wmma fragment pointer keeps the 16-byte alignment
-   load_matrix_sync/store_matrix_sync require. */
+/* One byte array backs both the WMMA_STAGES staging buffers and the epilogue
+   scratch. The WMMA_STAGES staging bases sit at multiples of 16 bytes for
+   every instantiated tile, so every wmma fragment pointer keeps the 16-byte
+   alignment load_matrix_sync/store_matrix_sync require. */
 #define SMEM_STAGE_BYTES(HALF_T) \
-    (2 * (SMEM_A_ELEMS + SMEM_B_ELEMS) * sizeof(HALF_T))
+    (WMMA_STAGES * (SMEM_A_ELEMS + SMEM_B_ELEMS) * sizeof(HALF_T))
 #define SMEM_SCRATCH_BYTES (SMEM_SCRATCH_ELEMS * sizeof(float))
 #define SMEM_TOTAL_BYTES(HALF_T)                                             \
     (SMEM_STAGE_BYTES(HALF_T) > SMEM_SCRATCH_BYTES                           \
@@ -176,6 +189,25 @@ using namespace nvcuda::wmma;
 #define WMMA_VEC_OK(PTR, ROW_STRIDE)                                         \
     (((reinterpret_cast<unsigned long long>(PTR)) & 15ull) == 0ull &&        \
      (((ROW_STRIDE) % WMMA_VEC_HALVES) == 0u))
+
+/* One 128-bit staging access, in-bounds copy or zero-pad, through a single
+   store form (SRC may point past the source matrix when !IN_BOUNDS — it is
+   then never dereferenced). One expression per access, rather than two
+   differently shaped stores into the same destination, is what lets a future
+   async staging mechanism replace this macro with a predicated async copy
+   instead of reconciling an async store against a synchronous one in the
+   same buffer — see the file header for why mixing those was the kernel's
+   disabled cp.async bug. No async copy is added here. A macro, not a
+   __device__ helper: even __forceinline__ perturbed ptxas's register
+   scheduling on one instantiation in testing, and this is a hot loop. */
+#define WMMA_VEC_STAGE(DST, SRC, IN_BOUNDS)                                  \
+    do {                                                                     \
+        int4 wmma_vec_v = make_int4(0, 0, 0, 0);                             \
+        if (IN_BOUNDS) {                                                     \
+            wmma_vec_v = *(SRC);                                             \
+        }                                                                    \
+        *(DST) = wmma_vec_v;                                                 \
+    } while (0)
 
 /* Stage one K-tile into the given A/B buffers. Bounds-checked: positions      \
    past the M/N/K edge are zero-padded. Reads the tile constants declared by   \
@@ -206,12 +238,11 @@ using namespace nvcuda::wmma;
             unsigned int r  = vi / A_VECS_PER_ROW;                           \
             unsigned int c  = (vi % A_VECS_PER_ROW) * WMMA_VEC_HALVES;       \
             unsigned int gr = block_row + r;                                 \
-            int4 v = make_int4(0, 0, 0, 0);                                  \
-            if (gr < M) {                                                    \
-                v = *reinterpret_cast<const int4*>(                          \
-                        (A_ptr) + gr * K + k_off + c);                       \
-            }                                                                \
-            *reinterpret_cast<int4*>((DST_A) + r * SMEM_STRIDE_A + c) = v;   \
+            WMMA_VEC_STAGE(                                                  \
+                reinterpret_cast<int4*>((DST_A) + r * SMEM_STRIDE_A + c),    \
+                reinterpret_cast<const int4*>(                               \
+                    (A_ptr) + gr * K + k_off + c),                           \
+                gr < M);                                                     \
         }                                                                    \
     } else {                                                                 \
         for (unsigned int idx = tid;                                         \
@@ -234,12 +265,11 @@ using namespace nvcuda::wmma;
             unsigned int r  = vi / B_VECS_PER_ROW;                           \
             unsigned int c  = (vi % B_VECS_PER_ROW) * WMMA_VEC_HALVES;       \
             unsigned int gr = k_off + r;                                     \
-            int4 v = make_int4(0, 0, 0, 0);                                  \
-            if (gr < K) {                                                    \
-                v = *reinterpret_cast<const int4*>(                          \
-                        (B_ptr) + gr * N + block_col + c);                   \
-            }                                                                \
-            *reinterpret_cast<int4*>((DST_B) + r * SMEM_STRIDE_B + c) = v;   \
+            WMMA_VEC_STAGE(                                                  \
+                reinterpret_cast<int4*>((DST_B) + r * SMEM_STRIDE_B + c),    \
+                reinterpret_cast<const int4*>(                               \
+                    (B_ptr) + gr * N + block_col + c),                       \
+                gr < K);                                                     \
         }                                                                    \
     } else {                                                                 \
         for (unsigned int idx = tid;                                         \
@@ -330,12 +360,23 @@ using namespace nvcuda::wmma;
     const unsigned int num_threads = blockDim.x;                             \
     const unsigned int tid = threadIdx.x;                                    \
                                                                              \
-    /* One backing array for the two staging stages and the epilogue scratch. \
-       The scratch is written only after the last staging read, so the two   \
-       uses never overlap in time; the __syncthreads() before the epilogue   \
-       enforces that. __align__(16) keeps every wmma fragment pointer aligned. */ \
+    /* One backing array for the WMMA_STAGES staging buffers and the epilogue \
+       scratch. The scratch is written only after the last staging read, so  \
+       the two uses never overlap in time; the __syncthreads() before the    \
+       epilogue enforces that. __align__(16) keeps every wmma fragment       \
+       pointer aligned. */                                                   \
     __shared__ __align__(16) char smem_raw[SMEM_TOTAL_BYTES(HALF_T)];        \
+    /* Guards the SELECTION below, not sizing: SMEM_TOTAL_BYTES already takes \
+       a max over the stage footprint, so a size assert could never fail. */  \
+    static_assert(WMMA_STAGES == 2,                                           \
+        "WMMA_STAGES > 2 needs more named bases and more selection cases");   \
                                                                              \
+    /* WMMA_STAGES named stage bases rather than an indexed array: a local   \
+       array read with a runtime index (bk % WMMA_STAGES) does not stay in   \
+       registers, it spills to local memory on this hot path. Named bases    \
+       plus the compile-time-foldable ternary below select in registers,     \
+       exactly as the fixed 2-buffer ping-pong did. Extending WMMA_STAGES    \
+       past 2 means adding a base here and a case to the selection below. */ \
     HALF_T* const smem_A0 = reinterpret_cast<HALF_T*>(smem_raw);             \
     HALF_T* const smem_B0 = smem_A0 + SMEM_A_ELEMS;                          \
     HALF_T* const smem_A1 = smem_B0 + SMEM_B_ELEMS;                          \
@@ -358,15 +399,18 @@ using namespace nvcuda::wmma;
        epilogue, so C is still written. The branch is block-uniform, so the  \
        __syncthreads() calls inside stay collective. */                      \
     if (num_k_tiles > 0) {                                                   \
-        /* Prologue: stage K-tile 0 into stage 0. */                         \
-        WMMA_STAGE_TILE(HALF_T, ZERO_EXPR, A_ptr, B_ptr, smem_A0, smem_B0, 0u) \
+        /* Prologue: stage K-tile 0 into ring slot 0. */                     \
+        WMMA_STAGE_TILE(HALF_T, ZERO_EXPR, A_ptr, B_ptr,                     \
+                        smem_A0, smem_B0, 0u)                                \
         __syncthreads();                                                     \
                                                                              \
         for (unsigned int bk = 0; bk < num_k_tiles; bk++) {                  \
-            const HALF_T* smem_A_cur = (bk & 1u) ? smem_A1 : smem_A0;        \
-            const HALF_T* smem_B_cur = (bk & 1u) ? smem_B1 : smem_B0;        \
-            HALF_T* smem_A_nxt = (bk & 1u) ? smem_A0 : smem_A1;              \
-            HALF_T* smem_B_nxt = (bk & 1u) ? smem_B0 : smem_B1;              \
+            const unsigned int stage_cur = bk % WMMA_STAGES;                 \
+            const unsigned int stage_nxt = (bk + 1) % WMMA_STAGES;           \
+            const HALF_T* smem_A_cur = (stage_cur == 0) ? smem_A0 : smem_A1; \
+            const HALF_T* smem_B_cur = (stage_cur == 0) ? smem_B0 : smem_B1; \
+            HALF_T* smem_A_nxt = (stage_nxt == 0) ? smem_A0 : smem_A1;       \
+            HALF_T* smem_B_nxt = (stage_nxt == 0) ? smem_B0 : smem_B1;       \
                                                                              \
             /* Issue the global loads for tile bk+1 into the inactive stage  \
                BEFORE the mma work below, so their latency overlaps it. The  \
