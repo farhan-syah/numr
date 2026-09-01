@@ -69,6 +69,9 @@
 // ============================================================================
 
 // Shared parameter list for both conv1d variants.
+// c_in_per_group and c_out_per_group are loop-invariant per launch (they don't
+// depend on the thread's oc/ox), so the host computes them once and passes them
+// in rather than every thread repeating an integer division in its prologue.
 #define CONV1D_PARAMS(dtype) \
     const dtype* __restrict__ input, \
     const dtype* __restrict__ weight, \
@@ -84,25 +87,46 @@
     unsigned int padding, \
     unsigned int dilation, \
     unsigned int groups, \
+    unsigned int c_in_per_group, \
+    unsigned int c_out_per_group, \
     unsigned int has_bias
 
 /* Valid tap range for this thread: ix = ix_base + kx*dilation must land in
    [0, length). Both bounds are loop-invariant, so the inner loop is branch-free. */
+// At dilation == 1 the general ceil-division formulas reduce exactly (no
+// rounding change): ((-ix_base) + dil - 1) / dil == -ix_base, and
+// (room + dil - 1) / dil == room. That branch is taken free of runtime
+// division; dilation > 1 keeps the general division-based formula.
 #define CONV1D_TAP_RANGE() \
     int ix_base = (int)(ox * stride) - (int)padding; \
     int dil = (int)dilation; \
     unsigned int kx_lo = 0u; \
     unsigned int kx_hi = kernel_size; \
-    if (ix_base < 0) { \
-        kx_lo = (unsigned int)(((-ix_base) + dil - 1) / dil); \
-    } \
-    { \
-        int room = (int)length - ix_base; \
-        if (room <= 0) { \
-            kx_hi = 0u; \
-        } else { \
-            unsigned int hi = (unsigned int)((room + dil - 1) / dil); \
-            if (hi < kx_hi) { kx_hi = hi; } \
+    if (dil == 1) { \
+        if (ix_base < 0) { \
+            kx_lo = (unsigned int)(-ix_base); \
+        } \
+        { \
+            int room = (int)length - ix_base; \
+            if (room <= 0) { \
+                kx_hi = 0u; \
+            } else { \
+                unsigned int hi = (unsigned int)room; \
+                if (hi < kx_hi) { kx_hi = hi; } \
+            } \
+        } \
+    } else { \
+        if (ix_base < 0) { \
+            kx_lo = (unsigned int)(((-ix_base) + dil - 1) / dil); \
+        } \
+        { \
+            int room = (int)length - ix_base; \
+            if (room <= 0) { \
+                kx_hi = 0u; \
+            } else { \
+                unsigned int hi = (unsigned int)((room + dil - 1) / dil); \
+                if (hi < kx_hi) { kx_hi = hi; } \
+            } \
         } \
     } \
     if (kx_lo > kx_hi) { kx_lo = kx_hi; }
@@ -120,9 +144,18 @@ __global__ void conv1d_##suffix(CONV1D_PARAMS(dtype)) { \
     unsigned int b = blockIdx.z; \
     if (ox >= output_length || oc >= c_out) return; \
     \
-    unsigned int c_in_per_group = c_in / groups; \
-    unsigned int c_out_per_group = c_out / groups; \
-    unsigned int c_in_start = (oc / c_out_per_group) * c_in_per_group; \
+    /* groups == 1 and c_out_per_group == 1 (plain and depthwise conv, nearly \
+       all real use) resolve the group index without dividing; the general \
+       formula is kept for arbitrary grouped conv. All three branches are \
+       uniform across the block, so this never causes warp divergence. */ \
+    unsigned int c_in_start; \
+    if (groups == 1u) { \
+        c_in_start = 0u; \
+    } else if (c_out_per_group == 1u) { \
+        c_in_start = oc * c_in_per_group; \
+    } else { \
+        c_in_start = (oc / c_out_per_group) * c_in_per_group; \
+    } \
     \
     const dtype* in_base = input \
         + (size_t)b * c_in * length \
@@ -162,22 +195,27 @@ __global__ void conv1d_oc4_##suffix(CONV1D_PARAMS(dtype)) { \
     unsigned int slot = blockIdx.y * blockDim.y + threadIdx.y; \
     unsigned int b = blockIdx.z; \
     \
-    unsigned int c_in_per_group = c_in / groups; \
-    unsigned int c_out_per_group = c_out / groups; \
-    unsigned int chunks_per_group = (c_out_per_group + 3u) / 4u; \
+    /* Recomputed here rather than read from the launch parameters. The two \
+       are numerically identical, but ptxas schedules the surrounding 4-wide \
+       accumulator differently for each, and the recomputed form is the one \
+       this kernel's hot loop was measured against. The scalar kernel above \
+       uses the passed-in values, where the division is pure prologue cost. */ \
+    unsigned int c_in_per_group_l = c_in / groups; \
+    unsigned int c_out_per_group_l = c_out / groups; \
+    unsigned int chunks_per_group = (c_out_per_group_l + 3u) / 4u; \
     if (ox >= output_length || slot >= groups * chunks_per_group) return; \
     \
     unsigned int g = slot / chunks_per_group; \
     unsigned int chunk = slot - g * chunks_per_group; \
-    unsigned int oc_base = g * c_out_per_group + chunk * 4u; \
-    unsigned int remaining = c_out_per_group - chunk * 4u; \
+    unsigned int oc_base = g * c_out_per_group_l + chunk * 4u; \
+    unsigned int remaining = c_out_per_group_l - chunk * 4u; \
     unsigned int active = remaining < 4u ? remaining : 4u; \
     \
     const dtype* in_base = input \
         + (size_t)b * c_in * length \
-        + (size_t)(g * c_in_per_group) * length; \
+        + (size_t)(g * c_in_per_group_l) * length; \
     \
-    size_t w_stride = (size_t)c_in_per_group * kernel_size; \
+    size_t w_stride = (size_t)c_in_per_group_l * kernel_size; \
     const dtype* w0 = weight + (size_t)oc_base * w_stride; \
     const dtype* w1 = active > 1u ? w0 + w_stride : w0; \
     const dtype* w2 = active > 2u ? w0 + 2u * w_stride : w0; \
@@ -190,7 +228,7 @@ __global__ void conv1d_oc4_##suffix(CONV1D_PARAMS(dtype)) { \
     dtype acc2 = (dtype)0; \
     dtype acc3 = (dtype)0; \
     \
-    for (unsigned int ic = 0; ic < c_in_per_group; ic++) { \
+    for (unsigned int ic = 0; ic < c_in_per_group_l; ic++) { \
         const dtype* r = in_base + (size_t)ic * length; \
         size_t woff = (size_t)ic * kernel_size; \
         for (unsigned int kx = kx_lo; kx < kx_hi; kx++) { \

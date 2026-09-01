@@ -13,6 +13,7 @@ pub mod compare;
 pub mod complex;
 pub mod conditional;
 pub mod conv;
+pub mod conv1d_depthwise;
 pub mod conv_oc4;
 pub mod conv_transpose1d_multichannel;
 pub mod cumulative;

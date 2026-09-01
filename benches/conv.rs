@@ -122,6 +122,175 @@ fn cuda_conv1d_oc4_1536ch_k7_groups4(b: &mut Bencher) {
 }
 
 // ---------------------------------------------------------------------------
+// conv1d — depthwise (groups == c_in == c_out)
+// ---------------------------------------------------------------------------
+//
+// c_out_per_group = c_out/groups = 1 < CONV1D_OC_BLOCK (4) -> scalar conv1d
+// kernel on every case below, regardless of channel count. `groups=4` in
+// `cuda_conv1d_oc4_1536ch_k7_groups4` above still has c_out_per_group=384, so
+// it never touches this path.
+
+/// Mamba `d_inner`-scale decode step: single new token, K=4 causal window
+/// already provided by the cache so no padding is needed. L_out=1.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_depthwise_decode_1536ch_k4(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 1536, 4], &device);
+    let weight = rand_cuda(&[1536, 1, 4], &device);
+    let bias = rand_cuda(&[1536], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1536)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Same decode shape, wider channel count and batched: batch=4, c=4096.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_depthwise_decode_wide_4096ch_k4_batch4(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[4, 4096, 4], &device);
+    let weight = rand_cuda(&[4096, 1, 4], &device);
+    let bias = rand_cuda(&[4096], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 4096)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Full-sequence causal depthwise conv: K=4, left padding K-1=3, so
+/// L_out = L = 32 (output length matches input, the standard Mamba causal
+/// conv1d shape for a short prefill/chunk).
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_depthwise_short_1536ch_k4_l32(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 1536, 32], &device);
+    let weight = rand_cuda(&[1536, 1, 4], &device);
+    let bias = rand_cuda(&[1536], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    1,
+                    PaddingMode::conv1d(3, 0),
+                    1,
+                    1536,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Same causal shape, long sequence: L=1024 -> L_out=1024.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_depthwise_long_1536ch_k4_l1024(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 1536, 1024], &device);
+    let weight = rand_cuda(&[1536, 1, 4], &device);
+    let bias = rand_cuda(&[1536], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    1,
+                    PaddingMode::conv1d(3, 0),
+                    1,
+                    1536,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Long causal sequence, wider channels and batched: batch=2, c=4096,
+/// L=2048 -> L_out=2048.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_depthwise_long_wide_4096ch_k4_l2048_batch2(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[2, 4096, 2048], &device);
+    let weight = rand_cuda(&[4096, 1, 4], &device);
+    let bias = rand_cuda(&[4096], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(
+                    &input,
+                    &weight,
+                    Some(&bias),
+                    1,
+                    PaddingMode::conv1d(3, 0),
+                    1,
+                    4096,
+                )
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
+// conv1d — narrow output, still oc4 path (c_out/groups >= 4)
+// ---------------------------------------------------------------------------
+
+/// c_out_per_group = 512 >= CONV1D_OC_BLOCK (4) -> conv1d_oc4, but L_out=1
+/// (like the depthwise decode cases above): isolates launch-geometry effects
+/// on the register-blocked kernel from the depthwise scalar kernel above.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv1d_f32")]
+fn cuda_conv1d_oc4_narrow_output_256_512ch_k3_lout1(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 256, 3], &device);
+    let weight = rand_cuda(&[512, 256, 3], &device);
+    let bias = rand_cuda(&[512], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv1d(&input, &weight, Some(&bias), 1, PaddingMode::Valid, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+// ---------------------------------------------------------------------------
 // conv_transpose1d — optimization target
 // ---------------------------------------------------------------------------
 

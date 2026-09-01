@@ -90,6 +90,7 @@ pub unsafe fn launch_conv1d(
         // narrow-group shapes fall back to the scalar kernel, which is the
         // untiled kernel's work exactly.
         let c_out_per_group = c_out.checked_div(groups).unwrap_or(0);
+        let c_in_per_group = c_in.checked_div(groups).unwrap_or(0);
         let oc_blocked =
             !matches!(dtype, DType::FP8E4M3 | DType::FP8E5M2) && c_out_per_group >= CONV1D_OC_BLOCK;
 
@@ -147,6 +148,8 @@ pub unsafe fn launch_conv1d(
         let padding_u32 = padding as u32;
         let dilation_u32 = dilation as u32;
         let groups_u32 = groups as u32;
+        let c_in_per_group_u32 = c_in_per_group as u32;
+        let c_out_per_group_u32 = c_out_per_group as u32;
         let has_bias_u32: u32 = if bias_ptr.is_some() { 1 } else { 0 };
         let bias_ptr_val = bias_ptr.unwrap_or(0);
 
@@ -165,6 +168,13 @@ pub unsafe fn launch_conv1d(
         builder.arg(&padding_u32);
         builder.arg(&dilation_u32);
         builder.arg(&groups_u32);
+        // The FP8 conv1d kernel keeps its own legacy flat signature (see
+        // `three_d_grid` above) and was never given these two host-computed
+        // params, so only the macro-generated kernels receive them.
+        if three_d_grid {
+            builder.arg(&c_in_per_group_u32);
+            builder.arg(&c_out_per_group_u32);
+        }
         builder.arg(&has_bias_u32);
 
         builder

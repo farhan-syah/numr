@@ -23,7 +23,7 @@ use crate::common::{
 
 /// Deterministic, non-repeating input values so an oc4 lane-masking bug
 /// cannot cancel out by coincidence.
-fn conv1d_input(n: usize) -> Vec<f64> {
+pub(crate) fn conv1d_input(n: usize) -> Vec<f64> {
     (0..n).map(|i| ((i % 11) as f64 - 5.0) * 0.3).collect()
 }
 
@@ -31,18 +31,18 @@ fn conv1d_input(n: usize) -> Vec<f64> {
 /// axis: every output channel gets a distinct kernel, so a bug that reuses
 /// another channel's weights (aliasing to `w0`) shows up as a value
 /// mismatch rather than an accidental match.
-fn conv1d_weight(n: usize) -> Vec<f64> {
+pub(crate) fn conv1d_weight(n: usize) -> Vec<f64> {
     (0..n).map(|i| ((i % 7) as f64 - 3.0) * 0.2).collect()
 }
 
-fn conv1d_bias(n: usize) -> Vec<f64> {
+pub(crate) fn conv1d_bias(n: usize) -> Vec<f64> {
     (0..n).map(|i| (i as f64) * 0.05 - 0.1).collect()
 }
 
 /// Runs `conv1d` on CPU and every enabled GPU backend for every float dtype
 /// and asserts the GPU result matches the CPU reference.
 #[allow(clippy::too_many_arguments)]
-fn assert_conv1d_parity(
+pub(crate) fn assert_conv1d_parity(
     label: &str,
     input: &[f64],
     input_shape: &[usize],
