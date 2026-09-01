@@ -9,7 +9,7 @@
 //! |----------|-----|-----|----------------|
 //! | exp      | 4   | 2   | < 1e-6 / 1e-12 |
 //! | tanh     | 4   | 2   | < 1e-6 / 1e-12 |
-//! | log      | 4   | 2   | < 1e-6 / 1e-12 |
+//! | log      | 4   | 2   | < 1e-6 / 2 ulp |
 //! | sin      | 4   | 2   | < 1e-6 / 1e-10 |
 //! | cos      | 4   | 2   | < 1e-6 / 1e-10 |
 //! | tan      | 4   | 2   | < 2e-4 / 1e-4  |
@@ -21,6 +21,10 @@
 //! and a Gregory series, whose truncation error grows toward the |x| = 1
 //! boundary. The f64 paths use the multi-centre reduction in `common.rs`
 //! instead and hold below 2 ulps everywhere.
+//!
+//! The same split applies to the log family: the f64 log/log2/log10/log1p
+//! paths hold below 2 ulps, while their f32 counterparts still use a truncated
+//! series and are far coarser than f32 epsilon.
 //!
 //! # Safety
 //!
@@ -337,32 +341,34 @@ pub unsafe fn log_f32(x: float32x4_t) -> float32x4_t {
     vfmaq_f32(poly, n, ln2)
 }
 
-/// Fast SIMD log approximation for f64 using NEON
+/// Split `x` into an exponent `n` and `log(m)`, where `m` is the mantissa
+/// normalized to [sqrt(2)/2, sqrt(2)), so that `log(x) = n*ln(2) + log(m)`.
+///
+/// log, log2, log10 and log1p all share this reduction and differ only in how
+/// they recombine the two parts. Special values are applied by the callers via
+/// `log_special_f64`.
 ///
 /// # Safety
 /// Requires NEON (always available on AArch64)
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
-pub unsafe fn log_f64(x: float64x2_t) -> float64x2_t {
+unsafe fn log_reduce_f64(x: float64x2_t) -> (float64x2_t, float64x2_t) {
     use log_coefficients::*;
 
     let one = vdupq_n_f64(1.0);
-    let ln2 = vdupq_n_f64(std::f64::consts::LN_2);
+    let two = vdupq_n_f64(2.0);
+    let half = vdupq_n_f64(0.5);
     let sqrt2_val = std::f64::consts::SQRT_2;
 
-    let c1 = vdupq_n_f64(C1_F64);
-    let c2 = vdupq_n_f64(C2_F64);
-    let c3 = vdupq_n_f64(C3_F64);
-    let c4 = vdupq_n_f64(C4_F64);
-    let c5 = vdupq_n_f64(C5_F64);
-    let c6 = vdupq_n_f64(C6_F64);
-    let c7 = vdupq_n_f64(C7_F64);
-    let c8 = vdupq_n_f64(C8_F64);
-    let c9 = vdupq_n_f64(C9_F64);
+    // Subnormals carry no implicit leading 1, so the split below is only valid
+    // after scaling them into the normal range.
+    let is_sub = vcltq_f64(x, vdupq_n_f64(f64::MIN_POSITIVE));
+    let x_norm = vbslq_f64(is_sub, vmulq_f64(x, vdupq_n_f64(SUBNORMAL_SCALE_F64)), x);
+    let n_shift = vbslq_f64(is_sub, vdupq_n_f64(SUBNORMAL_SHIFT_F64), vdupq_n_f64(0.0));
 
     // Use SIMD for bit manipulation
-    let x_bits = vreinterpretq_s64_f64(x);
+    let x_bits = vreinterpretq_s64_f64(x_norm);
 
     // Extract exponent using 64-bit SIMD shift
     let exp_raw = vshrq_n_s64::<52>(x_bits);
@@ -393,26 +399,89 @@ pub unsafe fn log_f64(x: float64x2_t) -> float64x2_t {
         m_arr[i] = m;
     }
 
-    let n = vld1q_f64(n_arr.as_ptr());
+    let n = vaddq_f64(vld1q_f64(n_arr.as_ptr()), n_shift);
     let m = vld1q_f64(m_arr.as_ptr());
 
-    // f = m - 1 (fully SIMD from here)
+    // s = f/(2+f) halves the argument and leaves only odd powers, which is what
+    // lets seven terms reach f64 precision (see `log_coefficients`).
     let f = vsubq_f64(m, one);
+    let s = vdivq_f64(f, vaddq_f64(two, f));
+    let z = vmulq_f64(s, s);
+    let w = vmulq_f64(z, z);
 
-    // Horner's method for polynomial
-    let mut poly = c9;
-    poly = vfmaq_f64(c8, poly, f);
-    poly = vfmaq_f64(c7, poly, f);
-    poly = vfmaq_f64(c6, poly, f);
-    poly = vfmaq_f64(c5, poly, f);
-    poly = vfmaq_f64(c4, poly, f);
-    poly = vfmaq_f64(c3, poly, f);
-    poly = vfmaq_f64(c2, poly, f);
-    poly = vfmaq_f64(c1, poly, f);
-    poly = vmulq_f64(poly, f);
+    let t1 = vmulq_f64(
+        w,
+        vfmaq_f64(
+            vdupq_n_f64(LG2_F64),
+            w,
+            vfmaq_f64(vdupq_n_f64(LG4_F64), w, vdupq_n_f64(LG6_F64)),
+        ),
+    );
+    let t2 = vmulq_f64(
+        z,
+        vfmaq_f64(
+            vdupq_n_f64(LG1_F64),
+            w,
+            vfmaq_f64(
+                vdupq_n_f64(LG3_F64),
+                w,
+                vfmaq_f64(vdupq_n_f64(LG5_F64), w, vdupq_n_f64(LG7_F64)),
+            ),
+        ),
+    );
+    let r = vaddq_f64(t2, t1);
 
-    // Result = n * ln(2) + log(m)
-    vfmaq_f64(poly, n, ln2)
+    // log(m) = f - (hfsq - s*(hfsq + R)); keeping f outside the parentheses
+    // stops the f² term from eating f's low bits when f is small.
+    let hfsq = vmulq_f64(half, vmulq_f64(f, f));
+    let logm = vsubq_f64(f, vsubq_f64(hfsq, vmulq_f64(s, vaddq_f64(hfsq, r))));
+
+    (n, logm)
+}
+
+/// Apply the IEEE domain values shared by log, log2 and log10:
+/// `log(0) = -inf`, `log(x < 0) = NaN`, `log(+inf) = +inf`, `log(NaN) = NaN`.
+///
+/// # Safety
+/// Requires NEON (always available on AArch64)
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn log_special_f64(x: float64x2_t, r: float64x2_t) -> float64x2_t {
+    let zero = vdupq_n_f64(0.0);
+
+    // `vcgtq_f64` is false for NaN, so its complement catches NaN alongside the
+    // non-positive inputs instead of feeding garbage through the polynomial.
+    let positive = vcgtq_f64(x, zero);
+    let is_zero = vceqq_f64(x, zero);
+    let is_inf = vceqq_f64(x, vdupq_n_f64(f64::INFINITY));
+
+    let out = vbslq_f64(positive, r, vdupq_n_f64(f64::NAN));
+    let out = vbslq_f64(is_zero, vdupq_n_f64(f64::NEG_INFINITY), out);
+    vbslq_f64(is_inf, vdupq_n_f64(f64::INFINITY), out)
+}
+
+/// Fast SIMD log approximation for f64 using NEON
+///
+/// See `common::_LOG_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 2 ulps over the whole positive range.
+///
+/// # Safety
+/// Requires NEON (always available on AArch64)
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+pub unsafe fn log_f64(x: float64x2_t) -> float64x2_t {
+    use log_coefficients::{LN2_HI_F64, LN2_LO_F64};
+
+    let (n, logm) = log_reduce_f64(x);
+
+    // Split ln(2): the head is exact against every reachable n, the tail
+    // restores the bits a single rounded ln(2) would drop.
+    let lo = vfmaq_f64(logm, n, vdupq_n_f64(LN2_LO_F64));
+    let r = vfmaq_f64(lo, n, vdupq_n_f64(LN2_HI_F64));
+
+    log_special_f64(x, r)
 }
 
 // ============================================================================
@@ -911,12 +980,16 @@ pub unsafe fn log2_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD log2 for f64 using NEON
+///
+/// Scaling `log(x)` would fold the exponent through two roundings and miss
+/// exact powers of two, so the exponent is added back untouched instead.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn log2_f64(x: float64x2_t) -> float64x2_t {
-    let log2e = vdupq_n_f64(std::f64::consts::LOG2_E);
-    vmulq_f64(log_f64(x), log2e)
+    let (n, logm) = log_reduce_f64(x);
+    let r = vfmaq_f64(n, logm, vdupq_n_f64(std::f64::consts::LOG2_E));
+    log_special_f64(x, r)
 }
 
 /// Fast SIMD log10 for f32 using NEON
@@ -929,12 +1002,17 @@ pub unsafe fn log10_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD log10 for f64 using NEON
+///
+/// `log10(x) = n*log10(2) + log(m)*log10(e)`, keeping the exact exponent out
+/// of the mantissa's rounding for the same reason as `log2_f64`.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn log10_f64(x: float64x2_t) -> float64x2_t {
-    let log10e = vdupq_n_f64(std::f64::consts::LOG10_E);
-    vmulq_f64(log_f64(x), log10e)
+    let (n, logm) = log_reduce_f64(x);
+    let scaled = vmulq_f64(logm, vdupq_n_f64(std::f64::consts::LOG10_E));
+    let r = vfmaq_f64(scaled, n, vdupq_n_f64(std::f64::consts::LOG10_2));
+    log_special_f64(x, r)
 }
 
 /// Fast SIMD log1p (log(1+x)) for f32 using NEON
@@ -963,25 +1041,37 @@ pub unsafe fn log1p_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD log1p (log(1+x)) for f64 using NEON
+///
+/// `1 + x` alone rounds away the information log1p exists to keep, so the sum
+/// is carried as an exact pair `u + c` and the residual is folded back in.
+/// Relative error stays below 2 ulps, including for |x| down to the subnormal
+/// range where log1p(x) == x.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn log1p_f64(x: float64x2_t) -> float64x2_t {
     let one = vdupq_n_f64(1.0);
-    let half = vdupq_n_f64(0.5);
-    let abs_x = vabsq_f64(x);
+    let u = vaddq_f64(one, x);
 
-    let x2 = vmulq_f64(x, x);
-    let x3 = vmulq_f64(x2, x);
-    let x4 = vmulq_f64(x2, x2);
-    let c2 = vdupq_n_f64(-0.5);
-    let c3 = vdupq_n_f64(1.0 / 3.0);
-    let c4 = vdupq_n_f64(-0.25);
-    let taylor = vfmaq_f64(vfmaq_f64(vfmaq_f64(x, c2, x2), c3, x3), c4, x4);
+    // Fast2Sum: 1 + x = u + c exactly, with the larger addend leading.
+    let c_small = vsubq_f64(x, vsubq_f64(u, one));
+    let c_large = vsubq_f64(one, vsubq_f64(u, x));
+    let x_leads = vcltq_f64(vabsq_f64(x), one);
+    let c = vbslq_f64(x_leads, c_small, c_large);
 
-    let log_result = log_f64(vaddq_f64(one, x));
-    let mask = vcgtq_f64(abs_x, half);
-    vbslq_f64(mask, log_result, taylor)
+    // log(u + c) = log(u) + log1p(c/u), and |c/u| <= 2^-53, so the inner series
+    // collapses to its first term.
+    let r = vaddq_f64(log_f64(u), vdivq_f64(c, u));
+
+    // u == 1 means x fell entirely off the end of the sum; log1p(x) is then x
+    // to within half an ulp. This is also what carries signed zero through.
+    let out = vbslq_f64(vceqq_f64(u, one), x, r);
+
+    // x == -1 gives u == 0 and c/u = 0/0; x == +inf gives inf - inf.
+    let is_neg_one = vceqq_f64(x, vdupq_n_f64(-1.0));
+    let is_inf = vceqq_f64(x, vdupq_n_f64(f64::INFINITY));
+    let out = vbslq_f64(is_neg_one, vdupq_n_f64(f64::NEG_INFINITY), out);
+    vbslq_f64(is_inf, vdupq_n_f64(f64::INFINITY), out)
 }
 
 /// Fast SIMD sinh for f32 using NEON

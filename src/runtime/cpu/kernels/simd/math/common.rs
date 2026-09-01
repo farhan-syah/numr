@@ -62,9 +62,24 @@ pub mod exp_coefficients {
 // Polynomial Coefficients for log(x)
 // ============================================================================
 
-/// Minimax polynomial coefficients for log(1+f) where f is in [-0.2929, 0.4142]
+/// Coefficients for log(1+f) where f is in [-0.2929, 0.4142]
 /// (i.e., mantissa normalized to [sqrt(2)/2, sqrt(2)])
+///
+/// The f32 set is a direct polynomial in `f`.
+///
+/// The f64 set is a minimax polynomial in `s = f/(2+f)`, evaluated as
+///   `log(1+f) = f - hfsq + s*(hfsq + R(s*s))`, with `hfsq = 0.5*f*f`.
+/// A direct polynomial in `f` is unusable at f64 precision: it is the Mercator
+/// series, whose truncation error after `n` terms is about `f^(n+1)/(n+1)`, so
+/// even nine terms leave ~1e-5 relative error at f = 0.4142 — eleven decimal
+/// digits short of double precision. Substituting `s` halves the argument
+/// magnitude and kills every even power, so seven terms hold the truncation
+/// error below 2^-58 over the whole interval.
 pub mod log_coefficients {
+    /// ln(2) split head + correction, same role it plays in `exp`: the tail
+    /// carries the bits that `n * ln(2)` drops for large exponents.
+    pub use super::exp_coefficients::{LN2_HI_F64, LN2_LO_F64};
+
     // f32 coefficients (7-term polynomial)
     pub const C1_F32: f32 = 0.9999999995;
     pub const C2_F32: f32 = -0.4999999206;
@@ -74,16 +89,24 @@ pub mod log_coefficients {
     pub const C6_F32: f32 = -0.1666316004;
     pub const C7_F32: f32 = 0.1428962594;
 
-    // f64 coefficients (9-term polynomial for higher precision)
-    pub const C1_F64: f64 = 0.9999999999999999;
-    pub const C2_F64: f64 = -0.5;
-    pub const C3_F64: f64 = 0.33333333333333333;
-    pub const C4_F64: f64 = -0.25;
-    pub const C5_F64: f64 = 0.2;
-    pub const C6_F64: f64 = -0.16666666666666666;
-    pub const C7_F64: f64 = 0.14285714285714285;
-    pub const C8_F64: f64 = -0.125;
-    pub const C9_F64: f64 = 0.1111111111111111;
+    // f64 minimax coefficients for `R(z)` with `z = s*s`, `w = z*z`:
+    //   R = z*(LG1 + w*(LG3 + w*(LG5 + w*LG7))) + w*(LG2 + w*(LG4 + w*LG6))
+    // The two halves are summed separately so the odd and even chains are
+    // independent, which shortens the dependency chain without changing the
+    // value.
+    pub const LG1_F64: f64 = 6.666_666_666_666_735_1e-1;
+    pub const LG2_F64: f64 = 3.999_999_999_940_941_9e-1;
+    pub const LG3_F64: f64 = 2.857_142_874_366_239_1e-1;
+    pub const LG4_F64: f64 = 2.222_219_843_214_978_4e-1;
+    pub const LG5_F64: f64 = 1.818_357_216_161_805e-1;
+    pub const LG6_F64: f64 = 1.531_383_769_920_937_3e-1;
+    pub const LG7_F64: f64 = 1.479_819_860_511_658_6e-1;
+
+    /// Subnormal inputs carry no implicit leading 1, so the exponent/mantissa
+    /// split below is only valid after scaling them into the normal range.
+    /// 2^54 clears the widest subnormal; the exponent is corrected by -54.
+    pub const SUBNORMAL_SCALE_F64: f64 = 18_014_398_509_481_984.0; // 2^54
+    pub const SUBNORMAL_SHIFT_F64: f64 = -54.0;
 
     // IEEE 754 bit manipulation constants
     pub const EXP_BIAS_F32: i32 = 127;
@@ -187,18 +210,27 @@ pub const _EXP_ALGORITHM_DOC: () = ();
 /// 2. **Range normalization**: If m > √2, divide by 2 and increment n
 ///    - This keeps f = m - 1 in [-0.2929, 0.4142] for better polynomial convergence
 ///
-/// 3. **Polynomial approximation**: Compute log(1 + f) using minimax polynomial
-///    - log(1+f) ≈ f * (c₁ + f*(c₂ + f*(c₃ + ...))) (Horner's method)
+/// 3. **Polynomial approximation**: Compute log(1 + f)
+///    - f32: `log(1+f) ≈ f * (c₁ + f*(c₂ + ...))` (Horner's method)
+///    - f64: substitute `s = f/(2+f)` and evaluate
+///      `log(1+f) = f - (hfsq - s*(hfsq + R(s²)))` with `hfsq = f²/2`, which
+///      removes the even powers a direct series must otherwise carry
 ///
-/// 4. **Reconstruction**: result = n * ln(2) + log(m)
+/// 4. **Reconstruction**: result = n * ln(2) + log(m), with ln(2) split
+///    head + tail for f64 so large exponents keep their low bits
+///
+/// log2 and log10 reuse steps 1-3 and add the exact integer exponent back
+/// separately, which keeps exact powers of two exact.
 ///
 /// # Accuracy
 /// - f32: Relative error < 1e-6 for positive inputs
-/// - f64: Relative error < 1e-12 for positive inputs
+/// - f64: Relative error below 2 ulps for positive inputs
 ///
 /// # Edge Cases
-/// - x ≤ 0: Returns -inf or NaN (follows IEEE 754 semantics)
+/// - x = 0: Returns -inf; x < 0 and NaN: Returns NaN
 /// - x = +inf: Returns +inf
+/// - Subnormal x is scaled into the normal range first, so it keeps full
+///   precision instead of decomposing against an absent leading 1
 pub const _LOG_ALGORITHM_DOC: () = ();
 
 /// Algorithm for sin(x) and cos(x):

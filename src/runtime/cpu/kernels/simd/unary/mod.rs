@@ -287,6 +287,15 @@ mod tests {
     /// asin(0) and acos(1) are exactly zero, so a plain division would report
     /// NaN for a bit-exact result.
     fn rel_err_f64(got: f64, expected: f64) -> f64 {
+        // An exact match reports no error even when both sides are infinite or
+        // both NaN. Subtracting two equal infinities yields NaN, which would
+        // otherwise fail a comparison the kernel got exactly right.
+        if got == expected || (got.is_nan() && expected.is_nan()) {
+            return 0.0;
+        }
+        if !got.is_finite() || !expected.is_finite() {
+            return f64::INFINITY;
+        }
         (got - expected).abs() / expected.abs().max(f64::MIN_POSITIVE)
     }
 
@@ -477,6 +486,238 @@ mod tests {
                     out[i],
                     expected
                 );
+            }
+        }
+    }
+
+    /// Fill `a` up to `len` with a linear sweep over [lo, hi].
+    fn fill_range_f64(a: &mut Vec<f64>, len: usize, lo: f64, hi: f64) {
+        let start = a.len();
+        let span = len - start;
+        for i in 0..span {
+            a.push(lo + (hi - lo) * (i as f64) / (span as f64 - 1.0));
+        }
+    }
+
+    /// Arguments that expose every weak point of a log reduction: the region
+    /// around 1 where `log` cancels, one point per binade across the whole
+    /// exponent range, and subnormals, which carry no implicit leading 1.
+    fn log_probe_points_f64(len: usize) -> Vec<f64> {
+        let mut a: Vec<f64> = Vec::with_capacity(len);
+
+        // Near 1 the mantissa polynomial is the entire result, so a series that
+        // is merely "close" over the reduction interval shows up here.
+        for k in -60i32..=60 {
+            a.push(1.0 + (k as f64) * 1e-12);
+            a.push(1.0 + (k as f64) * 1e-3);
+        }
+
+        // sqrt(2) is the normalization breakpoint; a wrong branch lands here.
+        for k in -40i32..=40 {
+            a.push(std::f64::consts::SQRT_2 + (k as f64) * 1e-12);
+            a.push(std::f64::consts::FRAC_1_SQRT_2 + (k as f64) * 1e-12);
+        }
+
+        // One value per binade over the full exponent range, powers of two
+        // included, plus subnormals below f64::MIN_POSITIVE.
+        for k in -1074i32..=1023 {
+            if k % 3 == 0 {
+                a.push(2.0f64.powi(k));
+            }
+        }
+        a.push(f64::MIN_POSITIVE);
+        a.push(f64::MIN_POSITIVE * 0.5);
+        a.push(5e-324);
+        a.push(f64::MAX);
+
+        fill_range_f64(&mut a, len, 1e-8, 1e8);
+        a
+    }
+
+    #[test]
+    fn test_unary_log_f64_double_precision() {
+        const LEN: usize = 2048;
+        let a = log_probe_points_f64(LEN);
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Log, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].ln();
+            let rel_err = rel_err_f64(out[i], expected);
+            assert!(
+                rel_err < 1e-14,
+                "log({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_log2_f64_double_precision() {
+        const LEN: usize = 2048;
+        let a = log_probe_points_f64(LEN);
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Log2, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].log2();
+            let rel_err = rel_err_f64(out[i], expected);
+            assert!(
+                rel_err < 1e-14,
+                "log2({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_log10_f64_double_precision() {
+        const LEN: usize = 2048;
+        let a = log_probe_points_f64(LEN);
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Log10, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].log10();
+            let rel_err = rel_err_f64(out[i], expected);
+            assert!(
+                rel_err < 1e-14,
+                "log10({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_log1p_f64_double_precision() {
+        const LEN: usize = 2048;
+        let mut a: Vec<f64> = Vec::with_capacity(LEN);
+
+        // Tiny |x|, where 1 + x rounds x away entirely and log1p must fall back
+        // on log1p(x) == x. This is the whole reason log1p exists separately.
+        for k in 1i32..=300 {
+            a.push(10.0f64.powi(-k));
+            a.push(-10.0f64.powi(-k));
+        }
+
+        // Around -0.5, far enough from 0 that a low-degree series in x diverges
+        // from log(1+x) but still inside any |x| <= 0.5 fast path.
+        for k in -60i32..=60 {
+            a.push(-0.5 + (k as f64) * 1e-3);
+        }
+
+        // Approaching -1 from above, where log1p(x) -> -inf. 2^-53 is the last
+        // offset that still rounds to something other than -1 itself.
+        for k in 1i32..=53 {
+            a.push(-1.0 + 2.0f64.powi(-k));
+        }
+
+        // Both sides of |x| = 1, the Fast2Sum branch point.
+        for k in -20i32..=20 {
+            a.push(1.0 + (k as f64) * 1e-12);
+        }
+
+        fill_range_f64(&mut a, LEN, -0.9, 10.0);
+
+        let mut out = vec![0.0f64; LEN];
+        unsafe { unary_f64(UnaryOp::Log1p, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = a[i].ln_1p();
+            let rel_err = rel_err_f64(out[i], expected);
+            assert!(
+                rel_err < 1e-14,
+                "log1p({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_log_f64_domain_edges() {
+        const LEN: usize = 2048;
+
+        // log is undefined at and below zero, and 1 must come out exactly zero.
+        let log_edges = [
+            0.0f64,
+            -0.0,
+            1.0,
+            -1.0,
+            -1e300,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+        ];
+        let a: Vec<f64> = (0..LEN).map(|i| log_edges[i % log_edges.len()]).collect();
+        let mut out = vec![0.0f64; LEN];
+
+        for (op, reference) in [
+            (UnaryOp::Log, f64::ln as fn(f64) -> f64),
+            (UnaryOp::Log2, f64::log2 as fn(f64) -> f64),
+            (UnaryOp::Log10, f64::log10 as fn(f64) -> f64),
+        ] {
+            unsafe { unary_f64(op, a.as_ptr(), out.as_mut_ptr(), LEN) }
+            for i in 0..LEN {
+                let expected = reference(a[i]);
+                if expected.is_nan() {
+                    assert!(
+                        out[i].is_nan(),
+                        "{:?}({}) = {}, expected NaN",
+                        op,
+                        a[i],
+                        out[i]
+                    );
+                } else {
+                    assert_eq!(out[i], expected, "{:?}({}) mismatch", op, a[i]);
+                }
+            }
+        }
+
+        // log1p(-1) = -inf and log1p(x < -1) = NaN; log1p(0) keeps its sign.
+        let log1p_edges = [
+            -1.0f64,
+            -1.5,
+            0.0,
+            -0.0,
+            -1e300,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+        ];
+        let a: Vec<f64> = (0..LEN)
+            .map(|i| log1p_edges[i % log1p_edges.len()])
+            .collect();
+        unsafe { unary_f64(UnaryOp::Log1p, a.as_ptr(), out.as_mut_ptr(), LEN) }
+        for i in 0..LEN {
+            let expected = a[i].ln_1p();
+            if expected.is_nan() {
+                assert!(
+                    out[i].is_nan(),
+                    "log1p({}) = {}, expected NaN",
+                    a[i],
+                    out[i]
+                );
+            } else {
+                assert_eq!(out[i], expected, "log1p({}) mismatch", a[i]);
             }
         }
     }

@@ -9,7 +9,7 @@
 //! |----------|-----|-----|----------------|
 //! | exp      | ✓   | ✓   | < 1e-6 / 1e-12 |
 //! | tanh     | ✓   | ✓   | < 1e-6 / 1e-12 |
-//! | log      | ✓   | ✓   | < 1e-6 / 1e-12 |
+//! | log      | ✓   | ✓   | < 1e-6 / 2 ulp |
 //! | sin      | ✓   | ✓   | < 1e-6 / 1e-10 |
 //! | cos      | ✓   | ✓   | < 1e-6 / 1e-10 |
 //! | tan      | ✓   | ✓   | < 2e-4 / 1e-4  |
@@ -21,6 +21,10 @@
 //! and a Gregory series, whose truncation error grows toward the |x| = 1
 //! boundary. The f64 paths use the multi-centre reduction in `common.rs`
 //! instead and hold below 2 ulps everywhere.
+//!
+//! The same split applies to the log family: the f64 log/log2/log10/log1p
+//! paths hold below 2 ulps, while their f32 counterparts still use a truncated
+//! series and are far coarser than f32 epsilon.
 //!
 //! # Safety
 //!
@@ -286,39 +290,41 @@ pub unsafe fn log_f32(x: __m256) -> __m256 {
     _mm256_fmadd_ps(n, ln2, poly)
 }
 
-/// Fast SIMD log approximation for f64 using AVX2+FMA
+/// Split `x` into an exponent `n` and `log(m)`, where `m` is the mantissa
+/// normalized to [sqrt(2)/2, sqrt(2)), so that `log(x) = n*ln(2) + log(m)`.
 ///
-/// See `common::_LOG_ALGORITHM_DOC` for algorithm details.
+/// log, log2, log10 and log1p all share this reduction and differ only in how
+/// they recombine the two parts. Special values are applied by the callers via
+/// `log_special_f64`.
 ///
 /// # Implementation Note
-/// Unlike the naive scalar-loop approach, this implementation uses native AVX2
-/// 64-bit SIMD operations for exponent extraction. The only scalar operations
-/// are for the normalization conditional and final reconstruction, which cannot
-/// be avoided due to AVX2's lack of 64-bit comparison and conversion intrinsics.
+/// AVX2 lacks 64-bit integer comparison and conversion, so the normalization
+/// step drops to scalar. The polynomial stays fully vectorized.
 ///
 /// # Safety
 /// Requires AVX2 and FMA CPU features.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
-pub unsafe fn log_f64(x: __m256d) -> __m256d {
+unsafe fn log_reduce_f64(x: __m256d) -> (__m256d, __m256d) {
     use log_coefficients::*;
 
     let one = _mm256_set1_pd(1.0);
-    let ln2 = _mm256_set1_pd(std::f64::consts::LN_2);
+    let two = _mm256_set1_pd(2.0);
+    let half = _mm256_set1_pd(0.5);
     let sqrt2_val = std::f64::consts::SQRT_2;
 
-    let c1 = _mm256_set1_pd(C1_F64);
-    let c2 = _mm256_set1_pd(C2_F64);
-    let c3 = _mm256_set1_pd(C3_F64);
-    let c4 = _mm256_set1_pd(C4_F64);
-    let c5 = _mm256_set1_pd(C5_F64);
-    let c6 = _mm256_set1_pd(C6_F64);
-    let c7 = _mm256_set1_pd(C7_F64);
-    let c8 = _mm256_set1_pd(C8_F64);
-    let c9 = _mm256_set1_pd(C9_F64);
+    // Subnormals carry no implicit leading 1, so the split below is only valid
+    // after scaling them into the normal range.
+    let is_sub = _mm256_cmp_pd::<_CMP_LT_OQ>(x, _mm256_set1_pd(f64::MIN_POSITIVE));
+    let scaled = _mm256_mul_pd(x, _mm256_set1_pd(SUBNORMAL_SCALE_F64));
+    let x_norm = _mm256_blendv_pd(x, scaled, is_sub);
+    let n_shift = _mm256_blendv_pd(
+        _mm256_setzero_pd(),
+        _mm256_set1_pd(SUBNORMAL_SHIFT_F64),
+        is_sub,
+    );
 
-    // Use SIMD for bit manipulation - AVX2 has 64-bit shifts
-    let x_bits = _mm256_castpd_si256(x);
+    let x_bits = _mm256_castpd_si256(x_norm);
 
     // Extract exponent using 64-bit SIMD shift
     let exp_raw = _mm256_srli_epi64::<52>(x_bits);
@@ -329,9 +335,6 @@ pub unsafe fn log_f64(x: __m256d) -> __m256d {
     let m_bits = _mm256_or_si256(_mm256_and_si256(x_bits, mantissa_mask), exp_zero);
     let m_initial = _mm256_castsi256_pd(m_bits);
 
-    // AVX2 lacks 64-bit int comparison and conversion, so we extract for
-    // normalization and exponent calculation. The heavy lifting (polynomial
-    // evaluation) remains fully vectorized.
     let mut m_arr = [0.0f64; 4];
     let mut exp_arr = [0i64; 4];
     _mm256_storeu_pd(m_arr.as_mut_ptr(), m_initial);
@@ -352,26 +355,90 @@ pub unsafe fn log_f64(x: __m256d) -> __m256d {
         m_arr[i] = m;
     }
 
-    let n = _mm256_loadu_pd(n_arr.as_ptr());
+    let n = _mm256_add_pd(_mm256_loadu_pd(n_arr.as_ptr()), n_shift);
     let m = _mm256_loadu_pd(m_arr.as_ptr());
 
-    // f = m - 1 (fully SIMD from here)
+    // s = f/(2+f) halves the argument and leaves only odd powers, which is what
+    // lets seven terms reach f64 precision (see `log_coefficients`).
     let f = _mm256_sub_pd(m, one);
+    let s = _mm256_div_pd(f, _mm256_add_pd(two, f));
+    let z = _mm256_mul_pd(s, s);
+    let w = _mm256_mul_pd(z, z);
 
-    // Horner's method for polynomial (fully vectorized)
-    let mut poly = c9;
-    poly = _mm256_fmadd_pd(poly, f, c8);
-    poly = _mm256_fmadd_pd(poly, f, c7);
-    poly = _mm256_fmadd_pd(poly, f, c6);
-    poly = _mm256_fmadd_pd(poly, f, c5);
-    poly = _mm256_fmadd_pd(poly, f, c4);
-    poly = _mm256_fmadd_pd(poly, f, c3);
-    poly = _mm256_fmadd_pd(poly, f, c2);
-    poly = _mm256_fmadd_pd(poly, f, c1);
-    poly = _mm256_mul_pd(poly, f);
+    let t1 = _mm256_mul_pd(
+        w,
+        _mm256_fmadd_pd(
+            w,
+            _mm256_fmadd_pd(w, _mm256_set1_pd(LG6_F64), _mm256_set1_pd(LG4_F64)),
+            _mm256_set1_pd(LG2_F64),
+        ),
+    );
+    let t2 = _mm256_mul_pd(
+        z,
+        _mm256_fmadd_pd(
+            w,
+            _mm256_fmadd_pd(
+                w,
+                _mm256_fmadd_pd(w, _mm256_set1_pd(LG7_F64), _mm256_set1_pd(LG5_F64)),
+                _mm256_set1_pd(LG3_F64),
+            ),
+            _mm256_set1_pd(LG1_F64),
+        ),
+    );
+    let r = _mm256_add_pd(t2, t1);
 
-    // Result = n * ln(2) + log(m) (fully SIMD)
-    _mm256_fmadd_pd(n, ln2, poly)
+    // log(m) = f - (hfsq - s*(hfsq + R)); keeping f outside the parentheses
+    // stops the f² term from eating f's low bits when f is small.
+    let hfsq = _mm256_mul_pd(half, _mm256_mul_pd(f, f));
+    let logm = _mm256_sub_pd(
+        f,
+        _mm256_sub_pd(hfsq, _mm256_mul_pd(s, _mm256_add_pd(hfsq, r))),
+    );
+
+    (n, logm)
+}
+
+/// Apply the IEEE domain values shared by log, log2 and log10:
+/// `log(0) = -inf`, `log(x < 0) = NaN`, `log(+inf) = +inf`, `log(NaN) = NaN`.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn log_special_f64(x: __m256d, r: __m256d) -> __m256d {
+    let zero = _mm256_setzero_pd();
+
+    // Unordered compare, so NaN inputs take the NaN branch instead of feeding
+    // garbage mantissa bits through the polynomial.
+    let not_positive = _mm256_cmp_pd::<_CMP_NGT_UQ>(x, zero);
+    let is_zero = _mm256_cmp_pd::<_CMP_EQ_OQ>(x, zero);
+    let is_inf = _mm256_cmp_pd::<_CMP_EQ_OQ>(x, _mm256_set1_pd(f64::INFINITY));
+
+    let out = _mm256_blendv_pd(r, _mm256_set1_pd(f64::NAN), not_positive);
+    let out = _mm256_blendv_pd(out, _mm256_set1_pd(f64::NEG_INFINITY), is_zero);
+    _mm256_blendv_pd(out, _mm256_set1_pd(f64::INFINITY), is_inf)
+}
+
+/// Fast SIMD log approximation for f64 using AVX2+FMA
+///
+/// See `common::_LOG_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 2 ulps over the whole positive range.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+pub unsafe fn log_f64(x: __m256d) -> __m256d {
+    use log_coefficients::{LN2_HI_F64, LN2_LO_F64};
+
+    let (n, logm) = log_reduce_f64(x);
+
+    // Split ln(2): the head is exact against every reachable n, the tail
+    // restores the bits a single rounded ln(2) would drop.
+    let lo = _mm256_fmadd_pd(n, _mm256_set1_pd(LN2_LO_F64), logm);
+    let r = _mm256_fmadd_pd(n, _mm256_set1_pd(LN2_HI_F64), lo);
+
+    log_special_f64(x, r)
 }
 
 // ============================================================================
@@ -966,11 +1033,15 @@ pub unsafe fn log2_f32(x: __m256) -> __m256 {
 }
 
 /// Fast SIMD log2 for f64 using AVX2
+///
+/// Scaling `log(x)` would fold the exponent through two roundings and miss
+/// exact powers of two, so the exponent is added back untouched instead.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn log2_f64(x: __m256d) -> __m256d {
-    let log2e = _mm256_set1_pd(std::f64::consts::LOG2_E);
-    _mm256_mul_pd(log_f64(x), log2e)
+    let (n, logm) = log_reduce_f64(x);
+    let r = _mm256_fmadd_pd(logm, _mm256_set1_pd(std::f64::consts::LOG2_E), n);
+    log_special_f64(x, r)
 }
 
 /// Fast SIMD log10 for f32 using AVX2
@@ -983,11 +1054,16 @@ pub unsafe fn log10_f32(x: __m256) -> __m256 {
 }
 
 /// Fast SIMD log10 for f64 using AVX2
+///
+/// `log10(x) = n*log10(2) + log(m)*log10(e)`, keeping the exact exponent out
+/// of the mantissa's rounding for the same reason as `log2_f64`.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn log10_f64(x: __m256d) -> __m256d {
-    let log10e = _mm256_set1_pd(std::f64::consts::LOG10_E);
-    _mm256_mul_pd(log_f64(x), log10e)
+    let (n, logm) = log_reduce_f64(x);
+    let scaled = _mm256_mul_pd(logm, _mm256_set1_pd(std::f64::consts::LOG10_E));
+    let r = _mm256_fmadd_pd(n, _mm256_set1_pd(std::f64::consts::LOG10_2), scaled);
+    log_special_f64(x, r)
 }
 
 /// Fast SIMD log1p (log(1+x)) for f32 using AVX2
@@ -1015,24 +1091,38 @@ pub unsafe fn log1p_f32(x: __m256) -> __m256 {
 }
 
 /// Fast SIMD log1p (log(1+x)) for f64 using AVX2
+///
+/// `1 + x` alone rounds away the information log1p exists to keep, so the sum
+/// is carried as an exact pair `u + c` and the residual is folded back in.
+/// Relative error stays below 2 ulps, including for |x| down to the subnormal
+/// range where log1p(x) == x.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn log1p_f64(x: __m256d) -> __m256d {
     let one = _mm256_set1_pd(1.0);
-    let half = _mm256_set1_pd(0.5);
+    let u = _mm256_add_pd(one, x);
+
+    // Fast2Sum: 1 + x = u + c exactly, with the larger addend leading.
+    let c_small = _mm256_sub_pd(x, _mm256_sub_pd(u, one));
+    let c_large = _mm256_sub_pd(one, _mm256_sub_pd(u, x));
     let abs_x = _mm256_andnot_pd(_mm256_set1_pd(-0.0), x);
+    let x_leads = _mm256_cmp_pd::<_CMP_LT_OQ>(abs_x, one);
+    let c = _mm256_blendv_pd(c_large, c_small, x_leads);
 
-    let x2 = _mm256_mul_pd(x, x);
-    let x3 = _mm256_mul_pd(x2, x);
-    let x4 = _mm256_mul_pd(x2, x2);
-    let c2 = _mm256_set1_pd(-0.5);
-    let c3 = _mm256_set1_pd(1.0 / 3.0);
-    let c4 = _mm256_set1_pd(-0.25);
-    let taylor = _mm256_fmadd_pd(c4, x4, _mm256_fmadd_pd(c3, x3, _mm256_fmadd_pd(c2, x2, x)));
+    // log(u + c) = log(u) + log1p(c/u), and |c/u| <= 2^-53, so the inner series
+    // collapses to its first term.
+    let r = _mm256_add_pd(log_f64(u), _mm256_div_pd(c, u));
 
-    let log_result = log_f64(_mm256_add_pd(one, x));
-    let mask = _mm256_cmp_pd::<_CMP_GT_OQ>(abs_x, half);
-    _mm256_blendv_pd(taylor, log_result, mask)
+    // u == 1 means x fell entirely off the end of the sum; log1p(x) is then x
+    // to within half an ulp. This is also what carries signed zero through.
+    let is_unit = _mm256_cmp_pd::<_CMP_EQ_OQ>(u, one);
+    let out = _mm256_blendv_pd(r, x, is_unit);
+
+    // x == -1 gives u == 0 and c/u = 0/0; x == +inf gives inf - inf.
+    let is_neg_one = _mm256_cmp_pd::<_CMP_EQ_OQ>(x, _mm256_set1_pd(-1.0));
+    let is_inf = _mm256_cmp_pd::<_CMP_EQ_OQ>(x, _mm256_set1_pd(f64::INFINITY));
+    let out = _mm256_blendv_pd(out, _mm256_set1_pd(f64::NEG_INFINITY), is_neg_one);
+    _mm256_blendv_pd(out, _mm256_set1_pd(f64::INFINITY), is_inf)
 }
 
 /// Fast SIMD sinh for f32 using AVX2

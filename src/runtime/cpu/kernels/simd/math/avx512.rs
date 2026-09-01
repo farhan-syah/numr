@@ -9,7 +9,7 @@
 //! |----------|-----|-----|----------------|
 //! | exp      | ✓   | ✓   | < 1e-6 / 1e-12 |
 //! | tanh     | ✓   | ✓   | < 1e-6 / 1e-12 |
-//! | log      | ✓   | ✓   | < 1e-6 / 1e-12 |
+//! | log      | ✓   | ✓   | < 1e-6 / 2 ulp |
 //! | sin      | ✓   | ✓   | < 1e-6 / 1e-10 |
 //! | cos      | ✓   | ✓   | < 1e-6 / 1e-10 |
 //! | tan      | ✓   | ✓   | < 2e-4 / 1e-4  |
@@ -21,6 +21,10 @@
 //! and a Gregory series, whose truncation error grows toward the |x| = 1
 //! boundary. The f64 paths use the multi-centre reduction in `common.rs`
 //! instead and hold below 2 ulps everywhere.
+//!
+//! The same split applies to the log family: the f64 log/log2/log10/log1p
+//! paths hold below 2 ulps, while their f32 counterparts still use a truncated
+//! series and are far coarser than f32 epsilon.
 //!
 //! # Safety
 //!
@@ -277,38 +281,40 @@ pub unsafe fn log_f32(x: __m512) -> __m512 {
     _mm512_fmadd_ps(n, ln2, poly)
 }
 
-/// Fast SIMD log approximation for f64 using AVX-512
+/// Split `x` into an exponent `n` and `log(m)`, where `m` is the mantissa
+/// normalized to [sqrt(2)/2, sqrt(2)), so that `log(x) = n*ln(2) + log(m)`.
 ///
-/// See `common::_LOG_ALGORITHM_DOC` for algorithm details.
+/// log, log2, log10 and log1p all share this reduction and differ only in how
+/// they recombine the two parts. Special values are applied by the callers via
+/// `log_special_f64`.
 ///
 /// # Note
-/// AVX-512 has native 64-bit integer operations, so this implementation
-/// is fully vectorized with no scalar operations.
+/// AVX-512 has native 64-bit integer operations, so this is fully vectorized.
 ///
 /// # Safety
 /// Requires AVX-512F CPU feature.
 #[target_feature(enable = "avx512f")]
 #[inline]
-pub unsafe fn log_f64(x: __m512d) -> __m512d {
+unsafe fn log_reduce_f64(x: __m512d) -> (__m512d, __m512d) {
     use log_coefficients::*;
 
     let one = _mm512_set1_pd(1.0);
-    let ln2 = _mm512_set1_pd(std::f64::consts::LN_2);
-    let sqrt2 = _mm512_set1_pd(std::f64::consts::SQRT_2);
+    let two = _mm512_set1_pd(2.0);
     let half = _mm512_set1_pd(0.5);
+    let sqrt2 = _mm512_set1_pd(std::f64::consts::SQRT_2);
 
-    let c1 = _mm512_set1_pd(C1_F64);
-    let c2 = _mm512_set1_pd(C2_F64);
-    let c3 = _mm512_set1_pd(C3_F64);
-    let c4 = _mm512_set1_pd(C4_F64);
-    let c5 = _mm512_set1_pd(C5_F64);
-    let c6 = _mm512_set1_pd(C6_F64);
-    let c7 = _mm512_set1_pd(C7_F64);
-    let c8 = _mm512_set1_pd(C8_F64);
-    let c9 = _mm512_set1_pd(C9_F64);
+    // Subnormals carry no implicit leading 1, so the split below is only valid
+    // after scaling them into the normal range.
+    let is_sub = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(x, _mm512_set1_pd(f64::MIN_POSITIVE));
+    let x_norm = _mm512_mask_mul_pd(x, is_sub, x, _mm512_set1_pd(SUBNORMAL_SCALE_F64));
+    let n_shift = _mm512_mask_blend_pd(
+        is_sub,
+        _mm512_setzero_pd(),
+        _mm512_set1_pd(SUBNORMAL_SHIFT_F64),
+    );
 
     // Extract exponent using AVX-512 native 64-bit ops
-    let x_bits = _mm512_castpd_si512(x);
+    let x_bits = _mm512_castpd_si512(x_norm);
     let exp_raw = _mm512_srli_epi64::<52>(x_bits);
     let exp_unbiased = _mm512_sub_epi64(exp_raw, _mm512_set1_epi64(EXP_BIAS_F64));
     let mut n = _mm512_cvtepi64_pd(exp_unbiased);
@@ -323,22 +329,89 @@ pub unsafe fn log_f64(x: __m512d) -> __m512d {
     let need_adjust = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(m, sqrt2);
     m = _mm512_mask_mul_pd(m, need_adjust, m, half);
     n = _mm512_mask_add_pd(n, need_adjust, n, one);
+    n = _mm512_add_pd(n, n_shift);
 
+    // s = f/(2+f) halves the argument and leaves only odd powers, which is what
+    // lets seven terms reach f64 precision (see `log_coefficients`).
     let f = _mm512_sub_pd(m, one);
+    let s = _mm512_div_pd(f, _mm512_add_pd(two, f));
+    let z = _mm512_mul_pd(s, s);
+    let w = _mm512_mul_pd(z, z);
 
-    // Horner's method
-    let mut poly = c9;
-    poly = _mm512_fmadd_pd(poly, f, c8);
-    poly = _mm512_fmadd_pd(poly, f, c7);
-    poly = _mm512_fmadd_pd(poly, f, c6);
-    poly = _mm512_fmadd_pd(poly, f, c5);
-    poly = _mm512_fmadd_pd(poly, f, c4);
-    poly = _mm512_fmadd_pd(poly, f, c3);
-    poly = _mm512_fmadd_pd(poly, f, c2);
-    poly = _mm512_fmadd_pd(poly, f, c1);
-    poly = _mm512_mul_pd(poly, f);
+    let t1 = _mm512_mul_pd(
+        w,
+        _mm512_fmadd_pd(
+            w,
+            _mm512_fmadd_pd(w, _mm512_set1_pd(LG6_F64), _mm512_set1_pd(LG4_F64)),
+            _mm512_set1_pd(LG2_F64),
+        ),
+    );
+    let t2 = _mm512_mul_pd(
+        z,
+        _mm512_fmadd_pd(
+            w,
+            _mm512_fmadd_pd(
+                w,
+                _mm512_fmadd_pd(w, _mm512_set1_pd(LG7_F64), _mm512_set1_pd(LG5_F64)),
+                _mm512_set1_pd(LG3_F64),
+            ),
+            _mm512_set1_pd(LG1_F64),
+        ),
+    );
+    let r = _mm512_add_pd(t2, t1);
 
-    _mm512_fmadd_pd(n, ln2, poly)
+    // log(m) = f - (hfsq - s*(hfsq + R)); keeping f outside the parentheses
+    // stops the f² term from eating f's low bits when f is small.
+    let hfsq = _mm512_mul_pd(half, _mm512_mul_pd(f, f));
+    let logm = _mm512_sub_pd(
+        f,
+        _mm512_sub_pd(hfsq, _mm512_mul_pd(s, _mm512_add_pd(hfsq, r))),
+    );
+
+    (n, logm)
+}
+
+/// Apply the IEEE domain values shared by log, log2 and log10:
+/// `log(0) = -inf`, `log(x < 0) = NaN`, `log(+inf) = +inf`, `log(NaN) = NaN`.
+///
+/// # Safety
+/// Requires AVX-512F CPU feature.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn log_special_f64(x: __m512d, r: __m512d) -> __m512d {
+    let zero = _mm512_setzero_pd();
+
+    // Unordered compare, so NaN inputs take the NaN branch instead of feeding
+    // garbage mantissa bits through the polynomial.
+    let not_positive = _mm512_cmp_pd_mask::<_CMP_NGT_UQ>(x, zero);
+    let is_zero = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(x, zero);
+    let is_inf = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(x, _mm512_set1_pd(f64::INFINITY));
+
+    let out = _mm512_mask_blend_pd(not_positive, r, _mm512_set1_pd(f64::NAN));
+    let out = _mm512_mask_blend_pd(is_zero, out, _mm512_set1_pd(f64::NEG_INFINITY));
+    _mm512_mask_blend_pd(is_inf, out, _mm512_set1_pd(f64::INFINITY))
+}
+
+/// Fast SIMD log approximation for f64 using AVX-512
+///
+/// See `common::_LOG_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 2 ulps over the whole positive range.
+///
+/// # Safety
+/// Requires AVX-512F CPU feature.
+#[target_feature(enable = "avx512f")]
+#[inline]
+pub unsafe fn log_f64(x: __m512d) -> __m512d {
+    use log_coefficients::{LN2_HI_F64, LN2_LO_F64};
+
+    let (n, logm) = log_reduce_f64(x);
+
+    // Split ln(2): the head is exact against every reachable n, the tail
+    // restores the bits a single rounded ln(2) would drop.
+    let lo = _mm512_fmadd_pd(n, _mm512_set1_pd(LN2_LO_F64), logm);
+    let r = _mm512_fmadd_pd(n, _mm512_set1_pd(LN2_HI_F64), lo);
+
+    log_special_f64(x, r)
 }
 
 // ============================================================================
@@ -843,11 +916,15 @@ pub unsafe fn log2_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD log2 for f64 using AVX-512
+///
+/// Scaling `log(x)` would fold the exponent through two roundings and miss
+/// exact powers of two, so the exponent is added back untouched instead.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn log2_f64(x: __m512d) -> __m512d {
-    let log2e = _mm512_set1_pd(std::f64::consts::LOG2_E);
-    _mm512_mul_pd(log_f64(x), log2e)
+    let (n, logm) = log_reduce_f64(x);
+    let r = _mm512_fmadd_pd(logm, _mm512_set1_pd(std::f64::consts::LOG2_E), n);
+    log_special_f64(x, r)
 }
 
 /// Fast SIMD log10 for f32 using AVX-512
@@ -859,11 +936,16 @@ pub unsafe fn log10_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD log10 for f64 using AVX-512
+///
+/// `log10(x) = n*log10(2) + log(m)*log10(e)`, keeping the exact exponent out
+/// of the mantissa's rounding for the same reason as `log2_f64`.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn log10_f64(x: __m512d) -> __m512d {
-    let log10e = _mm512_set1_pd(std::f64::consts::LOG10_E);
-    _mm512_mul_pd(log_f64(x), log10e)
+    let (n, logm) = log_reduce_f64(x);
+    let scaled = _mm512_mul_pd(logm, _mm512_set1_pd(std::f64::consts::LOG10_E));
+    let r = _mm512_fmadd_pd(n, _mm512_set1_pd(std::f64::consts::LOG10_2), scaled);
+    log_special_f64(x, r)
 }
 
 /// Fast SIMD log1p (log(1+x)) for f32 using AVX-512
@@ -888,24 +970,37 @@ pub unsafe fn log1p_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD log1p (log(1+x)) for f64 using AVX-512
+///
+/// `1 + x` alone rounds away the information log1p exists to keep, so the sum
+/// is carried as an exact pair `u + c` and the residual is folded back in.
+/// Relative error stays below 2 ulps, including for |x| down to the subnormal
+/// range where log1p(x) == x.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn log1p_f64(x: __m512d) -> __m512d {
     let one = _mm512_set1_pd(1.0);
-    let half = _mm512_set1_pd(0.5);
-    let abs_x = _mm512_abs_pd(x);
+    let u = _mm512_add_pd(one, x);
 
-    let x2 = _mm512_mul_pd(x, x);
-    let x3 = _mm512_mul_pd(x2, x);
-    let x4 = _mm512_mul_pd(x2, x2);
-    let c2 = _mm512_set1_pd(-0.5);
-    let c3 = _mm512_set1_pd(1.0 / 3.0);
-    let c4 = _mm512_set1_pd(-0.25);
-    let taylor = _mm512_fmadd_pd(c4, x4, _mm512_fmadd_pd(c3, x3, _mm512_fmadd_pd(c2, x2, x)));
+    // Fast2Sum: 1 + x = u + c exactly, with the larger addend leading.
+    let c_small = _mm512_sub_pd(x, _mm512_sub_pd(u, one));
+    let c_large = _mm512_sub_pd(one, _mm512_sub_pd(u, x));
+    let x_leads = _mm512_cmp_pd_mask::<_CMP_LT_OQ>(_mm512_abs_pd(x), one);
+    let c = _mm512_mask_blend_pd(x_leads, c_large, c_small);
 
-    let log_result = log_f64(_mm512_add_pd(one, x));
-    let mask = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(abs_x, half);
-    _mm512_mask_blend_pd(mask, taylor, log_result)
+    // log(u + c) = log(u) + log1p(c/u), and |c/u| <= 2^-53, so the inner series
+    // collapses to its first term.
+    let r = _mm512_add_pd(log_f64(u), _mm512_div_pd(c, u));
+
+    // u == 1 means x fell entirely off the end of the sum; log1p(x) is then x
+    // to within half an ulp. This is also what carries signed zero through.
+    let is_unit = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(u, one);
+    let out = _mm512_mask_blend_pd(is_unit, r, x);
+
+    // x == -1 gives u == 0 and c/u = 0/0; x == +inf gives inf - inf.
+    let is_neg_one = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(x, _mm512_set1_pd(-1.0));
+    let is_inf = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(x, _mm512_set1_pd(f64::INFINITY));
+    let out = _mm512_mask_blend_pd(is_neg_one, out, _mm512_set1_pd(f64::NEG_INFINITY));
+    _mm512_mask_blend_pd(is_inf, out, _mm512_set1_pd(f64::INFINITY))
 }
 
 /// Fast SIMD sinh for f32 using AVX-512
