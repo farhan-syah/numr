@@ -12,6 +12,19 @@ extern "C" {
 // Softmax Forward (Last Dimension)
 // ============================================================================
 
+// Two passes over the row: one online pass that produces the max and the sum of
+// exponentials together, then one pass that writes the normalized result. The
+// output buffer is never read back.
+//
+// Online per-thread recurrence keeps `thread_sum` expressed relative to
+// `thread_max`; the cross-thread tree merges (max, sum) as one pair, since a
+// partial sum is only meaningful against its own partial max.
+//
+// A thread with no elements holds (-INFINITY, 0). The `m > -INFINITY` guard in
+// the merge and the `thread_max > -INFINITY` guard in the loop keep the
+// all--inf case (fully masked row, or idle threads) out of exp(-inf - -inf),
+// which is NaN.
+
 __global__ void softmax_f32(
     const float* input, float* output,
     unsigned int outer_size, unsigned int dim_size
@@ -26,48 +39,43 @@ __global__ void softmax_f32(
     const float* row_in = input + outer_idx * dim_size;
     float* row_out = output + outer_idx * dim_size;
 
-    // Phase 1: Find max value for numerical stability
+    // Pass 1: running max and running sum of exp in a single read of the row
     float thread_max = -INFINITY;
+    float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        thread_max = fmaxf(thread_max, row_in[i]);
+        float v = row_in[i];
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
     max_val[threadIdx.x] = thread_max;
+    sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
 
-    // Reduce max across threads
+    // Merge (max, sum) pairs together: rescale the smaller max into the larger
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (threadIdx.x < s) {
-            max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
         }
         __syncthreads();
     }
     float row_max = max_val[0];
-    __syncthreads();
+    float inv_sum = 1.0f / sum_exp[0];
 
-    // Phase 2: Compute exp(x - max) and sum
-    float thread_sum = 0.0f;
+    // Pass 2: second read of the row, single write of the result
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(row_in[i] - row_max);
-        row_out[i] = val;  // Temporarily store exp values
-        thread_sum += val;
-    }
-    sum_exp[threadIdx.x] = thread_sum;
-    __syncthreads();
-
-    // Reduce sum across threads
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    float row_sum = sum_exp[0];
-    __syncthreads();
-
-    // Phase 3: Normalize
-    float inv_sum = 1.0f / row_sum;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] *= inv_sum;
+        row_out[i] = expf(row_in[i] - row_max) * inv_sum;
     }
 }
 
@@ -86,42 +94,39 @@ __global__ void softmax_f64(
     double* row_out = output + outer_idx * dim_size;
 
     double thread_max = -INFINITY;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        thread_max = fmax(thread_max, row_in[i]);
-    }
-    max_val[threadIdx.x] = thread_max;
-    __syncthreads();
-
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            max_val[threadIdx.x] = fmax(max_val[threadIdx.x], max_val[threadIdx.x + s]);
-        }
-        __syncthreads();
-    }
-    double row_max = max_val[0];
-    __syncthreads();
-
     double thread_sum = 0.0;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        double val = exp(row_in[i] - row_max);
-        row_out[i] = val;
-        thread_sum += val;
+        double v = row_in[i];
+        if (v > thread_max) {
+            thread_sum = thread_sum * exp(thread_max - v) + 1.0;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += exp(v - thread_max);
+        }
     }
+    max_val[threadIdx.x] = thread_max;
     sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
 
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (threadIdx.x < s) {
-            sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
+            double m_a = max_val[threadIdx.x];
+            double s_a = sum_exp[threadIdx.x];
+            double m_b = max_val[threadIdx.x + s];
+            double s_b = sum_exp[threadIdx.x + s];
+            double m = fmax(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * exp(m_a - m) + s_b * exp(m_b - m))
+                : 0.0;
         }
         __syncthreads();
     }
-    double row_sum = sum_exp[0];
-    __syncthreads();
+    double row_max = max_val[0];
+    double inv_sum = 1.0 / sum_exp[0];
 
-    double inv_sum = 1.0 / row_sum;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] *= inv_sum;
+        row_out[i] = exp(row_in[i] - row_max) * inv_sum;
     }
 }
 
@@ -140,42 +145,39 @@ __global__ void softmax_f16(
     __half* row_out = output + outer_idx * dim_size;
 
     float thread_max = -INFINITY;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        thread_max = fmaxf(thread_max, __half2float(row_in[i]));
-    }
-    max_val[threadIdx.x] = thread_max;
-    __syncthreads();
-
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
-        }
-        __syncthreads();
-    }
-    float row_max = max_val[0];
-    __syncthreads();
-
     float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(__half2float(row_in[i]) - row_max);
-        row_out[i] = __float2half(val);
-        thread_sum += val;
+        float v = __half2float(row_in[i]);
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
+    max_val[threadIdx.x] = thread_max;
     sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
 
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (threadIdx.x < s) {
-            sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
         }
         __syncthreads();
     }
-    float row_sum = sum_exp[0];
-    __syncthreads();
+    float row_max = max_val[0];
+    float inv_sum = 1.0f / sum_exp[0];
 
-    float inv_sum = 1.0f / row_sum;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] = __float2half(__half2float(row_out[i]) * inv_sum);
+        row_out[i] = __float2half(expf(__half2float(row_in[i]) - row_max) * inv_sum);
     }
 }
 
@@ -194,42 +196,39 @@ __global__ void softmax_bf16(
     __nv_bfloat16* row_out = output + outer_idx * dim_size;
 
     float thread_max = -INFINITY;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        thread_max = fmaxf(thread_max, __bfloat162float(row_in[i]));
-    }
-    max_val[threadIdx.x] = thread_max;
-    __syncthreads();
-
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
-        }
-        __syncthreads();
-    }
-    float row_max = max_val[0];
-    __syncthreads();
-
     float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(__bfloat162float(row_in[i]) - row_max);
-        row_out[i] = __float2bfloat16(val);
-        thread_sum += val;
+        float v = __bfloat162float(row_in[i]);
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
+    max_val[threadIdx.x] = thread_max;
     sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
 
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (threadIdx.x < s) {
-            sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
         }
         __syncthreads();
     }
-    float row_sum = sum_exp[0];
-    __syncthreads();
+    float row_max = max_val[0];
+    float inv_sum = 1.0f / sum_exp[0];
 
-    float inv_sum = 1.0f / row_sum;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] = __float2bfloat16(__bfloat162float(row_out[i]) * inv_sum);
+        row_out[i] = __float2bfloat16(expf(__bfloat162float(row_in[i]) - row_max) * inv_sum);
     }
 }
 
@@ -248,42 +247,40 @@ __global__ void softmax_fp8_e4m3(
     numr_fp8_e4m3* row_out = output + outer_idx * dim_size;
 
     float thread_max = -INFINITY;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        thread_max = fmaxf(thread_max, fp8_e4m3_to_f32(row_in[i].data));
-    }
-    max_val[threadIdx.x] = thread_max;
-    __syncthreads();
-
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
-        }
-        __syncthreads();
-    }
-    float row_max = max_val[0];
-    __syncthreads();
-
     float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(fp8_e4m3_to_f32(row_in[i].data) - row_max);
-        row_out[i] = numr_fp8_e4m3(f32_to_fp8_e4m3(val));
-        thread_sum += val;
+        float v = fp8_e4m3_to_f32(row_in[i].data);
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
+    max_val[threadIdx.x] = thread_max;
     sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
 
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (threadIdx.x < s) {
-            sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
         }
         __syncthreads();
     }
-    float row_sum = sum_exp[0];
-    __syncthreads();
+    float row_max = max_val[0];
+    float inv_sum = 1.0f / sum_exp[0];
 
-    float inv_sum = 1.0f / row_sum;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] = numr_fp8_e4m3(f32_to_fp8_e4m3(fp8_e4m3_to_f32(row_out[i].data) * inv_sum));
+        float val = expf(fp8_e4m3_to_f32(row_in[i].data) - row_max) * inv_sum;
+        row_out[i] = numr_fp8_e4m3(f32_to_fp8_e4m3(val));
     }
 }
 
@@ -302,42 +299,40 @@ __global__ void softmax_fp8_e5m2(
     numr_fp8_e5m2* row_out = output + outer_idx * dim_size;
 
     float thread_max = -INFINITY;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        thread_max = fmaxf(thread_max, fp8_e5m2_to_f32(row_in[i].data));
-    }
-    max_val[threadIdx.x] = thread_max;
-    __syncthreads();
-
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
-        }
-        __syncthreads();
-    }
-    float row_max = max_val[0];
-    __syncthreads();
-
     float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(fp8_e5m2_to_f32(row_in[i].data) - row_max);
-        row_out[i] = numr_fp8_e5m2(f32_to_fp8_e5m2(val));
-        thread_sum += val;
+        float v = fp8_e5m2_to_f32(row_in[i].data);
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
+    max_val[threadIdx.x] = thread_max;
     sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
 
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (threadIdx.x < s) {
-            sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
         }
         __syncthreads();
     }
-    float row_sum = sum_exp[0];
-    __syncthreads();
+    float row_max = max_val[0];
+    float inv_sum = 1.0f / sum_exp[0];
 
-    float inv_sum = 1.0f / row_sum;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] = numr_fp8_e5m2(f32_to_fp8_e5m2(fp8_e5m2_to_f32(row_out[i].data) * inv_sum));
+        float val = expf(fp8_e5m2_to_f32(row_in[i].data) - row_max) * inv_sum;
+        row_out[i] = numr_fp8_e5m2(f32_to_fp8_e5m2(val));
     }
 }
 
@@ -920,6 +915,8 @@ __global__ void softmax_bwd_dim_fp8_e5m2(
 // The bias element for column `col` of any row is simply bias[col].
 // ============================================================================
 
+// Same online two-pass structure as the plain last-dim kernels, over (a + bias).
+
 __global__ void softmax_bias_f32(
     const float* input, const float* bias, float* output,
     unsigned int outer_size, unsigned int dim_size
@@ -934,41 +931,42 @@ __global__ void softmax_bias_f32(
     const float* row_in = input + outer_idx * dim_size;
     float* row_out = output + outer_idx * dim_size;
 
-    // Phase 1: find max of (a + bias)
+    // Pass 1: running max and sum of exp over (a + bias)
     float thread_max = -INFINITY;
+    float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
         float v = row_in[i] + bias[i];
-        thread_max = fmaxf(thread_max, v);
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
     max_val[threadIdx.x] = thread_max;
+    sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
+
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
+        if (threadIdx.x < s) {
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
+        }
         __syncthreads();
     }
     float row_max = max_val[0];
-    __syncthreads();
+    float inv_sum = 1.0f / sum_exp[0];
 
-    // Phase 2: exp(a + bias - max) and sum
-    float thread_sum = 0.0f;
+    // Pass 2: single write of the normalized result
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(row_in[i] + bias[i] - row_max);
-        row_out[i] = val;
-        thread_sum += val;
-    }
-    sum_exp[threadIdx.x] = thread_sum;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
-        __syncthreads();
-    }
-    float row_sum = sum_exp[0];
-    __syncthreads();
-
-    // Phase 3: normalize
-    float inv_sum = 1.0f / row_sum;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] *= inv_sum;
+        row_out[i] = expf(row_in[i] + bias[i] - row_max) * inv_sum;
     }
 }
 
@@ -986,41 +984,42 @@ __global__ void softmax_bias_f16(
     const __half* row_in = input + outer_idx * dim_size;
     __half* row_out = output + outer_idx * dim_size;
 
-    // Phase 1: max of (a + bias) in F32
+    // Max and sum accumulate in F32
     float thread_max = -INFINITY;
+    float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
         float v = __half2float(row_in[i]) + __half2float(bias[i]);
-        thread_max = fmaxf(thread_max, v);
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
     max_val[threadIdx.x] = thread_max;
+    sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
+
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
+        if (threadIdx.x < s) {
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
+        }
         __syncthreads();
     }
     float row_max = max_val[0];
-    __syncthreads();
+    float inv_sum = 1.0f / sum_exp[0];
 
-    // Phase 2: exp(a + bias - max) in F32, store as F16
-    float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(__half2float(row_in[i]) + __half2float(bias[i]) - row_max);
-        row_out[i] = __float2half(val);
-        thread_sum += val;
-    }
-    sum_exp[threadIdx.x] = thread_sum;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
-        __syncthreads();
-    }
-    float row_sum = sum_exp[0];
-    __syncthreads();
-
-    // Phase 3: normalize in F32, store as F16
-    float inv_sum = 1.0f / row_sum;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] = __float2half(__half2float(row_out[i]) * inv_sum);
+        float v = __half2float(row_in[i]) + __half2float(bias[i]);
+        row_out[i] = __float2half(expf(v - row_max) * inv_sum);
     }
 }
 
@@ -1039,37 +1038,40 @@ __global__ void softmax_bias_bf16(
     __nv_bfloat16* row_out = output + outer_idx * dim_size;
 
     float thread_max = -INFINITY;
+    float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
         float v = __bfloat162float(row_in[i]) + __bfloat162float(bias[i]);
-        thread_max = fmaxf(thread_max, v);
+        if (v > thread_max) {
+            thread_sum = thread_sum * expf(thread_max - v) + 1.0f;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += expf(v - thread_max);
+        }
     }
     max_val[threadIdx.x] = thread_max;
+    sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
+
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) max_val[threadIdx.x] = fmaxf(max_val[threadIdx.x], max_val[threadIdx.x + s]);
+        if (threadIdx.x < s) {
+            float m_a = max_val[threadIdx.x];
+            float s_a = sum_exp[threadIdx.x];
+            float m_b = max_val[threadIdx.x + s];
+            float s_b = sum_exp[threadIdx.x + s];
+            float m = fmaxf(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * expf(m_a - m) + s_b * expf(m_b - m))
+                : 0.0f;
+        }
         __syncthreads();
     }
     float row_max = max_val[0];
-    __syncthreads();
+    float inv_sum = 1.0f / sum_exp[0];
 
-    float thread_sum = 0.0f;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        float val = expf(__bfloat162float(row_in[i]) + __bfloat162float(bias[i]) - row_max);
-        row_out[i] = __float2bfloat16(val);
-        thread_sum += val;
-    }
-    sum_exp[threadIdx.x] = thread_sum;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
-        __syncthreads();
-    }
-    float row_sum = sum_exp[0];
-    __syncthreads();
-
-    float inv_sum = 1.0f / row_sum;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] = __float2bfloat16(__bfloat162float(row_out[i]) * inv_sum);
+        float v = __bfloat162float(row_in[i]) + __bfloat162float(bias[i]);
+        row_out[i] = __float2bfloat16(expf(v - row_max) * inv_sum);
     }
 }
 
@@ -1088,37 +1090,39 @@ __global__ void softmax_bias_f64(
     double* row_out = output + outer_idx * dim_size;
 
     double thread_max = -INFINITY;
+    double thread_sum = 0.0;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
         double v = row_in[i] + bias[i];
-        thread_max = fmax(thread_max, v);
+        if (v > thread_max) {
+            thread_sum = thread_sum * exp(thread_max - v) + 1.0;
+            thread_max = v;
+        } else if (thread_max > -INFINITY) {
+            thread_sum += exp(v - thread_max);
+        }
     }
     max_val[threadIdx.x] = thread_max;
+    sum_exp[threadIdx.x] = thread_sum;
     __syncthreads();
+
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) max_val[threadIdx.x] = fmax(max_val[threadIdx.x], max_val[threadIdx.x + s]);
+        if (threadIdx.x < s) {
+            double m_a = max_val[threadIdx.x];
+            double s_a = sum_exp[threadIdx.x];
+            double m_b = max_val[threadIdx.x + s];
+            double s_b = sum_exp[threadIdx.x + s];
+            double m = fmax(m_a, m_b);
+            max_val[threadIdx.x] = m;
+            sum_exp[threadIdx.x] = (m > -INFINITY)
+                ? (s_a * exp(m_a - m) + s_b * exp(m_b - m))
+                : 0.0;
+        }
         __syncthreads();
     }
     double row_max = max_val[0];
-    __syncthreads();
+    double inv_sum = 1.0 / sum_exp[0];
 
-    double thread_sum = 0.0;
     for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        double val = exp(row_in[i] + bias[i] - row_max);
-        row_out[i] = val;
-        thread_sum += val;
-    }
-    sum_exp[threadIdx.x] = thread_sum;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) sum_exp[threadIdx.x] += sum_exp[threadIdx.x + s];
-        __syncthreads();
-    }
-    double row_sum = sum_exp[0];
-    __syncthreads();
-
-    double inv_sum = 1.0 / row_sum;
-    for (unsigned int i = threadIdx.x; i < dim_size; i += blockDim.x) {
-        row_out[i] *= inv_sum;
+        row_out[i] = exp(row_in[i] + bias[i] - row_max) * inv_sum;
     }
 }
 

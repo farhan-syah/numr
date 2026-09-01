@@ -394,6 +394,41 @@ fn softmax_test_shapes() -> Vec<(Vec<f64>, Vec<usize>, isize)> {
         (vec![0.0, 0.0, 0.0], vec![3], -1),
         // 2D with dim=0 single row
         (vec![1.0, 2.0, 3.0], vec![1, 3], 0),
+        // Causal-style mask: the tail of each row is -inf. The online forward
+        // softmax carries a running (max, sum) pair, and a thread holding only
+        // masked values sits at (-inf, 0); without a guard its merge computes
+        // exp(-inf - -inf) = NaN and poisons the whole row's sum. `dim_size`
+        // 100 is also not a power of two and is below the block width, so some
+        // threads take no elements at all and hold that same pair.
+        (
+            (0..200)
+                .map(|i| {
+                    if i % 100 >= 60 {
+                        f64::NEG_INFINITY
+                    } else {
+                        (i % 17) as f64 * 0.3 - 2.0
+                    }
+                })
+                .collect(),
+            vec![2, 100],
+            -1,
+        ),
+        // Scattered mask over a longer row, so masked and live values interleave
+        // within a single thread's strided walk rather than splitting cleanly
+        // across threads.
+        (
+            (0..1200)
+                .map(|i| {
+                    if i % 7 == 3 {
+                        f64::NEG_INFINITY
+                    } else {
+                        (i % 23) as f64 * 0.2 - 1.5
+                    }
+                })
+                .collect(),
+            vec![4, 300],
+            -1,
+        ),
         // Non-last dim with an inner extent spanning several CUDA blocks and a
         // ragged tail (outer*inner = 600 is not a multiple of the block size),
         // so the flat launch's bounds check and its row/column decomposition
