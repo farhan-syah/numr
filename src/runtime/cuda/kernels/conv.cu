@@ -122,6 +122,12 @@ __global__ void conv1d_##suffix(CONV1D_PARAMS(dtype)) { \
     output[(size_t)b * c_out * output_length + (size_t)oc * output_length + ox] = acc; \
 }
 
+// Output channels each thread of conv1d_oc4_* accumulates. The launcher sizes
+// the grid from the same figure, so the two must agree; a mismatch silently
+// leaves output channels uncomputed rather than failing to build.
+// Must match CONV1D_OC_BLOCK in src/runtime/cuda/kernels/conv.rs.
+#define CONV1D_OC_BLOCK 4u
+
 // ----------------------------------------------------------------------------
 // Register-blocked variant: four output channels per thread, same ox.
 //
@@ -144,14 +150,14 @@ __global__ void conv1d_oc4_##suffix(CONV1D_PARAMS(dtype)) { \
        uses the passed-in values, where the division is pure prologue cost. */ \
     unsigned int c_in_per_group_l = c_in / groups; \
     unsigned int c_out_per_group_l = c_out / groups; \
-    unsigned int chunks_per_group = (c_out_per_group_l + 3u) / 4u; \
+    unsigned int chunks_per_group = (c_out_per_group_l + CONV1D_OC_BLOCK - 1u) / CONV1D_OC_BLOCK; \
     if (ox >= output_length || slot >= groups * chunks_per_group) return; \
     \
     unsigned int g = slot / chunks_per_group; \
     unsigned int chunk = slot - g * chunks_per_group; \
-    unsigned int oc_base = g * c_out_per_group_l + chunk * 4u; \
-    unsigned int remaining = c_out_per_group_l - chunk * 4u; \
-    unsigned int active = remaining < 4u ? remaining : 4u; \
+    unsigned int oc_base = g * c_out_per_group_l + chunk * CONV1D_OC_BLOCK; \
+    unsigned int remaining = c_out_per_group_l - chunk * CONV1D_OC_BLOCK; \
+    unsigned int active = remaining < CONV1D_OC_BLOCK ? remaining : CONV1D_OC_BLOCK; \
     \
     const dtype* in_base = input \
         + (size_t)b * c_in * length \

@@ -574,3 +574,45 @@ pub unsafe fn launch_depthwise_conv2d(
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{CONV1D_OC_BLOCK, CONV1D_OX_BLOCK};
+
+    /// Blocking factors that appear in BOTH the kernel source and this
+    /// launcher. The launcher sizes the grid from them and the kernel decides
+    /// how much work a thread does, so a mismatch does not fail to build — it
+    /// silently leaves outputs uncomputed. Parse the kernel and check.
+    fn kernel_define(source: &str, name: &str) -> usize {
+        let needle = format!("#define {name} ");
+        let line = source
+            .lines()
+            .find(|l| l.starts_with(&needle))
+            .unwrap_or_else(|| panic!("{name} is not defined in the kernel source"));
+        line[needle.len()..]
+            .trim()
+            .trim_end_matches('u')
+            .parse()
+            .unwrap_or_else(|e| panic!("{name} is not a plain integer literal: {e}"))
+    }
+
+    #[test]
+    fn oc_block_matches_the_kernel() {
+        let source = include_str!("conv.cu");
+        assert_eq!(
+            kernel_define(source, "CONV1D_OC_BLOCK"),
+            CONV1D_OC_BLOCK,
+            "conv.cu and conv.rs disagree on the oc4 blocking factor"
+        );
+    }
+
+    #[test]
+    fn ox_block_matches_the_kernel() {
+        let source = include_str!("conv1d_ox.cu");
+        assert_eq!(
+            kernel_define(source, "CONV1D_OX_BLOCK"),
+            CONV1D_OX_BLOCK,
+            "conv1d_ox.cu and conv.rs disagree on the position blocking factor"
+        );
+    }
+}
