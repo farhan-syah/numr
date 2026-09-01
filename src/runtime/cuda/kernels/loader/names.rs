@@ -110,6 +110,8 @@ pub mod kernel_names {
     pub const SEMIRING_MATMUL_MODULE: &str = "semiring_matmul";
     /// conv1d im2col gather (packs receptive fields into a GEMM operand)
     pub const IM2COL_MODULE: &str = "im2col";
+    /// conv_transpose1d column gather (packs contributing samples for a GEMM)
+    pub const COL_TRANSPOSE1D_MODULE: &str = "col_transpose1d";
 
     /// Generate kernel name for reduction operations.
     #[inline]

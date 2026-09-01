@@ -715,6 +715,48 @@ fn cuda_conv_transpose1d_1536ch_k7_lout300(b: &mut Bencher) {
     });
 }
 
+/// Contraction 4096. Brackets the gather-GEMM crossover from below.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv_transpose1d_f32")]
+fn cuda_conv_transpose1d_512ch_k8_stride2(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 512, 64], &device);
+    let weight = rand_cuda(&[512, 512, 8], &device);
+    let bias = rand_cuda(&[512], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv_transpose1d(&input, &weight, Some(&bias), 2, PaddingMode::Valid, 0, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
+/// Contraction 8192. Brackets the gather-GEMM crossover from above.
+#[cfg(feature = "cuda")]
+#[flux::bench(group = "conv_transpose1d_f32")]
+fn cuda_conv_transpose1d_512ch_k16_stride2(b: &mut Bencher) {
+    let device = CudaDevice::new(0);
+    let client = CudaRuntime::default_client(&device);
+    let input = rand_cuda(&[1, 512, 64], &device);
+    let weight = rand_cuda(&[512, 512, 16], &device);
+    let bias = rand_cuda(&[512], &device);
+    b.iter(|| {
+        let r = black_box(
+            client
+                .conv_transpose1d(&input, &weight, Some(&bias), 2, PaddingMode::Valid, 0, 1, 1)
+                .unwrap(),
+        );
+        // Sync to get accurate wall-clock time.
+        client.synchronize();
+        r
+    });
+}
+
 /// Stride-2 upsampling: c_in=c_out=512, k=4, L_in=64 -> L_out=130. Typical
 /// vocoder/decoder usage (upsample a latent sequence toward waveform length).
 #[cfg(feature = "cuda")]

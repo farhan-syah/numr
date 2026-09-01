@@ -30,6 +30,9 @@ mod conv;
 #[path = "../../../ops/cuda/conv1d_im2col.rs"]
 mod conv1d_im2col;
 
+#[path = "../../../ops/cuda/conv_transpose1d_gemm.rs"]
+mod conv_transpose1d_gemm;
+
 #[path = "../../../ops/cuda/cumulative.rs"]
 mod cumulative;
 
