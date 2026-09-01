@@ -150,6 +150,13 @@ fn test_rand_invariants_all_backends() {
     }
 }
 
+/// Sample count for the randn distribution checks, shared by every backend so
+/// they all sit at the same standard error against `check_normal_stats`.
+const RANDN_SAMPLES: usize = 10000;
+
+/// Fixed seed for the randn distribution checks.
+const RANDN_SEED: u64 = 0x5EED_2A1D_9C37_0F11;
+
 /// Test randn() produces correct shape, dtype, and normal distribution on all backends
 #[test]
 fn test_randn_invariants_all_backends() {
@@ -162,11 +169,12 @@ fn test_randn_invariants_all_backends() {
         let (cpu_client, _) = create_cpu_client();
 
         // CPU baseline: verify shape, dtype, normal distribution
-        // Use 10000 samples to reduce flakiness (SE ≈ 0.01 vs 0.016 at 4096)
+        // Seeded: an unseeded draw failed on its own about one run in a hundred.
+        // One seed gives different values per backend, so each pins its own draw.
         let cpu = cpu_client
-            .randn(&[10000], dtype)
+            .randn_seeded(&[RANDN_SAMPLES], dtype, RANDN_SEED)
             .unwrap_or_else(|e| panic!("CPU randn failed for {dtype:?}: {e}"));
-        assert_eq!(cpu.shape(), &[10000]);
+        assert_eq!(cpu.shape(), &[RANDN_SAMPLES]);
         assert_eq!(cpu.dtype(), dtype);
 
         macro_rules! check_cpu {
@@ -195,9 +203,9 @@ fn test_randn_invariants_all_backends() {
         if is_dtype_supported("cuda", dtype) {
             with_cuda_backend(|cuda_client, _| {
                 let result = cuda_client
-                    .randn(&[4096], dtype)
+                    .randn_seeded(&[RANDN_SAMPLES], dtype, RANDN_SEED)
                     .unwrap_or_else(|e| panic!("CUDA randn failed for {dtype:?}: {e}"));
-                assert_eq!(result.shape(), &[4096]);
+                assert_eq!(result.shape(), &[RANDN_SAMPLES]);
                 assert_eq!(result.dtype(), dtype);
 
                 macro_rules! check_cuda {
@@ -228,9 +236,9 @@ fn test_randn_invariants_all_backends() {
         if is_dtype_supported("wgpu", dtype) {
             with_wgpu_backend(|wgpu_client, _| {
                 let result = wgpu_client
-                    .randn(&[4096], dtype)
+                    .randn_seeded(&[RANDN_SAMPLES], dtype, RANDN_SEED)
                     .unwrap_or_else(|e| panic!("WebGPU randn failed for {dtype:?}: {e}"));
-                assert_eq!(result.shape(), &[4096]);
+                assert_eq!(result.shape(), &[RANDN_SAMPLES]);
                 assert_eq!(result.dtype(), dtype);
 
                 macro_rules! check_wgpu {
