@@ -72,6 +72,7 @@ pub mod reduce;
 pub mod reduce_dim_grid;
 pub mod reduce_int_saturation;
 pub mod reduce_shape;
+pub mod reduce_split;
 pub mod scalar;
 pub mod scalar_narrow_float;
 pub mod semiring_matmul;

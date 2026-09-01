@@ -23,6 +23,7 @@ mod matmul_wmma;
 mod matmul_wmma_tile;
 mod module_cache;
 mod names;
+mod reduce_split;
 mod semiring_matmul;
 
 pub use col_transpose1d::{col_transpose1d_has_kernel, launch_col_transpose1d};
@@ -49,4 +50,5 @@ pub use matmul_int::{int_matmul_has_kernel, int_matmul_output_dtype};
 pub(crate) use matmul_wmma::{use_wmma, use_wmma_after_padding};
 pub use module_cache::{get_kernel_function, get_or_load_module, preload_modules};
 pub use names::{dtype_suffix, kernel_name, kernel_names};
+pub(crate) use reduce_split::reduce_split_count;
 pub use semiring_matmul::{launch_semiring_matmul_batched_kernel, launch_semiring_matmul_kernel};

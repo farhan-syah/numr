@@ -12,6 +12,7 @@ use std::sync::Arc;
 use super::loader::{
     dtype_suffix, get_kernel_function, get_or_load_module, kernel_name, kernel_names,
     launch_config, reduce_dim_launch_config, reduce_launch_config, reduce_module,
+    reduce_split_count,
 };
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -84,6 +85,72 @@ fn reduce_kernel_name(base_op: &str, dtype: DType, acc_precision: AccumulationPr
         Some(s) => format!("{}_{}{}", base_op, suffix, s),
         None => format!("{}_{}", base_op, suffix),
     }
+}
+
+/// Whether the dim kernel selected for `dtype`/`acc_precision` accumulates in
+/// the element type itself, so writing a partial result out and reading it back
+/// loses nothing.
+///
+/// The dim kernels store into `T*` whatever accumulator they held, so a
+/// two-stage split re-rounds every partial through `T` before the second stage
+/// reads it. That extra rounding is invisible only when the accumulator is `T`.
+fn accumulates_in_element_type(dtype: DType, acc_precision: AccumulationPrecision) -> bool {
+    match dtype {
+        // No F16/BF16/FP8 dim instantiation accumulates in the element type:
+        // `reduce_kernel_name` routes them to an f32, f64 or bf16 accumulator.
+        DType::F16 | DType::BF16 | DType::FP8E4M3 | DType::FP8E5M2 => false,
+        // Native f32 accumulation; `_fp64acc` holds a wider accumulator than
+        // the store type.
+        DType::F32 => acc_precision != AccumulationPrecision::FP64,
+        DType::F64 => true,
+        // `reduce_int.cu` accumulates sums and products in a saturating 128-bit
+        // type and narrows exactly once. Splitting would saturate per chunk,
+        // which is not the same answer.
+        _ => false,
+    }
+}
+
+/// Number of equal chunks to cut the reduced axis into for a two-stage
+/// dimension-wise reduction, or `None` to keep the single-stage launch.
+///
+/// Two stages are the same kernel called twice: viewing the contiguous
+/// `[outer, reduce, inner]` input as `[outer, splits, chunk, inner]`, stage 1
+/// reduces `chunk` with `outer * splits` as its outer extent and writes a
+/// contiguous `[outer, splits, inner]` buffer, and stage 2 reduces `splits`
+/// over that buffer. Both calls are ordinary dim reductions, so the split needs
+/// no kernel of its own.
+///
+/// Beyond the shape rule in [`reduce_split_count`], the op must also merge
+/// exactly:
+///
+/// - `max`, `min`, `any` and `all` split for every dtype. Each partial is
+///   either an input element, which round-trips through `T` exactly because it
+///   came from there, or the kernel's own `one()`/`zero()`.
+/// - `sum` and `prod` split only when the accumulator is the element type. They
+///   are still reassociated, which moves the last bits of a float result the way
+///   any reassociated accumulation does, but no partial is re-rounded.
+/// - Every other op keeps the single-stage launch. `argmax`/`argmin` return
+///   chunk-local indices that stage 2 cannot merge without remapping them, and
+///   the integer `reduce_mean_dim` would divide once per chunk instead of once.
+#[inline]
+pub(crate) fn reduce_dim_split_count(
+    device_index: usize,
+    op: &str,
+    dtype: DType,
+    acc_precision: AccumulationPrecision,
+    outer_size: usize,
+    reduce_size: usize,
+    inner_size: usize,
+) -> Option<usize> {
+    let merges_exactly = match op {
+        "max" | "min" | "any" | "all" => true,
+        "sum" | "prod" => accumulates_in_element_type(dtype, acc_precision),
+        _ => false,
+    };
+    if !merges_exactly {
+        return None;
+    }
+    reduce_split_count(device_index, outer_size, reduce_size, inner_size)
 }
 
 /// Launch a global reduction kernel.

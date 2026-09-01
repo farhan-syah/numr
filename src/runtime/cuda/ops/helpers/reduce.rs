@@ -6,7 +6,9 @@
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::reduce_output_shape;
-use crate::runtime::cuda::kernels::{AccumulationPrecision, launch_reduce_dim_op};
+use crate::runtime::cuda::kernels::{
+    AccumulationPrecision, launch_reduce_dim_op, reduce_dim_split_count,
+};
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::runtime::ensure_contiguous;
 use crate::tensor::Tensor;
@@ -66,6 +68,31 @@ pub(crate) fn native_reduce_op(
             return Ok(out);
         }
 
+        // The single-stage grid is one block per output element and ignores
+        // `reduce_size`, so a long axis collapsing to few outputs leaves the
+        // device idle. Cutting the axis into equal chunks widens the grid by
+        // `splits` at the cost of one extra launch over a much smaller buffer.
+        if let Some(splits) = reduce_dim_split_count(
+            client.device.index,
+            op,
+            dtype,
+            acc_precision,
+            outer_size,
+            reduce_size,
+            inner_size,
+        ) {
+            two_stage_reduce_dim(
+                client,
+                op,
+                acc_precision,
+                &a_contig,
+                &out,
+                (outer_size, reduce_size, inner_size),
+                splits,
+            )?;
+            return Ok(out);
+        }
+
         unsafe {
             launch_reduce_dim_op(
                 &client.context,
@@ -108,4 +135,72 @@ pub(crate) fn native_reduce_op(
     }
 
     Ok(current)
+}
+
+/// Reduce one dimension in two stages, cutting the reduced axis into `splits`
+/// equal chunks so the grid covers `splits` times as many blocks.
+///
+/// The input is contiguous `[outer, reduce, inner]` and `splits` divides
+/// `reduce` exactly, so the same buffer is also `[outer, splits, chunk, inner]`
+/// with `chunk = reduce / splits`. Element `(o, s, c, i)` sits at
+/// `((o * splits + s) * chunk + c) * inner + i`, which is precisely what the
+/// dim kernel addresses with `outer_size = outer * splits`,
+/// `reduce_size = chunk` and `inner_size = inner` — so stage 1 is an ordinary
+/// dim reduction whose output is a contiguous `[outer, splits, inner]` buffer.
+/// Stage 2 reduces that buffer over `splits` with the same kernel again.
+///
+/// [`reduce_dim_split_count`] has already established that `op` merges exactly
+/// under this split. The scratch buffer is an ordinary tensor: it is freed on
+/// the client's canonical stream when it drops here, after both launches are
+/// enqueued on that same stream, so the free is ordered behind their use.
+fn two_stage_reduce_dim(
+    client: &CudaClient,
+    op: &'static str,
+    acc_precision: AccumulationPrecision,
+    input: &Tensor<CudaRuntime>,
+    out: &Tensor<CudaRuntime>,
+    extents: (usize, usize, usize),
+    splits: usize,
+) -> Result<()> {
+    let (outer_size, reduce_size, inner_size) = extents;
+    let dtype = input.dtype();
+    let chunk = reduce_size / splits;
+
+    let partial =
+        Tensor::<CudaRuntime>::empty(&[outer_size, splits, inner_size], dtype, &client.device)?;
+    // The allocation above proved `outer_size * splits * inner_size` fits, so
+    // this product cannot overflow.
+    let stage1_outer = outer_size.saturating_mul(splits);
+
+    unsafe {
+        launch_reduce_dim_op(
+            &client.context,
+            &client.stream,
+            client.device.index,
+            op,
+            dtype,
+            input.ptr(),
+            partial.ptr(),
+            stage1_outer,
+            chunk,
+            inner_size,
+            acc_precision,
+        )?;
+
+        launch_reduce_dim_op(
+            &client.context,
+            &client.stream,
+            client.device.index,
+            op,
+            dtype,
+            partial.ptr(),
+            out.ptr(),
+            outer_size,
+            splits,
+            inner_size,
+            acc_precision,
+        )?;
+    }
+
+    Ok(())
 }
