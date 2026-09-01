@@ -3,7 +3,10 @@
 // the tile geometry, the epilogue transforms, and the kernel body macro.
 //
 //
-// Uses nvcuda::wmma 16x16x16 fragments with F32 accumulation.
+// 16x16x16 tensor-core tiles with F32 accumulation. F16 uses nvcuda::wmma
+// fragments; BF16 uses raw ldmatrix + mma.sync, because wmma's BF16 path never
+// emits ldmatrix. Both backends live in matmul_wmma_mma.cuh and are selected
+// by the body macro's MMA argument.
 // Shared-memory staging of A and B tiles means the wmma fragment pointers are
 // always shared-memory addresses, so global addresses never need to satisfy
 // the fragment-alignment requirement. The staging loads themselves are 128-bit
@@ -27,8 +30,8 @@
 // src/runtime/cuda/kernels/loader/matmul_wmma.rs.
 //
 // Epilogue: per-warp float scratch in shared memory.
-//   store_matrix_sync requires float* for a float accumulator fragment; we
-//   cannot store an F32 fragment directly into an F16/BF16 global buffer.
+//   Both compute backends need float* for their F32 accumulator; we cannot
+//   store an F32 fragment directly into an F16/BF16 global buffer.
 //   Each warp stores its F32 fragment into a dedicated 16x16 float scratch
 //   region, then each lane converts + writes elements to global C via STORE_FN
 //   (float->HALF_T). No cross-warp collisions. One fragment is in flight per
@@ -152,7 +155,7 @@ static_assert(WMMA_STAGES >= 2,
    tile can vary per instantiation. Smem strides carry +8 padding to avoid
    32-bank conflicts; both stay multiples of 8 halves (16 bytes), the alignment
    load_matrix_sync/store_matrix_sync require of their leading dimension. */
-#define WMMA_TILE_CONSTANTS(WM, WN, BLOCK_K_ARG)                             \
+#define WMMA_TILE_CONSTANTS(WM, WN, BLOCK_K_ARG, HALF_T)                     \
     constexpr unsigned int BLOCK_K = (BLOCK_K_ARG);                          \
     constexpr unsigned int BLOCK_TILE_M = WARP_ROWS * (WM) * WMMA_M;         \
     constexpr unsigned int BLOCK_TILE_N = WARP_COLS * (WN) * WMMA_N;         \
@@ -174,7 +177,15 @@ static_assert(WMMA_STAGES >= 2,
     static_assert(SMEM_A_ELEMS % 8 == 0 && SMEM_B_ELEMS % 8 == 0,            \
                   "smem staging bases must be 16-byte aligned");             \
     static_assert(BLOCK_K % 8 == 0 && BLOCK_TILE_N % 8 == 0,                 \
-                  "tile inner dims must be whole 128-bit groups");
+                  "tile inner dims must be whole 128-bit groups");           \
+    /* ldmatrix needs every lane address 16-byte aligned, and a lane address \
+       is a shared-memory row start, so each row stride in BYTES must be a   \
+       multiple of 16. The +8 half padding above satisfies it; a narrower    \
+       pad would fault the raw-mma path at runtime instead of here. */       \
+    static_assert((SMEM_STRIDE_A * sizeof(HALF_T)) % 16 == 0 &&              \
+                  (SMEM_STRIDE_B * sizeof(HALF_T)) % 16 == 0,                \
+                  "ldmatrix needs smem row strides that are a multiple of "  \
+                  "16 bytes");
 
 /* One byte array backs both the WMMA_STAGES staging buffers and the epilogue
    scratch. The WMMA_STAGES staging bases sit at multiples of 16 bytes for
@@ -193,6 +204,12 @@ static_assert(WMMA_STAGES >= 2,
 // file under the line cap. They expand against the tile constants declared
 // above (SMEM_STRIDE_A, SMEM_STRIDE_B, BLOCK_K, ...).
 #include "matmul_wmma_stage.cuh"
+
+// Compute backends (NUMR_WMMA_ACC_DECL_*, NUMR_WMMA_KSTEP_*,
+// NUMR_WMMA_SCRATCH_*). The body macro pastes one in from its MMA argument:
+// WMMA for F16, RAW (ldmatrix + mma.sync) for BF16. See that header for why
+// BF16 does not use nvcuda::wmma.
+#include "matmul_wmma_mma.cuh"
 
 // ---------------------------------------------------------------------------
 // Kernel body macro — instantiated for F16 (non-batched), F16 (batched),
@@ -253,13 +270,13 @@ static_assert(WMMA_STAGES >= 2,
            + __bfloat162float(res_ptr[(ROW) * N + (COL)]))
 
 /* No-bias body: the epilogue transform is the identity. */
-#define WMMA_KERNEL_BODY(WM, WN, BLOCK_K_ARG, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr) \
-    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_ARG, HALF_T, ZERO_EXPR, STORE_FN,   \
-                         A_ptr, B_ptr, C_ptr, WMMA_EPILOGUE_PLAIN)
+#define WMMA_KERNEL_BODY(WM, WN, BLOCK_K_ARG, HALF_T, MMA, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr) \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_ARG, HALF_T, MMA, ZERO_EXPR,        \
+                         STORE_FN, A_ptr, B_ptr, C_ptr, WMMA_EPILOGUE_PLAIN)
 
-#define WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_ARG, HALF_T, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr, EPI_FN) \
+#define WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_ARG, HALF_T, MMA, ZERO_EXPR, STORE_FN, A_ptr, B_ptr, C_ptr, EPI_FN) \
 {                                                                            \
-    WMMA_TILE_CONSTANTS(WM, WN, BLOCK_K_ARG)                                 \
+    WMMA_TILE_CONSTANTS(WM, WN, BLOCK_K_ARG, HALF_T)                         \
                                                                              \
     const unsigned int warp_id  = threadIdx.x / 32;                          \
     const unsigned int warp_row = warp_id / WARP_COLS;                       \
@@ -272,8 +289,8 @@ static_assert(WMMA_STAGES >= 2,
     /* One backing array for the WMMA_STAGES staging buffers and the epilogue \
        scratch. The scratch is written only after the last staging read, so  \
        the two uses never overlap in time; the __syncthreads() before the    \
-       epilogue enforces that. __align__(16) keeps every wmma fragment       \
-       pointer aligned. */                                                   \
+       epilogue enforces that. __align__(16) keeps every fragment/ldmatrix   \
+       pointer 16-byte aligned. */                                           \
     __shared__ __align__(16) char smem_raw[SMEM_TOTAL_BYTES(HALF_T)];        \
     /* Compile-time guard: an over-budget BLOCK_K/tile/WMMA_STAGES combination \
        is a build error here, not a launch failure discovered on-device. */   \
@@ -299,13 +316,9 @@ static_assert(WMMA_STAGES >= 2,
        Each warp owns scratch[warp_id][256]; no cross-warp collision. */     \
     float* const smem_scratch = reinterpret_cast<float*>(smem_raw);          \
                                                                              \
-    /* Warp-tiled accumulators: WM x WN fragments per warp. */               \
-    fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, float> frag_c[WM][WN];     \
-    for (unsigned int wi = 0; wi < (WM); wi++) {                             \
-        for (unsigned int wj = 0; wj < (WN); wj++) {                         \
-            fill_fragment(frag_c[wi][wj], 0.0f);                             \
-        }                                                                    \
-    }                                                                        \
+    /* Warp-tiled accumulators: WM x WN 16x16 tiles per warp, F32, zeroed.   \
+       Shape is the backend's business; both zero the same values. */        \
+    NUMR_WMMA_ACC_DECL_##MMA(WM, WN)                                         \
                                                                              \
     const unsigned int num_k_tiles = (K + BLOCK_K - 1) / BLOCK_K;            \
                                                                              \
@@ -335,32 +348,11 @@ static_assert(WMMA_STAGES >= 2,
                                 smem_A_nxt, smem_B_nxt, (bk + 1) * BLOCK_K)  \
             }                                                                \
                                                                              \
-            /* WMMA compute: load frag_a[WM] and frag_b[WN], then            \
-               WM x WN mma_syncs. */                                         \
+            /* Tensor-core compute for this K-tile, one backend K-step per   \
+               WMMA_K slice of BLOCK_K. */                                   \
             for (unsigned int k = 0; k < BLOCK_K; k += WMMA_K) {             \
-                fragment<matrix_a, WMMA_M, WMMA_N, WMMA_K, HALF_T, row_major> \
-                    frag_a[WM];                                              \
-                fragment<matrix_b, WMMA_M, WMMA_N, WMMA_K, HALF_T, row_major> \
-                    frag_b[WN];                                              \
-                                                                             \
-                /* Load WM A fragments (one per M-row of this warp). */      \
-                for (unsigned int wi = 0; wi < (WM); wi++) {                 \
-                    unsigned int row = (warp_row * (WM) + wi) * WMMA_M;      \
-                    const HALF_T* a_ptr = smem_A_cur + row * SMEM_STRIDE_A + k; \
-                    load_matrix_sync(frag_a[wi], a_ptr, SMEM_STRIDE_A);      \
-                }                                                            \
-                /* Load WN B fragments (one per N-col of this warp). */      \
-                for (unsigned int wj = 0; wj < (WN); wj++) {                 \
-                    unsigned int col = (warp_col * (WN) + wj) * WMMA_N;      \
-                    const HALF_T* b_ptr = smem_B_cur + k * SMEM_STRIDE_B + col; \
-                    load_matrix_sync(frag_b[wj], b_ptr, SMEM_STRIDE_B);      \
-                }                                                            \
-                for (unsigned int wi = 0; wi < (WM); wi++) {                 \
-                    for (unsigned int wj = 0; wj < (WN); wj++) {             \
-                        mma_sync(frag_c[wi][wj], frag_a[wi], frag_b[wj],     \
-                                 frag_c[wi][wj]);                            \
-                    }                                                        \
-                }                                                            \
+                NUMR_WMMA_KSTEP_##MMA(WM, WN, HALF_T, smem_A_cur,            \
+                                      smem_B_cur, k)                         \
             }                                                                \
                                                                              \
             /* Publish the tile staged above before it is read as cur. */    \
@@ -371,15 +363,16 @@ static_assert(WMMA_STAGES >= 2,
     }                                                                        \
                                                                              \
     /* The epilogue scratch aliases the staging buffers. This barrier is what \
-       makes that safe: it orders every load_matrix_sync read of the staging \
-       buffers above against the first scratch write below. Without it a warp \
-       still reading A/B fragments would race the store_matrix_sync of a warp \
-       that has already reached the epilogue. */                             \
+       makes that safe: it orders every compute-backend read of the staging  \
+       buffers above (load_matrix_sync or ldmatrix) against the first scratch \
+       write below. Without it a warp still reading A/B fragments would race \
+       the epilogue store of a warp that has already reached the epilogue. */ \
     __syncthreads();                                                         \
                                                                              \
     /* Epilogue: F32 frag -> per-warp float scratch -> STORE_FN -> global C. \
-       store_matrix_sync requires float* for a float accumulator fragment;   \
-       we cannot pass C_ptr (HALF_T*) directly. Each warp uses its own       \
+       The backend's scratch write (store_matrix_sync or the raw store loop) \
+       requires float* for a float accumulator; we cannot pass C_ptr         \
+       (HALF_T*) directly. Each warp uses its own                            \
        16x16 scratch region (indexed by warp_id) so warps never collide,     \
        for every tile shape. __syncwarp() orders the warp-collective store   \
        vs the per-lane reads (and again after the per-lane writes before     \
@@ -392,9 +385,10 @@ static_assert(WMMA_STAGES >= 2,
                 + (warp_row * (WM) + wi) * WMMA_M;                           \
             unsigned int gc = block_col                                      \
                 + (warp_col * (WN) + wj) * WMMA_N;                           \
-            /* Store F32 fragment into warp's float scratch (stride=16). */  \
-            store_matrix_sync(warp_scratch, frag_c[wi][wj],                  \
-                              WMMA_N, mem_row_major);                        \
+            /* Store the F32 accumulator into the warp's float scratch as    \
+               16x16 row-major, stride 16. Both backends write that same     \
+               layout, so the lane loop below is backend-independent. */     \
+            NUMR_WMMA_SCRATCH_##MMA(warp_scratch, wi, wj)                    \
             __syncwarp();                                                    \
             /* Each lane converts and writes its share of 256 elements. */   \
             for (unsigned int idx = lane; idx < WMMA_M * WMMA_N; idx += 32) { \

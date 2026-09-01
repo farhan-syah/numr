@@ -261,6 +261,7 @@ fn compile_cuda_kernels() {
         "matmul_f32_tiled.cuh",
         "matmul_wmma.cuh",
         "matmul_wmma_stage.cuh",
+        "matmul_wmma_mma.cuh",
         "semiring_matmul_ops.cuh",
         "sort_bitonic.cuh",
         "sort_compare.cuh",
