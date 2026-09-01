@@ -10,9 +10,9 @@
 //! | exp      | ✓   | ✓   | < 1e-6 / 1e-12 |
 //! | tanh     | ✓   | ✓   | < 1e-6 / 1e-12 |
 //! | log      | ✓   | ✓   | < 1e-6 / 2 ulp |
-//! | sin      | ✓   | ✓   | < 1e-6 / 1e-10 |
-//! | cos      | ✓   | ✓   | < 1e-6 / 1e-10 |
-//! | tan      | ✓   | ✓   | < 2e-4 / 1e-4  |
+//! | sin      | ✓   | ✓   | < 1e-6 / 4 ulp |
+//! | cos      | ✓   | ✓   | < 1e-6 / 4 ulp |
+//! | tan      | ✓   | ✓   | < 2e-4 / 4 ulp |
 //! | atan     | ✓   | ✓   | see note / 2 ulp |
 //! | asin     | ✓   | ✓   | see note / 2 ulp |
 //! | acos     | ✓   | ✓   | see note / 2 ulp |
@@ -25,6 +25,11 @@
 //! The same split applies to the log family: the f64 log/log2/log10/log1p
 //! paths hold below 2 ulps, while their f32 counterparts still use a truncated
 //! series and are far coarser than f32 epsilon.
+//!
+//! The f64 sin/cos/tan bounds hold for |x| <= 2^21 * π/2 (about 3.3e6), the
+//! limit of the Cody-Waite reduction in `common.rs`, and for tan away from its
+//! poles. Their f32 counterparts reduce with a single rounded π/2 and use
+//! truncated Taylor series, so they are far coarser than f32 epsilon.
 //!
 //! # Safety
 //!
@@ -487,63 +492,92 @@ pub unsafe fn sin_f32(x: __m512) -> __m512 {
     _mm512_mask_blend_ps(negate_mask, result, negated)
 }
 
-/// Fast SIMD sin approximation for f64 using AVX-512
+/// Cody-Waite reduction of `x` modulo π/2 for f64.
 ///
-/// See `common::_TRIG_ALGORITHM_DOC` for algorithm details.
+/// Returns the quadrant index `j` (as a double) and the reduced argument in
+/// [-π/4, π/4]. See `common::_TRIG_ALGORITHM_DOC`; valid for
+/// |x| <= 2^21 * π/2, past which `j * PIO2_k` stops being exact.
 ///
 /// # Safety
 /// Requires AVX-512F CPU feature.
 #[target_feature(enable = "avx512f")]
 #[inline]
-pub unsafe fn sin_f64(x: __m512d) -> __m512d {
-    use trig_coefficients::*;
-
-    let two_over_pi = _mm512_set1_pd(std::f64::consts::FRAC_2_PI);
-    let pi_over_2 = _mm512_set1_pd(std::f64::consts::FRAC_PI_2);
-
-    let s1 = _mm512_set1_pd(S1_F64);
-    let s3 = _mm512_set1_pd(S3_F64);
-    let s5 = _mm512_set1_pd(S5_F64);
-    let s7 = _mm512_set1_pd(S7_F64);
-    let s9 = _mm512_set1_pd(S9_F64);
-
-    let c0 = _mm512_set1_pd(C0_F64);
-    let c2 = _mm512_set1_pd(C2_F64);
-    let c4 = _mm512_set1_pd(C4_F64);
-    let c6 = _mm512_set1_pd(C6_F64);
-    let c8 = _mm512_set1_pd(C8_F64);
+unsafe fn trig_reduce_f64(x: __m512d) -> (__m512d, __m512d) {
+    use trig_coefficients::{PIO2_1_F64, PIO2_2_F64, PIO2_3_F64, PIO2_3T_F64};
 
     let j = _mm512_roundscale_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(
-        _mm512_mul_pd(x, two_over_pi),
+        _mm512_mul_pd(x, _mm512_set1_pd(std::f64::consts::FRAC_2_PI)),
     );
-    let j_i64 = _mm512_cvtpd_epi64(j);
 
-    let y = _mm512_fnmadd_pd(j, pi_over_2, x);
+    let y = _mm512_fnmadd_pd(j, _mm512_set1_pd(PIO2_1_F64), x);
+    let y = _mm512_fnmadd_pd(j, _mm512_set1_pd(PIO2_2_F64), y);
+    let y = _mm512_fnmadd_pd(j, _mm512_set1_pd(PIO2_3_F64), y);
+    let y = _mm512_fnmadd_pd(j, _mm512_set1_pd(PIO2_3T_F64), y);
 
-    let y2 = _mm512_mul_pd(y, y);
-    let y3 = _mm512_mul_pd(y2, y);
-    let y4 = _mm512_mul_pd(y2, y2);
-    let y5 = _mm512_mul_pd(y4, y);
-    let y6 = _mm512_mul_pd(y4, y2);
-    let y7 = _mm512_mul_pd(y4, y3);
-    let y8 = _mm512_mul_pd(y4, y4);
-    let y9 = _mm512_mul_pd(y8, y);
+    (j, y)
+}
 
-    // sin(y) polynomial
-    let mut sin_y = _mm512_mul_pd(s1, y);
-    sin_y = _mm512_fmadd_pd(s3, y3, sin_y);
-    sin_y = _mm512_fmadd_pd(s5, y5, sin_y);
-    sin_y = _mm512_fmadd_pd(s7, y7, sin_y);
-    sin_y = _mm512_fmadd_pd(s9, y9, sin_y);
+/// Minimax sin kernel on the reduced argument, |y| <= π/4.
+///
+/// # Safety
+/// Requires AVX-512F CPU feature.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn sin_kernel_f64(y: __m512d) -> __m512d {
+    use trig_coefficients::{SIN1_F64, SIN2_F64, SIN3_F64, SIN4_F64, SIN5_F64, SIN6_F64};
 
-    // cos(y) polynomial
-    let mut cos_y = c0;
-    cos_y = _mm512_fmadd_pd(c2, y2, cos_y);
-    cos_y = _mm512_fmadd_pd(c4, y4, cos_y);
-    cos_y = _mm512_fmadd_pd(c6, y6, cos_y);
-    cos_y = _mm512_fmadd_pd(c8, y8, cos_y);
+    let z = _mm512_mul_pd(y, y);
 
-    // Quadrant selection using AVX-512 masks
+    let mut p = _mm512_set1_pd(SIN6_F64);
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(SIN5_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(SIN4_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(SIN3_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(SIN2_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(SIN1_F64));
+
+    // y is added last, so a tiny y comes back unchanged and keeps its sign.
+    _mm512_fmadd_pd(_mm512_mul_pd(z, y), p, y)
+}
+
+/// Minimax cos kernel on the reduced argument, |y| <= π/4.
+///
+/// # Safety
+/// Requires AVX-512F CPU feature.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn cos_kernel_f64(y: __m512d) -> __m512d {
+    use trig_coefficients::{COS1_F64, COS2_F64, COS3_F64, COS4_F64, COS5_F64, COS6_F64};
+
+    let one = _mm512_set1_pd(1.0);
+    let z = _mm512_mul_pd(y, y);
+
+    let mut p = _mm512_set1_pd(COS6_F64);
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(COS5_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(COS4_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(COS3_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(COS2_F64));
+    p = _mm512_fmadd_pd(p, z, _mm512_set1_pd(COS1_F64));
+    let r = _mm512_mul_pd(_mm512_mul_pd(z, z), p);
+
+    // `1 - z/2` rounds; `(1 - w) - hz` is exact and returns the rounded bits.
+    let hz = _mm512_mul_pd(_mm512_set1_pd(0.5), z);
+    let w = _mm512_sub_pd(one, hz);
+    let correction = _mm512_sub_pd(_mm512_sub_pd(one, w), hz);
+    _mm512_add_pd(w, _mm512_add_pd(correction, r))
+}
+
+/// Evaluate sin on quadrant `j + offset`, the shared core of sin and cos.
+///
+/// # Safety
+/// Requires AVX-512F CPU feature.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn sin_quadrant_f64(x: __m512d, offset: i64) -> __m512d {
+    let (j, y) = trig_reduce_f64(x);
+    let sin_y = sin_kernel_f64(y);
+    let cos_y = cos_kernel_f64(y);
+
+    let j_i64 = _mm512_add_epi64(_mm512_cvtpd_epi64(j), _mm512_set1_epi64(offset));
     let j_mod_4 = _mm512_and_si512(j_i64, _mm512_set1_epi64(3));
 
     let use_cos_mask = _mm512_cmpeq_epi64_mask(
@@ -561,6 +595,24 @@ pub unsafe fn sin_f64(x: __m512d) -> __m512d {
     _mm512_mask_blend_pd(negate_mask, result, negated)
 }
 
+/// Fast SIMD sin approximation for f64 using AVX-512
+///
+/// See `common::_TRIG_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
+///
+/// # Safety
+/// Requires AVX-512F CPU feature.
+#[target_feature(enable = "avx512f")]
+#[inline]
+pub unsafe fn sin_f64(x: __m512d) -> __m512d {
+    let r = sin_quadrant_f64(x, 0);
+
+    // sin(±0) = ±0. The reduction computes 0 - (-0 * π/2), which is +0 for both
+    // signed zeros, so the input is restored here.
+    let is_zero = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(x, _mm512_setzero_pd());
+    _mm512_mask_blend_pd(is_zero, r, x)
+}
+
 /// Fast SIMD cos approximation for f32 using AVX-512
 ///
 /// Implemented as: cos(x) = sin(x + π/2)
@@ -576,13 +628,16 @@ pub unsafe fn cos_f32(x: __m512) -> __m512 {
 
 /// Fast SIMD cos approximation for f64 using AVX-512
 ///
+/// Shifts the quadrant index by one rather than evaluating `sin(x + π/2)`,
+/// which would round the sum before reduction and lose bits proportional to
+/// |x|. Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
+///
 /// # Safety
 /// Requires AVX-512F CPU feature.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn cos_f64(x: __m512d) -> __m512d {
-    let pi_over_2 = _mm512_set1_pd(std::f64::consts::FRAC_PI_2);
-    sin_f64(_mm512_add_pd(x, pi_over_2))
+    sin_quadrant_f64(x, 1)
 }
 
 /// Fast SIMD tan approximation for f32 using AVX-512
@@ -638,41 +693,17 @@ pub unsafe fn tan_f32(x: __m512) -> __m512 {
 /// Fast SIMD tan approximation for f64 using AVX-512
 ///
 /// See `common::_TAN_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 4 ulps away from the poles, for
+/// |x| <= 2^21 * π/2.
 ///
 /// # Safety
 /// Requires AVX-512F CPU feature.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn tan_f64(x: __m512d) -> __m512d {
-    use tan_coefficients::*;
-
-    let two_over_pi = _mm512_set1_pd(std::f64::consts::FRAC_2_PI);
-    let pi_over_2 = _mm512_set1_pd(std::f64::consts::FRAC_PI_2);
-
-    let j = _mm512_roundscale_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(
-        _mm512_mul_pd(x, two_over_pi),
-    );
-    let y = _mm512_fnmadd_pd(j, pi_over_2, x);
-
-    let t1 = _mm512_set1_pd(T1_F64);
-    let t3 = _mm512_set1_pd(T3_F64);
-    let t5 = _mm512_set1_pd(T5_F64);
-    let t7 = _mm512_set1_pd(T7_F64);
-    let t9 = _mm512_set1_pd(T9_F64);
-    let t11 = _mm512_set1_pd(T11_F64);
-    let t13 = _mm512_set1_pd(T13_F64);
-
-    let y2 = _mm512_mul_pd(y, y);
-
-    // Horner's method
-    let mut poly = t13;
-    poly = _mm512_fmadd_pd(poly, y2, t11);
-    poly = _mm512_fmadd_pd(poly, y2, t9);
-    poly = _mm512_fmadd_pd(poly, y2, t7);
-    poly = _mm512_fmadd_pd(poly, y2, t5);
-    poly = _mm512_fmadd_pd(poly, y2, t3);
-    poly = _mm512_fmadd_pd(poly, y2, t1);
-    let tan_y = _mm512_mul_pd(y, poly);
+    let (j, y) = trig_reduce_f64(x);
+    let sin_y = sin_kernel_f64(y);
+    let cos_y = cos_kernel_f64(y);
 
     let j_i64 = _mm512_cvtpd_epi64(j);
     let use_cot_mask = _mm512_cmpeq_epi64_mask(
@@ -680,10 +711,16 @@ pub unsafe fn tan_f64(x: __m512d) -> __m512d {
         _mm512_set1_epi64(1),
     );
 
-    let neg_one = _mm512_set1_pd(-1.0);
-    let cot_y = _mm512_div_pd(neg_one, tan_y);
+    // Odd quadrant: tan(x) = -cot(y) = -cos(y)/sin(y). Swapping the ratio costs
+    // one rounding, where inverting an already-rounded tan(y) costs two.
+    let neg_cos_y = _mm512_sub_pd(_mm512_setzero_pd(), cos_y);
+    let num = _mm512_mask_blend_pd(use_cot_mask, sin_y, neg_cos_y);
+    let den = _mm512_mask_blend_pd(use_cot_mask, cos_y, sin_y);
+    let r = _mm512_div_pd(num, den);
 
-    _mm512_mask_blend_pd(use_cot_mask, tan_y, cot_y)
+    // tan(±0) = ±0; the reduction turns -0 into +0.
+    let is_zero = _mm512_cmp_pd_mask::<_CMP_EQ_OQ>(x, _mm512_setzero_pd());
+    _mm512_mask_blend_pd(is_zero, r, x)
 }
 
 // ============================================================================

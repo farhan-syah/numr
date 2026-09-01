@@ -10,9 +10,9 @@
 //! | exp      | 4   | 2   | < 1e-6 / 1e-12 |
 //! | tanh     | 4   | 2   | < 1e-6 / 1e-12 |
 //! | log      | 4   | 2   | < 1e-6 / 2 ulp |
-//! | sin      | 4   | 2   | < 1e-6 / 1e-10 |
-//! | cos      | 4   | 2   | < 1e-6 / 1e-10 |
-//! | tan      | 4   | 2   | < 2e-4 / 1e-4  |
+//! | sin      | 4   | 2   | < 1e-6 / 4 ulp |
+//! | cos      | 4   | 2   | < 1e-6 / 4 ulp |
+//! | tan      | 4   | 2   | < 2e-4 / 4 ulp |
 //! | atan     | 4   | 2   | see note / 2 ulp |
 //! | asin     | 4   | 2   | see note / 2 ulp |
 //! | acos     | 4   | 2   | see note / 2 ulp |
@@ -25,6 +25,11 @@
 //! The same split applies to the log family: the f64 log/log2/log10/log1p
 //! paths hold below 2 ulps, while their f32 counterparts still use a truncated
 //! series and are far coarser than f32 epsilon.
+//!
+//! The f64 sin/cos/tan bounds hold for |x| <= 2^21 * π/2 (about 3.3e6), the
+//! limit of the Cody-Waite reduction in `common.rs`, and for tan away from its
+//! poles. Their f32 counterparts reduce with a single rounded π/2 and use
+//! truncated Taylor series, so they are far coarser than f32 epsilon.
 //!
 //! # Safety
 //!
@@ -551,78 +556,116 @@ pub unsafe fn sin_f32(x: float32x4_t) -> float32x4_t {
     vbslq_f32(negate_mask, negated, result)
 }
 
-/// Fast SIMD sin approximation for f64 using NEON
+/// Cody-Waite reduction of `x` modulo π/2 for f64.
+///
+/// Returns the quadrant index `j` (as a double) and the reduced argument in
+/// [-π/4, π/4]. See `common::_TRIG_ALGORITHM_DOC`; valid for
+/// |x| <= 2^21 * π/2, past which `j * PIO2_k` stops being exact.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
-pub unsafe fn sin_f64(x: float64x2_t) -> float64x2_t {
-    use trig_coefficients::*;
+unsafe fn trig_reduce_f64(x: float64x2_t) -> (float64x2_t, float64x2_t) {
+    use trig_coefficients::{PIO2_1_F64, PIO2_2_F64, PIO2_3_F64, PIO2_3T_F64};
 
-    let two_over_pi = vdupq_n_f64(std::f64::consts::FRAC_2_PI);
-    let pi_over_2 = vdupq_n_f64(std::f64::consts::FRAC_PI_2);
+    let j = vrndnq_f64(vmulq_f64(x, vdupq_n_f64(std::f64::consts::FRAC_2_PI)));
 
-    let s1 = vdupq_n_f64(S1_F64);
-    let s3 = vdupq_n_f64(S3_F64);
-    let s5 = vdupq_n_f64(S5_F64);
-    let s7 = vdupq_n_f64(S7_F64);
-    let s9 = vdupq_n_f64(S9_F64);
+    let y = vfmsq_f64(x, j, vdupq_n_f64(PIO2_1_F64));
+    let y = vfmsq_f64(y, j, vdupq_n_f64(PIO2_2_F64));
+    let y = vfmsq_f64(y, j, vdupq_n_f64(PIO2_3_F64));
+    let y = vfmsq_f64(y, j, vdupq_n_f64(PIO2_3T_F64));
 
-    let c0 = vdupq_n_f64(C0_F64);
-    let c2 = vdupq_n_f64(C2_F64);
-    let c4 = vdupq_n_f64(C4_F64);
-    let c6 = vdupq_n_f64(C6_F64);
-    let c8 = vdupq_n_f64(C8_F64);
+    (j, y)
+}
 
-    let j = vrndnq_f64(vmulq_f64(x, two_over_pi));
+/// Minimax sin kernel on the reduced argument, |y| <= π/4.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn sin_kernel_f64(y: float64x2_t) -> float64x2_t {
+    use trig_coefficients::{SIN1_F64, SIN2_F64, SIN3_F64, SIN4_F64, SIN5_F64, SIN6_F64};
 
-    // Get j as integers for quadrant selection
+    let z = vmulq_f64(y, y);
+
+    let mut p = vdupq_n_f64(SIN6_F64);
+    p = vfmaq_f64(vdupq_n_f64(SIN5_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(SIN4_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(SIN3_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(SIN2_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(SIN1_F64), p, z);
+
+    // y is added last, so a tiny y comes back unchanged and keeps its sign.
+    vfmaq_f64(y, vmulq_f64(z, y), p)
+}
+
+/// Minimax cos kernel on the reduced argument, |y| <= π/4.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn cos_kernel_f64(y: float64x2_t) -> float64x2_t {
+    use trig_coefficients::{COS1_F64, COS2_F64, COS3_F64, COS4_F64, COS5_F64, COS6_F64};
+
+    let one = vdupq_n_f64(1.0);
+    let z = vmulq_f64(y, y);
+
+    let mut p = vdupq_n_f64(COS6_F64);
+    p = vfmaq_f64(vdupq_n_f64(COS5_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(COS4_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(COS3_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(COS2_F64), p, z);
+    p = vfmaq_f64(vdupq_n_f64(COS1_F64), p, z);
+    let r = vmulq_f64(vmulq_f64(z, z), p);
+
+    // `1 - z/2` rounds; `(1 - w) - hz` is exact and returns the rounded bits.
+    let hz = vmulq_f64(vdupq_n_f64(0.5), z);
+    let w = vsubq_f64(one, hz);
+    let correction = vsubq_f64(vsubq_f64(one, w), hz);
+    vaddq_f64(w, vaddq_f64(correction, r))
+}
+
+/// Evaluate sin on quadrant `j + offset`, the shared core of sin and cos.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn sin_quadrant_f64(x: float64x2_t, offset: i32) -> float64x2_t {
+    let (j, y) = trig_reduce_f64(x);
+    let sin_y = sin_kernel_f64(y);
+    let cos_y = cos_kernel_f64(y);
+
     let mut j_arr = [0.0f64; 2];
-    vst1q_f64(j_arr.as_mut_ptr(), j);
-    let j_int: [i32; 2] = [j_arr[0] as i32, j_arr[1] as i32];
-
-    let y = vfmsq_f64(x, j, pi_over_2);
-
-    let y2 = vmulq_f64(y, y);
-    let y3 = vmulq_f64(y2, y);
-    let y4 = vmulq_f64(y2, y2);
-    let y5 = vmulq_f64(y4, y);
-    let y6 = vmulq_f64(y4, y2);
-    let y7 = vmulq_f64(y4, y3);
-    let y8 = vmulq_f64(y4, y4);
-    let y9 = vmulq_f64(y8, y);
-
-    // sin(y) and cos(y) polynomials
-    let mut sin_y = vmulq_f64(s1, y);
-    sin_y = vfmaq_f64(sin_y, s3, y3);
-    sin_y = vfmaq_f64(sin_y, s5, y5);
-    sin_y = vfmaq_f64(sin_y, s7, y7);
-    sin_y = vfmaq_f64(sin_y, s9, y9);
-
-    let mut cos_y = c0;
-    cos_y = vfmaq_f64(cos_y, c2, y2);
-    cos_y = vfmaq_f64(cos_y, c4, y4);
-    cos_y = vfmaq_f64(cos_y, c6, y6);
-    cos_y = vfmaq_f64(cos_y, c8, y8);
-
-    // Compute result per-element based on quadrant
     let mut sin_arr = [0.0f64; 2];
     let mut cos_arr = [0.0f64; 2];
+    vst1q_f64(j_arr.as_mut_ptr(), j);
     vst1q_f64(sin_arr.as_mut_ptr(), sin_y);
     vst1q_f64(cos_arr.as_mut_ptr(), cos_y);
 
     let mut result = [0.0f64; 2];
     for i in 0..2 {
-        let quadrant = j_int[i] & 3;
+        let quadrant = (j_arr[i] as i32).wrapping_add(offset) & 3;
         result[i] = match quadrant {
             0 => sin_arr[i],
             1 => cos_arr[i],
             2 => -sin_arr[i],
-            3 => -cos_arr[i],
-            _ => unreachable!(),
+            _ => -cos_arr[i],
         };
     }
 
     vld1q_f64(result.as_ptr())
+}
+
+/// Fast SIMD sin approximation for f64 using NEON
+///
+/// See `common::_TRIG_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+pub unsafe fn sin_f64(x: float64x2_t) -> float64x2_t {
+    let r = sin_quadrant_f64(x, 0);
+
+    // sin(±0) = ±0. The reduction computes 0 - (-0 * π/2), which is +0 for both
+    // signed zeros, so the input is restored here.
+    let is_zero = vceqq_f64(x, vdupq_n_f64(0.0));
+    vbslq_f64(is_zero, x, r)
 }
 
 /// Fast SIMD cos approximation for f32 using NEON
@@ -637,12 +680,15 @@ pub unsafe fn cos_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD cos approximation for f64 using NEON
+///
+/// Shifts the quadrant index by one rather than evaluating `sin(x + π/2)`,
+/// which would round the sum before reduction and lose bits proportional to
+/// |x|. Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn cos_f64(x: float64x2_t) -> float64x2_t {
-    let pi_over_2 = vdupq_n_f64(std::f64::consts::FRAC_PI_2);
-    sin_f64(vaddq_f64(x, pi_over_2))
+    sin_quadrant_f64(x, 1)
 }
 
 /// Fast SIMD tan approximation for f32 using NEON
@@ -690,55 +736,44 @@ pub unsafe fn tan_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD tan approximation for f64 using NEON
+///
+/// See `common::_TAN_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 4 ulps away from the poles, for
+/// |x| <= 2^21 * π/2.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn tan_f64(x: float64x2_t) -> float64x2_t {
-    use tan_coefficients::*;
+    let (j, y) = trig_reduce_f64(x);
+    let sin_y = sin_kernel_f64(y);
+    let cos_y = cos_kernel_f64(y);
 
-    let two_over_pi = vdupq_n_f64(std::f64::consts::FRAC_2_PI);
-    let pi_over_2 = vdupq_n_f64(std::f64::consts::FRAC_PI_2);
-
-    let j = vrndnq_f64(vmulq_f64(x, two_over_pi));
-    let y = vfmsq_f64(x, j, pi_over_2);
-
-    let t1 = vdupq_n_f64(T1_F64);
-    let t3 = vdupq_n_f64(T3_F64);
-    let t5 = vdupq_n_f64(T5_F64);
-    let t7 = vdupq_n_f64(T7_F64);
-    let t9 = vdupq_n_f64(T9_F64);
-    let t11 = vdupq_n_f64(T11_F64);
-    let t13 = vdupq_n_f64(T13_F64);
-
-    let y2 = vmulq_f64(y, y);
-
-    // Horner's method
-    let mut poly = t13;
-    poly = vfmaq_f64(t11, poly, y2);
-    poly = vfmaq_f64(t9, poly, y2);
-    poly = vfmaq_f64(t7, poly, y2);
-    poly = vfmaq_f64(t5, poly, y2);
-    poly = vfmaq_f64(t3, poly, y2);
-    poly = vfmaq_f64(t1, poly, y2);
-    let tan_y = vmulq_f64(y, poly);
-
-    // Handle quadrant for cotangent
+    // Odd quadrant: tan(x) = -cot(y) = -cos(y)/sin(y). Swapping the ratio costs
+    // one rounding, where inverting an already-rounded tan(y) costs two.
     let mut j_arr = [0.0f64; 2];
-    let mut tan_arr = [0.0f64; 2];
+    let mut sin_arr = [0.0f64; 2];
+    let mut cos_arr = [0.0f64; 2];
     vst1q_f64(j_arr.as_mut_ptr(), j);
-    vst1q_f64(tan_arr.as_mut_ptr(), tan_y);
+    vst1q_f64(sin_arr.as_mut_ptr(), sin_y);
+    vst1q_f64(cos_arr.as_mut_ptr(), cos_y);
 
-    let mut result = [0.0f64; 2];
+    let mut num = [0.0f64; 2];
+    let mut den = [0.0f64; 2];
     for i in 0..2 {
-        let j_int = j_arr[i] as i32;
-        result[i] = if (j_int & 1) == 1 {
-            -1.0 / tan_arr[i]
+        if (j_arr[i] as i32) & 1 == 1 {
+            num[i] = -cos_arr[i];
+            den[i] = sin_arr[i];
         } else {
-            tan_arr[i]
-        };
+            num[i] = sin_arr[i];
+            den[i] = cos_arr[i];
+        }
     }
 
-    vld1q_f64(result.as_ptr())
+    let r = vdivq_f64(vld1q_f64(num.as_ptr()), vld1q_f64(den.as_ptr()));
+
+    // tan(±0) = ±0; the reduction turns -0 into +0.
+    let is_zero = vceqq_f64(x, vdupq_n_f64(0.0));
+    vbslq_f64(is_zero, x, r)
 }
 
 // ============================================================================

@@ -195,7 +195,7 @@ fn detect_simd_uncached() -> SimdLevel {
         // - `avx512vl`: the 128/256-bit AVX-512 forms used by tail handling.
         // - `avx512dq`: the packed 64-bit integer conversions
         //   `_mm512_cvtpd_epi64` and `_mm512_cvtepi64_pd` in the f64 math
-        //   kernels (`exp_f64`, `log_f64`, `sin_f64`, `tan_f64`).
+        //   kernels (`exp_f64`, `log_f64`, `sin_f64`, `cos_f64`, `tan_f64`).
         // - `avx512bw`: the byte and word ops in the i8 dot kernel
         //   (`_mm512_cvtepi8_epi16`, `_mm512_madd_epi16`) and in the index
         //   kernel `masked_count` (`_mm512_cmpneq_epi8_mask`).

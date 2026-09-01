@@ -10,9 +10,9 @@
 //! | exp      | ✓   | ✓   | < 1e-6 / 1e-12 |
 //! | tanh     | ✓   | ✓   | < 1e-6 / 1e-12 |
 //! | log      | ✓   | ✓   | < 1e-6 / 2 ulp |
-//! | sin      | ✓   | ✓   | < 1e-6 / 1e-10 |
-//! | cos      | ✓   | ✓   | < 1e-6 / 1e-10 |
-//! | tan      | ✓   | ✓   | < 2e-4 / 1e-4  |
+//! | sin      | ✓   | ✓   | < 1e-6 / 4 ulp |
+//! | cos      | ✓   | ✓   | < 1e-6 / 4 ulp |
+//! | tan      | ✓   | ✓   | < 2e-4 / 4 ulp |
 //! | atan     | ✓   | ✓   | see note / 2 ulp |
 //! | asin     | ✓   | ✓   | see note / 2 ulp |
 //! | acos     | ✓   | ✓   | see note / 2 ulp |
@@ -25,6 +25,11 @@
 //! The same split applies to the log family: the f64 log/log2/log10/log1p
 //! paths hold below 2 ulps, while their f32 counterparts still use a truncated
 //! series and are far coarser than f32 epsilon.
+//!
+//! The f64 sin/cos/tan bounds hold for |x| <= 2^21 * π/2 (about 3.3e6), the
+//! limit of the Cody-Waite reduction in `common.rs`, and for tan away from its
+//! poles. Their f32 counterparts reduce with a single rounded π/2 and use
+//! truncated Taylor series, so they are far coarser than f32 epsilon.
 //!
 //! # Safety
 //!
@@ -519,90 +524,132 @@ pub unsafe fn sin_f32(x: __m256) -> __m256 {
     _mm256_blendv_ps(result, negated, negate_mask)
 }
 
+/// Cody-Waite reduction of `x` modulo π/2 for f64.
+///
+/// Returns the quadrant index `j` (as a double) and the reduced argument in
+/// [-π/4, π/4]. See `common::_TRIG_ALGORITHM_DOC`; valid for
+/// |x| <= 2^21 * π/2, past which `j * PIO2_k` stops being exact.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn trig_reduce_f64(x: __m256d) -> (__m256d, __m256d) {
+    use trig_coefficients::{PIO2_1_F64, PIO2_2_F64, PIO2_3_F64, PIO2_3T_F64};
+
+    let j = _mm256_round_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(_mm256_mul_pd(
+        x,
+        _mm256_set1_pd(std::f64::consts::FRAC_2_PI),
+    ));
+
+    let y = _mm256_fnmadd_pd(j, _mm256_set1_pd(PIO2_1_F64), x);
+    let y = _mm256_fnmadd_pd(j, _mm256_set1_pd(PIO2_2_F64), y);
+    let y = _mm256_fnmadd_pd(j, _mm256_set1_pd(PIO2_3_F64), y);
+    let y = _mm256_fnmadd_pd(j, _mm256_set1_pd(PIO2_3T_F64), y);
+
+    (j, y)
+}
+
+/// Minimax sin kernel on the reduced argument, |y| <= π/4.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn sin_kernel_f64(y: __m256d) -> __m256d {
+    use trig_coefficients::{SIN1_F64, SIN2_F64, SIN3_F64, SIN4_F64, SIN5_F64, SIN6_F64};
+
+    let z = _mm256_mul_pd(y, y);
+
+    let mut p = _mm256_set1_pd(SIN6_F64);
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(SIN5_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(SIN4_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(SIN3_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(SIN2_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(SIN1_F64));
+
+    // y is added last, so a tiny y comes back unchanged and keeps its sign.
+    _mm256_fmadd_pd(_mm256_mul_pd(z, y), p, y)
+}
+
+/// Minimax cos kernel on the reduced argument, |y| <= π/4.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn cos_kernel_f64(y: __m256d) -> __m256d {
+    use trig_coefficients::{COS1_F64, COS2_F64, COS3_F64, COS4_F64, COS5_F64, COS6_F64};
+
+    let one = _mm256_set1_pd(1.0);
+    let z = _mm256_mul_pd(y, y);
+
+    let mut p = _mm256_set1_pd(COS6_F64);
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(COS5_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(COS4_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(COS3_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(COS2_F64));
+    p = _mm256_fmadd_pd(p, z, _mm256_set1_pd(COS1_F64));
+    let r = _mm256_mul_pd(_mm256_mul_pd(z, z), p);
+
+    // `1 - z/2` rounds; `(1 - w) - hz` is exact and returns the rounded bits.
+    let hz = _mm256_mul_pd(_mm256_set1_pd(0.5), z);
+    let w = _mm256_sub_pd(one, hz);
+    let correction = _mm256_sub_pd(_mm256_sub_pd(one, w), hz);
+    _mm256_add_pd(w, _mm256_add_pd(correction, r))
+}
+
+/// Evaluate sin on quadrant `j + offset`, the shared core of sin and cos.
+///
+/// AVX2 has no 64-bit float-to-int conversion, so the quadrant table is applied
+/// per lane.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn sin_quadrant_f64(x: __m256d, offset: i32) -> __m256d {
+    let (j, y) = trig_reduce_f64(x);
+    let sin_y = sin_kernel_f64(y);
+    let cos_y = cos_kernel_f64(y);
+
+    let mut j_arr = [0.0f64; 4];
+    let mut sin_arr = [0.0f64; 4];
+    let mut cos_arr = [0.0f64; 4];
+    _mm256_storeu_pd(j_arr.as_mut_ptr(), j);
+    _mm256_storeu_pd(sin_arr.as_mut_ptr(), sin_y);
+    _mm256_storeu_pd(cos_arr.as_mut_ptr(), cos_y);
+
+    let mut result = [0.0f64; 4];
+    for i in 0..4 {
+        let quadrant = (j_arr[i] as i32).wrapping_add(offset) & 3;
+        result[i] = match quadrant {
+            0 => sin_arr[i],
+            1 => cos_arr[i],
+            2 => -sin_arr[i],
+            _ => -cos_arr[i],
+        };
+    }
+
+    _mm256_loadu_pd(result.as_ptr())
+}
+
 /// Fast SIMD sin approximation for f64 using AVX2+FMA
 ///
 /// See `common::_TRIG_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
 ///
 /// # Safety
 /// Requires AVX2 and FMA CPU features.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn sin_f64(x: __m256d) -> __m256d {
-    use trig_coefficients::*;
+    let r = sin_quadrant_f64(x, 0);
 
-    let two_over_pi = _mm256_set1_pd(std::f64::consts::FRAC_2_PI);
-    let pi_over_2 = _mm256_set1_pd(std::f64::consts::FRAC_PI_2);
-
-    let s1 = _mm256_set1_pd(S1_F64);
-    let s3 = _mm256_set1_pd(S3_F64);
-    let s5 = _mm256_set1_pd(S5_F64);
-    let s7 = _mm256_set1_pd(S7_F64);
-    let s9 = _mm256_set1_pd(S9_F64);
-
-    let c0 = _mm256_set1_pd(C0_F64);
-    let c2 = _mm256_set1_pd(C2_F64);
-    let c4 = _mm256_set1_pd(C4_F64);
-    let c6 = _mm256_set1_pd(C6_F64);
-    let c8 = _mm256_set1_pd(C8_F64);
-
-    let j = _mm256_round_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(_mm256_mul_pd(
-        x,
-        two_over_pi,
-    ));
-
-    // Get j as integers for quadrant selection (AVX2 lacks 64-bit int conversion)
-    let mut j_arr = [0.0f64; 4];
-    _mm256_storeu_pd(j_arr.as_mut_ptr(), j);
-    let j_int: [i32; 4] = [
-        j_arr[0] as i32,
-        j_arr[1] as i32,
-        j_arr[2] as i32,
-        j_arr[3] as i32,
-    ];
-
-    let y = _mm256_fnmadd_pd(j, pi_over_2, x);
-
-    let y2 = _mm256_mul_pd(y, y);
-    let y3 = _mm256_mul_pd(y2, y);
-    let y4 = _mm256_mul_pd(y2, y2);
-    let y5 = _mm256_mul_pd(y4, y);
-    let y6 = _mm256_mul_pd(y4, y2);
-    let y7 = _mm256_mul_pd(y4, y3);
-    let y8 = _mm256_mul_pd(y4, y4);
-    let y9 = _mm256_mul_pd(y8, y);
-
-    // sin(y) and cos(y) polynomials
-    let mut sin_y = _mm256_mul_pd(s1, y);
-    sin_y = _mm256_fmadd_pd(s3, y3, sin_y);
-    sin_y = _mm256_fmadd_pd(s5, y5, sin_y);
-    sin_y = _mm256_fmadd_pd(s7, y7, sin_y);
-    sin_y = _mm256_fmadd_pd(s9, y9, sin_y);
-
-    let mut cos_y = c0;
-    cos_y = _mm256_fmadd_pd(c2, y2, cos_y);
-    cos_y = _mm256_fmadd_pd(c4, y4, cos_y);
-    cos_y = _mm256_fmadd_pd(c6, y6, cos_y);
-    cos_y = _mm256_fmadd_pd(c8, y8, cos_y);
-
-    // Compute result per-element based on quadrant
-    let mut sin_arr = [0.0f64; 4];
-    let mut cos_arr = [0.0f64; 4];
-    _mm256_storeu_pd(sin_arr.as_mut_ptr(), sin_y);
-    _mm256_storeu_pd(cos_arr.as_mut_ptr(), cos_y);
-
-    let mut result = [0.0f64; 4];
-    for i in 0..4 {
-        let quadrant = j_int[i] & 3;
-        result[i] = match quadrant {
-            0 => sin_arr[i],
-            1 => cos_arr[i],
-            2 => -sin_arr[i],
-            3 => -cos_arr[i],
-            _ => unreachable!(),
-        };
-    }
-
-    _mm256_loadu_pd(result.as_ptr())
+    // sin(±0) = ±0. The reduction computes 0 - (-0 * π/2), which is +0 for both
+    // signed zeros, so the input is restored here.
+    let is_zero = _mm256_cmp_pd::<_CMP_EQ_OQ>(x, _mm256_setzero_pd());
+    _mm256_blendv_pd(r, x, is_zero)
 }
 
 /// Fast SIMD cos approximation for f32 using AVX2+FMA
@@ -620,13 +667,16 @@ pub unsafe fn cos_f32(x: __m256) -> __m256 {
 
 /// Fast SIMD cos approximation for f64 using AVX2+FMA
 ///
+/// Shifts the quadrant index by one rather than evaluating `sin(x + π/2)`,
+/// which would round the sum before reduction and lose bits proportional to
+/// |x|. Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
+///
 /// # Safety
 /// Requires AVX2 and FMA CPU features.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn cos_f64(x: __m256d) -> __m256d {
-    let pi_over_2 = _mm256_set1_pd(std::f64::consts::FRAC_PI_2);
-    sin_f64(_mm256_add_pd(x, pi_over_2))
+    sin_quadrant_f64(x, 1)
 }
 
 /// Fast SIMD tan approximation for f32 using AVX2+FMA
@@ -685,60 +735,45 @@ pub unsafe fn tan_f32(x: __m256) -> __m256 {
 /// Fast SIMD tan approximation for f64 using AVX2+FMA
 ///
 /// See `common::_TAN_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 4 ulps away from the poles, for
+/// |x| <= 2^21 * π/2.
 ///
 /// # Safety
 /// Requires AVX2 and FMA CPU features.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn tan_f64(x: __m256d) -> __m256d {
-    use tan_coefficients::*;
+    let (j, y) = trig_reduce_f64(x);
+    let sin_y = sin_kernel_f64(y);
+    let cos_y = cos_kernel_f64(y);
 
-    let two_over_pi = _mm256_set1_pd(std::f64::consts::FRAC_2_PI);
-    let pi_over_2 = _mm256_set1_pd(std::f64::consts::FRAC_PI_2);
-
-    let j = _mm256_round_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(_mm256_mul_pd(
-        x,
-        two_over_pi,
-    ));
-    let y = _mm256_fnmadd_pd(j, pi_over_2, x);
-
-    let t1 = _mm256_set1_pd(T1_F64);
-    let t3 = _mm256_set1_pd(T3_F64);
-    let t5 = _mm256_set1_pd(T5_F64);
-    let t7 = _mm256_set1_pd(T7_F64);
-    let t9 = _mm256_set1_pd(T9_F64);
-    let t11 = _mm256_set1_pd(T11_F64);
-    let t13 = _mm256_set1_pd(T13_F64);
-
-    let y2 = _mm256_mul_pd(y, y);
-
-    // Horner's method
-    let mut poly = t13;
-    poly = _mm256_fmadd_pd(poly, y2, t11);
-    poly = _mm256_fmadd_pd(poly, y2, t9);
-    poly = _mm256_fmadd_pd(poly, y2, t7);
-    poly = _mm256_fmadd_pd(poly, y2, t5);
-    poly = _mm256_fmadd_pd(poly, y2, t3);
-    poly = _mm256_fmadd_pd(poly, y2, t1);
-    let tan_y = _mm256_mul_pd(y, poly);
-
-    // Handle quadrant for cotangent (AVX2 lacks 64-bit int comparison)
+    // Odd quadrant: tan(x) = -cot(y) = -cos(y)/sin(y). Swapping the ratio costs
+    // one rounding, where inverting an already-rounded tan(y) costs two.
+    // AVX2 lacks 64-bit int comparison, so the swap is applied per lane.
     let mut j_arr = [0.0f64; 4];
-    let mut tan_arr = [0.0f64; 4];
+    let mut sin_arr = [0.0f64; 4];
+    let mut cos_arr = [0.0f64; 4];
     _mm256_storeu_pd(j_arr.as_mut_ptr(), j);
-    _mm256_storeu_pd(tan_arr.as_mut_ptr(), tan_y);
+    _mm256_storeu_pd(sin_arr.as_mut_ptr(), sin_y);
+    _mm256_storeu_pd(cos_arr.as_mut_ptr(), cos_y);
 
-    let mut result = [0.0f64; 4];
+    let mut num = [0.0f64; 4];
+    let mut den = [0.0f64; 4];
     for i in 0..4 {
-        let j_int = j_arr[i] as i32;
-        result[i] = if (j_int & 1) == 1 {
-            -1.0 / tan_arr[i]
+        if (j_arr[i] as i32) & 1 == 1 {
+            num[i] = -cos_arr[i];
+            den[i] = sin_arr[i];
         } else {
-            tan_arr[i]
-        };
+            num[i] = sin_arr[i];
+            den[i] = cos_arr[i];
+        }
     }
 
-    _mm256_loadu_pd(result.as_ptr())
+    let r = _mm256_div_pd(_mm256_loadu_pd(num.as_ptr()), _mm256_loadu_pd(den.as_ptr()));
+
+    // tan(±0) = ±0; the reduction turns -0 into +0.
+    let is_zero = _mm256_cmp_pd::<_CMP_EQ_OQ>(x, _mm256_setzero_pd());
+    _mm256_blendv_pd(r, x, is_zero)
 }
 
 // ============================================================================
