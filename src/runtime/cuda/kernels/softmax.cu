@@ -351,9 +351,13 @@ __global__ void softmax_dim_f32(
     const float* input, float* output,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -380,9 +384,13 @@ __global__ void softmax_dim_f64(
     const double* input, double* output,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -409,9 +417,13 @@ __global__ void softmax_dim_f16(
     const __half* input, __half* output,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -439,9 +451,13 @@ __global__ void softmax_dim_bf16(
     const __nv_bfloat16* input, __nv_bfloat16* output,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -469,9 +485,13 @@ __global__ void softmax_dim_fp8_e4m3(
     const numr_fp8_e4m3* input, numr_fp8_e4m3* output,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -499,9 +519,13 @@ __global__ void softmax_dim_fp8_e5m2(
     const numr_fp8_e5m2* input, numr_fp8_e5m2* output,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -738,9 +762,13 @@ __global__ void softmax_bwd_dim_f32(
     const float* grad, const float* output, float* d_input,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -759,9 +787,13 @@ __global__ void softmax_bwd_dim_f64(
     const double* grad, const double* output, double* d_input,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -780,9 +812,13 @@ __global__ void softmax_bwd_dim_f16(
     const __half* grad, const __half* output, __half* d_input,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -801,9 +837,13 @@ __global__ void softmax_bwd_dim_bf16(
     const __nv_bfloat16* grad, const __nv_bfloat16* output, __nv_bfloat16* d_input,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -822,9 +862,13 @@ __global__ void softmax_bwd_dim_fp8_e4m3(
     const numr_fp8_e4m3* grad, const numr_fp8_e4m3* output, numr_fp8_e4m3* d_input,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;
@@ -843,9 +887,13 @@ __global__ void softmax_bwd_dim_fp8_e5m2(
     const numr_fp8_e5m2* grad, const numr_fp8_e5m2* output, numr_fp8_e5m2* d_input,
     unsigned int outer_size, unsigned int dim_size, unsigned int inner_size
 ) {
-    unsigned int outer_idx = blockIdx.x;
-    unsigned int inner_idx = blockIdx.y;
-    if (outer_idx >= outer_size || inner_idx >= inner_size) return;
+    // Flat 1-D grid of full blocks: inner_idx is the fast-varying axis of tid,
+    // so neighbouring threads read adjacent addresses and coalesce.
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= outer_size * inner_size) return;
+
+    unsigned int outer_idx = tid / inner_size;
+    unsigned int inner_idx = tid - outer_idx * inner_size;
 
     unsigned int base = outer_idx * dim_size * inner_size + inner_idx;
     unsigned int stride = inner_size;

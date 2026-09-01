@@ -16,7 +16,8 @@ use crate::backend_parity::helpers::with_cuda_backend;
 #[cfg(feature = "wgpu")]
 use crate::backend_parity::helpers::with_wgpu_backend;
 use crate::common::{
-    DTypeDomain, assert_tensor_allclose, create_cpu_client, is_dtype_supported, parity_dtypes,
+    DTypeDomain, assert_tensor_allclose, assert_tensor_allclose_tol, create_cpu_client,
+    gemm_long_k_tolerance, is_dtype_supported, parity_dtypes,
 };
 
 // ============================================================================
@@ -357,6 +358,12 @@ fn test_sigmoid_mul_bwd_parity() {
 // Softmax parity tests
 // ============================================================================
 
+/// Largest absolute operand value, which sets the error floor for a reduction
+/// whose terms cancel.
+fn operand_scale(values: &[f64]) -> f64 {
+    values.iter().fold(0.0f64, |acc, v| acc.max(v.abs()))
+}
+
 fn softmax_test_shapes() -> Vec<(Vec<f64>, Vec<usize>, isize)> {
     vec![
         // (data, shape, dim)
@@ -387,6 +394,23 @@ fn softmax_test_shapes() -> Vec<(Vec<f64>, Vec<usize>, isize)> {
         (vec![0.0, 0.0, 0.0], vec![3], -1),
         // 2D with dim=0 single row
         (vec![1.0, 2.0, 3.0], vec![1, 3], 0),
+        // Non-last dim with an inner extent spanning several CUDA blocks and a
+        // ragged tail (outer*inner = 600 is not a multiple of the block size),
+        // so the flat launch's bounds check and its row/column decomposition
+        // are both exercised. Every other non-last-dim case above has an inner
+        // extent of at most 4, which fits in a single partly-idle block.
+        (
+            (0..1800).map(|i| (i % 37) as f64 * 0.05 - 0.9).collect(),
+            vec![2, 3, 300],
+            1,
+        ),
+        // Same, with an inner extent one past a block boundary so the tail is a
+        // single active thread.
+        (
+            (0..3855).map(|i| (i % 29) as f64 * 0.07 - 1.0).collect(),
+            vec![3, 5, 257],
+            1,
+        ),
     ]
 }
 
@@ -460,6 +484,18 @@ fn test_softmax_bwd_parity_for_dtype(dtype: DType) {
         let grad_data: Vec<f64> = (0..data.len()).map(|i| (i as f64) * 0.1 - 0.5).collect();
         let grad_cpu =
             tensor_from_f64(&grad_data, &shape, dtype, &cpu_device, &cpu_client).unwrap();
+
+        // softmax_bwd is `out_i * (grad_i - sum_j grad_j * out_j)`. The sum
+        // cancels against `grad_i`, so the error floor tracks the GRAD scale,
+        // not the result scale — a result-relative tolerance is the wrong
+        // shape for it. `grad_data` grows with element count, so the operand
+        // scale differs by two orders of magnitude across these shapes.
+        let dim_idx = if dim < 0 {
+            (shape.len() as isize + dim) as usize
+        } else {
+            dim as usize
+        };
+        let (rtol, atol) = gemm_long_k_tolerance(dtype, shape[dim_idx], operand_scale(&grad_data));
         let d_input_cpu = cpu_client
             .softmax_bwd(&grad_cpu, &output_cpu, dim)
             .unwrap()
@@ -490,10 +526,11 @@ fn test_softmax_bwd_parity_for_dtype(dtype: DType) {
                     .unwrap()
                     .contiguous()
                     .unwrap();
-                assert_tensor_allclose(
+                assert_tensor_allclose_tol(
                     &d_input_wgpu,
                     &d_input_cpu,
-                    dtype,
+                    rtol,
+                    atol,
                     "softmax_bwd wgpu vs cpu",
                 );
             });
@@ -512,10 +549,11 @@ fn test_softmax_bwd_parity_for_dtype(dtype: DType) {
                     .unwrap()
                     .contiguous()
                     .unwrap();
-                assert_tensor_allclose(
+                assert_tensor_allclose_tol(
                     &d_input_cuda,
                     &d_input_cpu,
-                    dtype,
+                    rtol,
+                    atol,
                     "softmax_bwd cuda vs cpu",
                 );
             });

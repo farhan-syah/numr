@@ -116,6 +116,10 @@ harness = false
 name = "conv"
 harness = false
 
+[[bench]]
+name = "softmax"
+harness = false
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
