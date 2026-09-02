@@ -84,6 +84,8 @@ pub mod kernel_names {
     pub const LINALG_MATRIX_FUNCS_MODULE: &str = "linalg_matrix_funcs";
     /// Matrix multiplication operations (native tiled GEMM)
     pub const MATMUL_MODULE: &str = "matmul";
+    /// Grouped FP32 GEMM with device-side group boundaries.
+    pub const GROUPED_MATMUL_MODULE: &str = "grouped_matmul";
     /// Tensor-core WMMA GEMM for F16/BF16 (sm_70+)
     pub const MATMUL_WMMA_MODULE: &str = "matmul_wmma";
     /// GEMV operations (matrix-vector multiply for small M)

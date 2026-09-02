@@ -28,6 +28,9 @@ mod normalization;
 #[path = "../../ops/cpu/matmul.rs"]
 mod matmul;
 
+#[path = "../../ops/cpu/grouped_matmul.rs"]
+mod grouped_matmul;
+
 // Fused matmul+bias carries `MatmulOps::matmul_bias`'s body; `matmul` keeps the
 // trait impl and delegates to it.
 #[path = "../../ops/cpu/matmul_bias.rs"]
