@@ -95,6 +95,26 @@ __device__ __forceinline__ void welford_warp_reduce_f64(
     }
 }
 
+// Tree-sums `shared[0 .. blockDim.x)` and leaves the total in `shared[0]`,
+// which every thread may read once the call returns.
+//
+// The first stride is the power of two at or above blockDim.x, so a block whose
+// size is not a power of two still folds in the entries a plain `blockDim.x / 2`
+// start would step over.
+template <typename T>
+__device__ __forceinline__ T block_sum_reduce(T* shared) {
+    unsigned int n = blockDim.x;
+    unsigned int s = 1;
+    while (s < n) s <<= 1;
+    for (s >>= 1; s > 0; s >>= 1) {
+        if (threadIdx.x < s && threadIdx.x + s < n) {
+            shared[threadIdx.x] += shared[threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+    return shared[0];
+}
+
 extern "C" {
 
 // ============================================================================
@@ -154,10 +174,19 @@ __global__ void layer_norm_f32(
     const float* row_in = input + row * hidden_size;
     float* row_out = output + row * hidden_size;
 
+    // Shift every element by the row's first value before accumulating.
+    // `x - mean` cancels catastrophically when a row sits far from zero relative
+    // to its own spread, and that cancellation, not the reduction, is what costs
+    // the mantissa. Welford does NOT help: its mean is still a value of the
+    // row's own magnitude, so phase 2 cancels just the same. Mean, variance and
+    // the normalized value are all invariant under the shift in exact
+    // arithmetic, and the CPU kernels shift by the same element.
+    float ref = row_in[0];
+
     // Phase 1: Single-pass Welford accumulation
     float count = 0.0f, mean = 0.0f, M2 = 0.0f;
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        float x = row_in[i];
+        float x = row_in[i] - ref;
         count += 1.0f;
         float delta = x - mean;
         mean += delta / count;
@@ -201,12 +230,12 @@ __global__ void layer_norm_f32(
     }
     __syncthreads();
 
-    float final_mean = s_mean[0];
+    float shifted_mean = s_mean[0];
     float inv_std = rsqrtf(s_M2[0] / s_count[0] + eps);
 
     // Phase 2: Normalize and apply affine transform
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        float normalized = (row_in[i] - final_mean) * inv_std;
+        float normalized = ((row_in[i] - ref) - shifted_mean) * inv_std;
         row_out[i] = normalized * weight[i] + bias[i];
     }
 }
@@ -260,10 +289,19 @@ __global__ void layer_norm_f64(
     const double* row_in = input + row * hidden_size;
     double* row_out = output + row * hidden_size;
 
+    // Shift every element by the row's first value before accumulating.
+    // `x - mean` cancels catastrophically when a row sits far from zero relative
+    // to its own spread, and that cancellation, not the reduction, is what costs
+    // the mantissa. Welford does NOT help: its mean is still a value of the
+    // row's own magnitude, so phase 2 cancels just the same. Mean, variance and
+    // the normalized value are all invariant under the shift in exact
+    // arithmetic, and the CPU kernels shift by the same element.
+    double ref = row_in[0];
+
     // Single-pass Welford
     double count = 0.0, mean = 0.0, M2 = 0.0;
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        double x = row_in[i];
+        double x = row_in[i] - ref;
         count += 1.0;
         double delta = x - mean;
         mean += delta / count;
@@ -304,11 +342,11 @@ __global__ void layer_norm_f64(
     }
     __syncthreads();
 
-    double final_mean = s_mean[0];
+    double shifted_mean = s_mean[0];
     double inv_std = rsqrt(s_M2[0] / s_count[0] + eps);
 
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        double normalized = (row_in[i] - final_mean) * inv_std;
+        double normalized = ((row_in[i] - ref) - shifted_mean) * inv_std;
         row_out[i] = normalized * weight[i] + bias[i];
     }
 }
@@ -365,10 +403,19 @@ __global__ void layer_norm_f16(
     const __half* row_in = input + row * hidden_size;
     __half* row_out = output + row * hidden_size;
 
+    // Shift every element by the row's first value before accumulating.
+    // `x - mean` cancels catastrophically when a row sits far from zero relative
+    // to its own spread, and that cancellation, not the reduction, is what costs
+    // the mantissa. Welford does NOT help: its mean is still a value of the
+    // row's own magnitude, so phase 2 cancels just the same. Mean, variance and
+    // the normalized value are all invariant under the shift in exact
+    // arithmetic, and the CPU kernels shift by the same element.
+    float ref = __half2float(row_in[0]);
+
     // Single-pass Welford with FP32 accumulation
     float count = 0.0f, mean = 0.0f, M2 = 0.0f;
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        float x = __half2float(row_in[i]);
+        float x = __half2float(row_in[i]) - ref;
         count += 1.0f;
         float delta = x - mean;
         mean += delta / count;
@@ -408,11 +455,11 @@ __global__ void layer_norm_f16(
     }
     __syncthreads();
 
-    float final_mean = s_mean[0];
+    float shifted_mean = s_mean[0];
     float inv_std = rsqrtf(s_M2[0] / s_count[0] + eps);
 
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        float normalized = (__half2float(row_in[i]) - final_mean) * inv_std;
+        float normalized = ((__half2float(row_in[i]) - ref) - shifted_mean) * inv_std;
         float result = normalized * __half2float(weight[i]) + __half2float(bias[i]);
         row_out[i] = __float2half(result);
     }
@@ -470,10 +517,19 @@ __global__ void layer_norm_bf16(
     const __nv_bfloat16* row_in = input + row * hidden_size;
     __nv_bfloat16* row_out = output + row * hidden_size;
 
+    // Shift every element by the row's first value before accumulating.
+    // `x - mean` cancels catastrophically when a row sits far from zero relative
+    // to its own spread, and that cancellation, not the reduction, is what costs
+    // the mantissa. Welford does NOT help: its mean is still a value of the
+    // row's own magnitude, so phase 2 cancels just the same. Mean, variance and
+    // the normalized value are all invariant under the shift in exact
+    // arithmetic, and the CPU kernels shift by the same element.
+    float ref = __bfloat162float(row_in[0]);
+
     // Single-pass Welford with FP32 accumulation
     float count = 0.0f, mean = 0.0f, M2 = 0.0f;
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        float x = __bfloat162float(row_in[i]);
+        float x = __bfloat162float(row_in[i]) - ref;
         count += 1.0f;
         float delta = x - mean;
         mean += delta / count;
@@ -513,11 +569,11 @@ __global__ void layer_norm_bf16(
     }
     __syncthreads();
 
-    float final_mean = s_mean[0];
+    float shifted_mean = s_mean[0];
     float inv_std = rsqrtf(s_M2[0] / s_count[0] + eps);
 
     for (unsigned int i = threadIdx.x; i < hidden_size; i += blockDim.x) {
-        float normalized = (__bfloat162float(row_in[i]) - final_mean) * inv_std;
+        float normalized = ((__bfloat162float(row_in[i]) - ref) - shifted_mean) * inv_std;
         float result = normalized * __bfloat162float(weight[i]) + __bfloat162float(bias[i]);
         row_out[i] = __float2bfloat16(result);
     }
@@ -547,25 +603,25 @@ __global__ void group_norm_f32(
     unsigned int group_size = channels_per_group * spatial;
     unsigned int c_start = g * channels_per_group;
 
-    // Phase 1: Compute mean
+    // Shift every element by the group's first value before accumulating.
+    // `x - mean` cancels catastrophically when a group sits far from zero
+    // relative to its own spread, and that cancellation, not the reduction, is
+    // what costs the mantissa. Mean, variance and the normalized value are all
+    // invariant under the shift in exact arithmetic.
+    float ref = input[(b * channels + c_start) * spatial];
+
+    // Phase 1: Mean of the shifted values
     float thread_sum = 0.0f;
     for (unsigned int idx = threadIdx.x; idx < group_size; idx += blockDim.x) {
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        thread_sum += input[offset];
+        thread_sum += input[offset] - ref;
     }
     mean_shared[threadIdx.x] = thread_sum;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            mean_shared[threadIdx.x] += mean_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    float mean = mean_shared[0] / group_size;
+    float shifted_mean = block_sum_reduce(mean_shared) / group_size;
     __syncthreads();
 
     // Phase 2: Compute variance
@@ -574,20 +630,13 @@ __global__ void group_norm_f32(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        float diff = input[offset] - mean;
+        float diff = (input[offset] - ref) - shifted_mean;
         thread_var += diff * diff;
     }
     var_shared[threadIdx.x] = thread_var;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            var_shared[threadIdx.x] += var_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    float inv_std = rsqrtf(var_shared[0] / group_size + eps);
+    float inv_std = rsqrtf(block_sum_reduce(var_shared) / group_size + eps);
     __syncthreads();
 
     // Phase 3: Normalize and apply affine transform
@@ -595,7 +644,7 @@ __global__ void group_norm_f32(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        float normalized = (input[offset] - mean) * inv_std;
+        float normalized = ((input[offset] - ref) - shifted_mean) * inv_std;
         output[offset] = normalized * weight[c] + bias[c];
     }
 }
@@ -621,25 +670,25 @@ __global__ void group_norm_f64(
     unsigned int group_size = channels_per_group * spatial;
     unsigned int c_start = g * channels_per_group;
 
-    // Phase 1: Compute mean
+    // Shift every element by the group's first value before accumulating.
+    // `x - mean` cancels catastrophically when a group sits far from zero
+    // relative to its own spread, and that cancellation, not the reduction, is
+    // what costs the mantissa. Mean, variance and the normalized value are all
+    // invariant under the shift in exact arithmetic.
+    double ref = input[(b * channels + c_start) * spatial];
+
+    // Phase 1: Mean of the shifted values
     double thread_sum = 0.0;
     for (unsigned int idx = threadIdx.x; idx < group_size; idx += blockDim.x) {
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        thread_sum += input[offset];
+        thread_sum += input[offset] - ref;
     }
     mean_shared[threadIdx.x] = thread_sum;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            mean_shared[threadIdx.x] += mean_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    double mean = mean_shared[0] / group_size;
+    double shifted_mean = block_sum_reduce(mean_shared) / group_size;
     __syncthreads();
 
     // Phase 2: Compute variance
@@ -648,20 +697,13 @@ __global__ void group_norm_f64(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        double diff = input[offset] - mean;
+        double diff = (input[offset] - ref) - shifted_mean;
         thread_var += diff * diff;
     }
     var_shared[threadIdx.x] = thread_var;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            var_shared[threadIdx.x] += var_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    double inv_std = rsqrt(var_shared[0] / group_size + eps);
+    double inv_std = rsqrt(block_sum_reduce(var_shared) / group_size + eps);
     __syncthreads();
 
     // Phase 3: Normalize and apply affine transform
@@ -669,7 +711,7 @@ __global__ void group_norm_f64(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        double normalized = (input[offset] - mean) * inv_std;
+        double normalized = ((input[offset] - ref) - shifted_mean) * inv_std;
         output[offset] = normalized * weight[c] + bias[c];
     }
 }
@@ -696,25 +738,25 @@ __global__ void group_norm_f16(
     unsigned int group_size = channels_per_group * spatial;
     unsigned int c_start = g * channels_per_group;
 
-    // Phase 1: Compute mean (FP32 accumulation)
+    // Shift every element by the group's first value before accumulating.
+    // `x - mean` cancels catastrophically when a group sits far from zero
+    // relative to its own spread, and that cancellation, not the reduction, is
+    // what costs the mantissa. Mean, variance and the normalized value are all
+    // invariant under the shift in exact arithmetic.
+    float ref = __half2float(input[(b * channels + c_start) * spatial]);
+
+    // Phase 1: Mean of the shifted values (FP32 accumulation)
     float thread_sum = 0.0f;
     for (unsigned int idx = threadIdx.x; idx < group_size; idx += blockDim.x) {
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        thread_sum += __half2float(input[offset]);
+        thread_sum += __half2float(input[offset]) - ref;
     }
     mean_shared[threadIdx.x] = thread_sum;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            mean_shared[threadIdx.x] += mean_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    float mean = mean_shared[0] / group_size;
+    float shifted_mean = block_sum_reduce(mean_shared) / group_size;
     __syncthreads();
 
     // Phase 2: Compute variance (FP32 accumulation)
@@ -723,20 +765,13 @@ __global__ void group_norm_f16(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        float diff = __half2float(input[offset]) - mean;
+        float diff = (__half2float(input[offset]) - ref) - shifted_mean;
         thread_var += diff * diff;
     }
     var_shared[threadIdx.x] = thread_var;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            var_shared[threadIdx.x] += var_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    float inv_std = rsqrtf(var_shared[0] / group_size + eps);
+    float inv_std = rsqrtf(block_sum_reduce(var_shared) / group_size + eps);
     __syncthreads();
 
     // Phase 3: Normalize and apply affine transform
@@ -744,7 +779,7 @@ __global__ void group_norm_f16(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        float normalized = (__half2float(input[offset]) - mean) * inv_std;
+        float normalized = ((__half2float(input[offset]) - ref) - shifted_mean) * inv_std;
         float result = normalized * __half2float(weight[c]) + __half2float(bias[c]);
         output[offset] = __float2half(result);
     }
@@ -772,25 +807,25 @@ __global__ void group_norm_bf16(
     unsigned int group_size = channels_per_group * spatial;
     unsigned int c_start = g * channels_per_group;
 
-    // Phase 1: Compute mean (FP32 accumulation)
+    // Shift every element by the group's first value before accumulating.
+    // `x - mean` cancels catastrophically when a group sits far from zero
+    // relative to its own spread, and that cancellation, not the reduction, is
+    // what costs the mantissa. Mean, variance and the normalized value are all
+    // invariant under the shift in exact arithmetic.
+    float ref = __bfloat162float(input[(b * channels + c_start) * spatial]);
+
+    // Phase 1: Mean of the shifted values (FP32 accumulation)
     float thread_sum = 0.0f;
     for (unsigned int idx = threadIdx.x; idx < group_size; idx += blockDim.x) {
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        thread_sum += __bfloat162float(input[offset]);
+        thread_sum += __bfloat162float(input[offset]) - ref;
     }
     mean_shared[threadIdx.x] = thread_sum;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            mean_shared[threadIdx.x] += mean_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    float mean = mean_shared[0] / group_size;
+    float shifted_mean = block_sum_reduce(mean_shared) / group_size;
     __syncthreads();
 
     // Phase 2: Compute variance (FP32 accumulation)
@@ -799,20 +834,13 @@ __global__ void group_norm_bf16(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        float diff = __bfloat162float(input[offset]) - mean;
+        float diff = (__bfloat162float(input[offset]) - ref) - shifted_mean;
         thread_var += diff * diff;
     }
     var_shared[threadIdx.x] = thread_var;
     __syncthreads();
 
-    // Reduce within block
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            var_shared[threadIdx.x] += var_shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    float inv_std = rsqrtf(var_shared[0] / group_size + eps);
+    float inv_std = rsqrtf(block_sum_reduce(var_shared) / group_size + eps);
     __syncthreads();
 
     // Phase 3: Normalize and apply affine transform
@@ -820,7 +848,7 @@ __global__ void group_norm_bf16(
         unsigned int c = c_start + (idx / spatial);
         unsigned int s = idx % spatial;
         unsigned int offset = (b * channels + c) * spatial + s;
-        float normalized = (__bfloat162float(input[offset]) - mean) * inv_std;
+        float normalized = ((__bfloat162float(input[offset]) - ref) - shifted_mean) * inv_std;
         float result = normalized * __bfloat162float(weight[c]) + __bfloat162float(bias[c]);
         output[offset] = __float2bfloat16(result);
     }

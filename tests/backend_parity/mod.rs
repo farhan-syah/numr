@@ -41,6 +41,7 @@ pub mod fp8_matmul;
 pub mod fused_elementwise;
 pub mod gemm_epilogue;
 pub mod gemm_epilogue_wmma;
+pub mod group_norm;
 pub mod indexing;
 pub mod indexing_advanced;
 pub mod int_accumulate_wgpu;
@@ -53,6 +54,7 @@ pub mod iterative_eigen;
 pub mod iterative_solvers;
 #[cfg(feature = "sparse")]
 pub mod iterative_solvers_advanced;
+pub mod layer_norm;
 pub mod linalg;
 pub mod logical;
 pub mod matmul;

@@ -112,20 +112,34 @@ pub unsafe fn layer_norm_scalar_f32(
     hidden_size: usize,
     eps: f32,
 ) {
+    // An empty row normalizes nothing, and the reference load below would read
+    // past an empty allocation.
+    if hidden_size == 0 {
+        return;
+    }
+
     for batch in 0..batch_size {
         let row_start = batch * hidden_size;
+
+        // Every element is shifted by the row's first value before it is
+        // accumulated. `x - mean` cancels catastrophically when a row sits far
+        // from zero relative to its own spread, which is where the accumulator's
+        // precision goes. Mean, variance and the normalized value are all
+        // invariant under the shift in exact arithmetic, and every other backend
+        // shifts by the same element.
+        let reference = *input.add(row_start);
 
         // Compute mean
         let mut sum = 0.0f32;
         for i in 0..hidden_size {
-            sum += *input.add(row_start + i);
+            sum += *input.add(row_start + i) - reference;
         }
-        let mean = sum / hidden_size as f32;
+        let shifted_mean = sum / hidden_size as f32;
 
         // Compute variance
         let mut var_sum = 0.0f32;
         for i in 0..hidden_size {
-            let diff = *input.add(row_start + i) - mean;
+            let diff = (*input.add(row_start + i) - reference) - shifted_mean;
             var_sum += diff * diff;
         }
         let inv_std = 1.0 / (var_sum / hidden_size as f32 + eps).sqrt();
@@ -135,7 +149,7 @@ pub unsafe fn layer_norm_scalar_f32(
             let x = *input.add(row_start + i);
             let w = *weight.add(i);
             let b = *bias.add(i);
-            *out.add(row_start + i) = (x - mean) * inv_std * w + b;
+            *out.add(row_start + i) = ((x - reference) - shifted_mean) * inv_std * w + b;
         }
     }
 }
@@ -151,18 +165,32 @@ pub unsafe fn layer_norm_scalar_f64(
     hidden_size: usize,
     eps: f64,
 ) {
+    // An empty row normalizes nothing, and the reference load below would read
+    // past an empty allocation.
+    if hidden_size == 0 {
+        return;
+    }
+
     for batch in 0..batch_size {
         let row_start = batch * hidden_size;
 
+        // Every element is shifted by the row's first value before it is
+        // accumulated. `x - mean` cancels catastrophically when a row sits far
+        // from zero relative to its own spread, which is where the accumulator's
+        // precision goes. Mean, variance and the normalized value are all
+        // invariant under the shift in exact arithmetic, and every other backend
+        // shifts by the same element.
+        let reference = *input.add(row_start);
+
         let mut sum = 0.0f64;
         for i in 0..hidden_size {
-            sum += *input.add(row_start + i);
+            sum += *input.add(row_start + i) - reference;
         }
-        let mean = sum / hidden_size as f64;
+        let shifted_mean = sum / hidden_size as f64;
 
         let mut var_sum = 0.0f64;
         for i in 0..hidden_size {
-            let diff = *input.add(row_start + i) - mean;
+            let diff = (*input.add(row_start + i) - reference) - shifted_mean;
             var_sum += diff * diff;
         }
         let inv_std = 1.0 / (var_sum / hidden_size as f64 + eps).sqrt();
@@ -171,7 +199,7 @@ pub unsafe fn layer_norm_scalar_f64(
             let x = *input.add(row_start + i);
             let w = *weight.add(i);
             let b = *bias.add(i);
-            *out.add(row_start + i) = (x - mean) * inv_std * w + b;
+            *out.add(row_start + i) = ((x - reference) - shifted_mean) * inv_std * w + b;
         }
     }
 }

@@ -244,21 +244,35 @@ unsafe fn layer_norm_kernel_scalar<T: Element>(
     let bias_slice = std::slice::from_raw_parts(bias, hidden_size);
     let eps = eps as f64;
 
+    // An empty row normalizes nothing, and the reference load below would read
+    // past an empty allocation.
+    if hidden_size == 0 {
+        return;
+    }
+
     for batch in 0..batch_size {
         let row_start = batch * hidden_size;
 
-        // Compute mean
+        // Every element is shifted by the row's first value before it is
+        // accumulated. `x - mean` cancels catastrophically when a row sits far
+        // from zero relative to its own spread, which is where the accumulator's
+        // precision goes. Mean, variance and the normalized value are all
+        // invariant under the shift in exact arithmetic, and the GPU kernels
+        // shift by the same element.
+        let reference = (*input.add(row_start)).to_f64();
+
+        // Compute the mean of the shifted values
         let mut sum = 0.0f64;
         for i in 0..hidden_size {
-            sum += (*input.add(row_start + i)).to_f64();
+            sum += (*input.add(row_start + i)).to_f64() - reference;
         }
-        let mean = sum / hidden_size as f64;
+        let shifted_mean = sum / hidden_size as f64;
 
         // Compute variance
         let mut var_sum = 0.0f64;
         for i in 0..hidden_size {
             let x = (*input.add(row_start + i)).to_f64();
-            let diff = x - mean;
+            let diff = (x - reference) - shifted_mean;
             var_sum += diff * diff;
         }
         let variance = var_sum / hidden_size as f64;
@@ -271,7 +285,7 @@ unsafe fn layer_norm_kernel_scalar<T: Element>(
             let x = (*input.add(row_start + i)).to_f64();
             let w = weight_slice[i].to_f64();
             let b = bias_slice[i].to_f64();
-            let result = (x - mean) * inv_std * w + b;
+            let result = ((x - reference) - shifted_mean) * inv_std * w + b;
             *out.add(row_start + i) = T::from_f64(result);
         }
     }
@@ -303,20 +317,34 @@ pub unsafe fn group_norm_kernel<T: Element>(
     let eps = eps as f64;
     let group_size = channels_per_group * spatial;
 
+    // An empty group normalizes nothing, and the reference load below would read
+    // past an empty allocation.
+    if group_size == 0 {
+        return;
+    }
+
     for b in 0..batch {
         for g in 0..num_groups {
             let c_start = g * channels_per_group;
 
-            // Compute mean over group
+            // Every element is shifted by the group's first value before it is
+            // accumulated. `x - mean` cancels catastrophically when a group sits
+            // far from zero relative to its own spread, and for F64 there is no
+            // wider accumulator to hide that in. Mean, variance and the
+            // normalized value are all invariant under the shift in exact
+            // arithmetic. The GPU kernels shift by the same element.
+            let reference = (*input.add((b * channels + c_start) * spatial)).to_f64();
+
+            // Compute the mean of the shifted values
             let mut sum = 0.0f64;
             for c in 0..channels_per_group {
                 let ch = c_start + c;
                 let offset = (b * channels + ch) * spatial;
                 for s in 0..spatial {
-                    sum += (*input.add(offset + s)).to_f64();
+                    sum += (*input.add(offset + s)).to_f64() - reference;
                 }
             }
-            let mean = sum / group_size as f64;
+            let shifted_mean = sum / group_size as f64;
 
             // Compute variance over group
             let mut var_sum = 0.0f64;
@@ -324,7 +352,7 @@ pub unsafe fn group_norm_kernel<T: Element>(
                 let ch = c_start + c;
                 let offset = (b * channels + ch) * spatial;
                 for s in 0..spatial {
-                    let diff = (*input.add(offset + s)).to_f64() - mean;
+                    let diff = ((*input.add(offset + s)).to_f64() - reference) - shifted_mean;
                     var_sum += diff * diff;
                 }
             }
@@ -338,7 +366,7 @@ pub unsafe fn group_norm_kernel<T: Element>(
                 let offset = (b * channels + ch) * spatial;
                 for s in 0..spatial {
                     let x = (*input.add(offset + s)).to_f64();
-                    let result = (x - mean) * inv_std * w + bi;
+                    let result = ((x - reference) - shifted_mean) * inv_std * w + bi;
                     *out.add(offset + s) = T::from_f64(result);
                 }
             }

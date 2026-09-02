@@ -122,13 +122,22 @@ fn layer_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let eps = ln_params.eps;
     let base_offset = batch_idx * hidden_size;
 
+    // Shift every element by the row's first value before accumulating.
+    // `x - mean` cancels catastrophically when a row sits far from zero relative
+    // to its own spread, and that cancellation, not the reduction, is what costs
+    // the mantissa. Welford does NOT help: its mean is still a value of the
+    // row's own magnitude, so step 3 cancels just the same. Mean, variance and
+    // the normalized value are all invariant under the shift in exact
+    // arithmetic, and f32 is all this backend has.
+    let ref_val = ln_input[base_offset];
+
     // Step 1: Per-thread Welford accumulation (single pass over input)
     var count: f32 = 0.0;
     var mean: f32 = 0.0;
     var m2: f32 = 0.0;
     var i: u32 = tid;
     while (i < hidden_size) {
-        let x = ln_input[base_offset + i];
+        let x = ln_input[base_offset + i] - ref_val;
         count = count + 1.0;
         let delta = x - mean;
         mean = mean + delta / count;
@@ -164,7 +173,7 @@ fn layer_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
         workgroupBarrier();
     }
 
-    let final_mean = ln_shared_mean[0];
+    let shifted_mean = ln_shared_mean[0];
     let variance = ln_shared_m2[0] / f32(hidden_size);
     let inv_std = 1.0 / sqrt(variance + eps);
     workgroupBarrier();
@@ -172,7 +181,7 @@ fn layer_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     // Step 3: Normalize and apply affine transformation (second pass over input)
     i = tid;
     while (i < hidden_size) {
-        let normalized = (ln_input[base_offset + i] - final_mean) * inv_std;
+        let normalized = (ln_input[base_offset + i] - ref_val - shifted_mean) * inv_std;
         ln_output[base_offset + i] = normalized * ln_weight[i] + ln_bias[i];
         i = i + WORKGROUP_SIZE;
     }
@@ -202,13 +211,22 @@ fn layer_norm_no_bias_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let eps = ln_nb_params.eps;
     let base_offset = batch_idx * hidden_size;
 
+    // Shift every element by the row's first value before accumulating.
+    // `x - mean` cancels catastrophically when a row sits far from zero relative
+    // to its own spread, and that cancellation, not the reduction, is what costs
+    // the mantissa. Welford does NOT help: its mean is still a value of the
+    // row's own magnitude, so step 3 cancels just the same. Mean, variance and
+    // the normalized value are all invariant under the shift in exact
+    // arithmetic, and f32 is all this backend has.
+    let ref_val = ln_nb_input[base_offset];
+
     // Step 1: Per-thread Welford accumulation (single pass)
     var count: f32 = 0.0;
     var mean: f32 = 0.0;
     var m2: f32 = 0.0;
     var i: u32 = tid;
     while (i < hidden_size) {
-        let x = ln_nb_input[base_offset + i];
+        let x = ln_nb_input[base_offset + i] - ref_val;
         count = count + 1.0;
         let delta = x - mean;
         mean = mean + delta / count;
@@ -243,7 +261,7 @@ fn layer_norm_no_bias_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
         workgroupBarrier();
     }
 
-    let final_mean = ln_shared_mean[0];
+    let shifted_mean = ln_shared_mean[0];
     let variance = ln_shared_m2[0] / f32(hidden_size);
     let inv_std = 1.0 / sqrt(variance + eps);
     workgroupBarrier();
@@ -251,7 +269,7 @@ fn layer_norm_no_bias_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     // Step 3: Normalize and apply weight only (second pass)
     i = tid;
     while (i < hidden_size) {
-        let normalized = (ln_nb_input[base_offset + i] - final_mean) * inv_std;
+        let normalized = (ln_nb_input[base_offset + i] - ref_val - shifted_mean) * inv_std;
         ln_nb_output[base_offset + i] = normalized * ln_nb_weight[i];
         i = i + WORKGROUP_SIZE;
     }
@@ -309,6 +327,14 @@ fn group_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let batch_offset = batch_id * channels * spatial;
     let group_offset = batch_offset + c_start * spatial;
 
+    // Shift every element by the group's first value before accumulating.
+    // `x - mean` cancels catastrophically when a group sits far from zero
+    // relative to its own spread, and that cancellation, not the reduction, is
+    // what costs the mantissa. Mean, variance and the normalized value are all
+    // invariant under the shift in exact arithmetic, and f32 is all this
+    // backend has.
+    let ref_val = gn_input[group_offset];
+
     // Step 1: Per-thread Welford accumulation (single pass)
     var count: f32 = 0.0;
     var mean: f32 = 0.0;
@@ -318,7 +344,7 @@ fn group_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
         let c_offset = i / spatial;
         let s_offset = i % spatial;
         let idx = group_offset + c_offset * spatial + s_offset;
-        let x = gn_input[idx];
+        let x = gn_input[idx] - ref_val;
         count = count + 1.0;
         let delta = x - mean;
         mean = mean + delta / count;
@@ -352,7 +378,7 @@ fn group_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
         workgroupBarrier();
     }
 
-    let final_mean = gn_shared_mean[0];
+    let shifted_mean = gn_shared_mean[0];
     let variance = gn_shared_m2[0] / f32(group_size);
     let inv_std = 1.0 / sqrt(variance + eps);
     workgroupBarrier();
@@ -364,7 +390,7 @@ fn group_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
         let s_offset = i % spatial;
         let idx = group_offset + c_offset * spatial + s_offset;
         let channel = c_start + c_offset;
-        let normalized = (gn_input[idx] - final_mean) * inv_std;
+        let normalized = (gn_input[idx] - ref_val - shifted_mean) * inv_std;
         gn_output[idx] = normalized * gn_weight[channel] + gn_bias[channel];
         i = i + WORKGROUP_SIZE;
     }

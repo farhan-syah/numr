@@ -33,15 +33,16 @@ fn norm_shared_elem_size(dtype: DType) -> u32 {
 /// Calculate launch configuration for normalization kernels.
 ///
 /// One block per row (batch element), with threads cooperating to compute statistics.
-/// Returns (grid_size, block_size, shared_memory_bytes).
+/// Returns (grid_size, block_size).
+///
+/// Shared memory is NOT returned: each kernel lays its reduction out differently
+/// (per-thread vs per-warp, one array vs two), so every launcher sizes it from
+/// what its own kernel indexes.
 #[inline]
-fn norm_launch_config(batch_size: usize, hidden_size: usize) -> (u32, u32, u32) {
+fn norm_launch_config(batch_size: usize, hidden_size: usize) -> (u32, u32) {
     let block_size = BLOCK_SIZE.min(hidden_size as u32);
     let grid_size = batch_size as u32;
-    // Shared memory: block_size floats for reduction
-    // For layer_norm we need 2x for mean and variance
-    let shared_mem = block_size * 4; // f32
-    (grid_size, block_size, shared_mem)
+    (grid_size, block_size)
 }
 
 /// Launch a RMSNorm (Root Mean Square Layer Normalization) kernel.
@@ -84,7 +85,7 @@ pub unsafe fn launch_rms_norm(
     unsafe {
         let module = get_or_load_module(context, device_index, kernel_names::NORM_MODULE)?;
 
-        let (grid_size, block_size, _) = norm_launch_config(batch_size, hidden_size);
+        let (grid_size, block_size) = norm_launch_config(batch_size, hidden_size);
 
         // RMSNorm is bandwidth-bound, so the two-pass kernel's second read of the
         // row is close to pure cost. Take the register-cached single-pass kernel
@@ -169,11 +170,16 @@ pub unsafe fn launch_layer_norm(
         let func_name = kernel_name("layer_norm", dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let (grid_size, block_size, shared_mem) = norm_launch_config(batch_size, hidden_size);
-        // Layer norm needs 2x shared memory for mean and variance
-        let shared_mem = shared_mem * 2;
+        let (grid_size, block_size) = norm_launch_config(batch_size, hidden_size);
+        // The Welford merge stores one [count, mean, M2] triple PER WARP, not per
+        // thread, so the kernel indexes `3 * ceil(blockDim.x / 32)` elements. A
+        // per-thread estimate is short of that for a single-warp block.
+        // Sized from the reduction's accumulator: the F64 kernel merges in `double`.
+        let num_warps = block_size.div_ceil(32);
+        let shared_mem = 3 * num_warps * norm_shared_elem_size(dtype);
         let batch = batch_size as u32;
         let hidden = hidden_size as u32;
+        let eps_f64 = eps as f64;
 
         let cfg = launch_config((grid_size, 1, 1), (block_size, 1, 1), shared_mem);
         let mut builder = stream.launch_builder(&func);
@@ -183,7 +189,13 @@ pub unsafe fn launch_layer_norm(
         builder.arg(&output_ptr);
         builder.arg(&batch);
         builder.arg(&hidden);
-        builder.arg(&eps);
+        // The F64 kernel takes a `double` eps; pushing the f32 would leave the
+        // upper half of the parameter unwritten.
+        if dtype == DType::F64 {
+            builder.arg(&eps_f64);
+        } else {
+            builder.arg(&eps);
+        }
 
         builder.launch(cfg).map_err(|e| {
             Error::Internal(format!("CUDA layer_norm kernel launch failed: {:?}", e))
@@ -248,14 +260,17 @@ pub unsafe fn launch_group_norm(
         let group_size = channels_per_group * spatial;
         let block_size = BLOCK_SIZE.min(group_size as u32);
 
-        // Shared memory: 2 * block_size floats for mean and variance reduction
-        let shared_mem = block_size * 2 * 4; // 2 floats per thread for f32
+        // The kernel splits its dynamic shared memory into two per-thread arrays,
+        // mean and variance, at `shared + blockDim.x`. Sized from the reduction's
+        // accumulator: the F64 kernel indexes doubles, not floats.
+        let shared_mem = block_size * 2 * norm_shared_elem_size(dtype);
 
         let batch_u32 = batch as u32;
         let channels_u32 = channels as u32;
         let spatial_u32 = spatial as u32;
         let num_groups_u32 = num_groups as u32;
         let channels_per_group_u32 = channels_per_group as u32;
+        let eps_f64 = eps as f64;
 
         let cfg = launch_config((grid_size, 1, 1), (block_size, 1, 1), shared_mem);
         let mut builder = stream.launch_builder(&func);
@@ -268,7 +283,13 @@ pub unsafe fn launch_group_norm(
         builder.arg(&spatial_u32);
         builder.arg(&num_groups_u32);
         builder.arg(&channels_per_group_u32);
-        builder.arg(&eps);
+        // The F64 kernel takes a `double` eps; pushing the f32 would leave the
+        // upper half of the parameter unwritten.
+        if dtype == DType::F64 {
+            builder.arg(&eps_f64);
+        } else {
+            builder.arg(&eps);
+        }
 
         builder.launch(cfg).map_err(|e| {
             Error::Internal(format!("CUDA group_norm kernel launch failed: {:?}", e))
