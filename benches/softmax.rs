@@ -10,7 +10,11 @@
 //! `inner_size` (the product of dims after the reduced one) is the axis the
 //! kernel parallelizes over, so shapes vary `inner_size` deliberately.
 
+// Every benchmark here targets a CUDA kernel, so without that feature the file
+// has no bodies and even the harness imports are unused.
+#[cfg(feature = "cuda")]
 use fluxbench::{Bencher, flux};
+#[cfg(feature = "cuda")]
 use std::hint::black_box;
 
 #[cfg(feature = "cuda")]

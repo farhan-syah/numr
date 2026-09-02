@@ -9,7 +9,11 @@
 //! comparable when the shape is held fixed. Shapes vary row width and row
 //! count independently so each can be isolated.
 
+// Every benchmark here targets a CUDA kernel, so without that feature the file
+// has no bodies and even the harness imports are unused.
+#[cfg(feature = "cuda")]
 use fluxbench::{Bencher, flux};
+#[cfg(feature = "cuda")]
 use std::hint::black_box;
 
 #[cfg(feature = "cuda")]

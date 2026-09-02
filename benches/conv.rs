@@ -7,7 +7,11 @@
 //! (`src/runtime/cuda/kernels/conv.rs`, `CONV1D_OC_BLOCK = 4`), else the scalar
 //! `conv1d` kernel. `conv_transpose1d` has no such split — one kernel for all shapes.
 
+// Every benchmark here targets a CUDA kernel, so without that feature the file
+// has no bodies and even the harness imports are unused.
+#[cfg(feature = "cuda")]
 use fluxbench::{Bencher, flux};
+#[cfg(feature = "cuda")]
 use std::hint::black_box;
 
 #[cfg(feature = "cuda")]

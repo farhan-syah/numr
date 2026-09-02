@@ -4,7 +4,11 @@
 //! CUDA-only: `src/runtime/cuda/kernels/gemm_epilogue/` has no other benchmark coverage,
 //! so a tile-config change on this path was previously unmeasurable.
 
+// Every benchmark here targets a CUDA kernel, so without that feature the file
+// has no bodies and even the harness imports are unused.
+#[cfg(feature = "cuda")]
 use fluxbench::{Bencher, flux};
+#[cfg(feature = "cuda")]
 use std::hint::black_box;
 
 #[cfg(feature = "cuda")]

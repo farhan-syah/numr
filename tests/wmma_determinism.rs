@@ -14,7 +14,9 @@
 //! Unaligned shapes drive the pad-then-slice path. Pad copies into a wider
 //! buffer, the kernel writes there, then a narrow copies the result back.
 
-#![cfg(feature = "cuda")]
+// Every test here compares f16/bf16 WMMA output, so the file needs the `f16`
+// feature as well as `cuda` — without it `half` is not even a dependency.
+#![cfg(all(feature = "cuda", feature = "f16"))]
 
 mod common;
 
