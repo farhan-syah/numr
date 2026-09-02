@@ -7,7 +7,7 @@
 #[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::*;
 
-use super::super::super::math::aarch64::neon::{exp_f32, exp_f64, tanh_f32};
+use super::super::super::math::aarch64::neon::{exp_f32, exp_f64, tanh_f32, tanh_f64};
 
 const F32_LANES: usize = 4;
 const F64_LANES: usize = 2;
@@ -161,13 +161,10 @@ pub unsafe fn gelu_mul_f64(a: *const f64, b: *const f64, out: *mut f64, len: usi
         let x_plus = vaddq_f64(x, tanh_coef_x_cubed);
         let inner = vmulq_f64(sqrt_2_over_pi, x_plus);
 
-        // tanh_inner = tanh(inner) - using exp-based approximation
-        // tanh(x) = (exp(2x) - 1) / (exp(2x) + 1)
-        let two_inner = vmulq_f64(vdupq_n_f64(2.0), inner);
-        let exp_2x = exp_f64(two_inner);
-        let exp_2x_minus_1 = vsubq_f64(exp_2x, one);
-        let exp_2x_plus_1 = vaddq_f64(exp_2x, one);
-        let tanh_inner = vdivq_f64(exp_2x_minus_1, exp_2x_plus_1);
+        // `(exp(2x) - 1)/(exp(2x) + 1)` is inf/inf once exp overflows, at
+        // |inner| > 354.9. tanh_f64 saturates to +-1 there, as the AVX2 and
+        // AVX-512 versions of this kernel already do.
+        let tanh_inner = tanh_f64(inner);
 
         // activation = 0.5 * x * (1 + tanh_inner)
         let one_plus = vaddq_f64(one, tanh_inner);
