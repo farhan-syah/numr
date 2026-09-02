@@ -17,6 +17,9 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 
+// Single-pass RMSNorm variants; the launcher picks them by row width.
+#include "rms_norm_regs.cuh"
+
 // ============================================================================
 // Welford merge helpers
 // ============================================================================

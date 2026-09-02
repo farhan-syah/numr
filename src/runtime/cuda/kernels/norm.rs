@@ -13,6 +13,23 @@ use super::loader::{
 use crate::dtype::DType;
 use crate::error::{Error, Result};
 
+/// Elements per thread the register-cached RMSNorm kernel holds.
+///
+/// Must stay equal to `NORM_MAX_REGS_PER_THREAD` in `kernels/rms_norm_regs.cuh`;
+/// the gate below is what keeps the launch inside the kernel's register array.
+const NORM_MAX_REGS_PER_THREAD: usize = 16;
+
+/// Shared-memory element size for a normalization reduction.
+///
+/// F64 reduces in `double`; f32, f16 and bf16 all reduce in `float`.
+#[inline]
+fn norm_shared_elem_size(dtype: DType) -> u32 {
+    match dtype {
+        DType::F64 => 8,
+        _ => 4,
+    }
+}
+
 /// Calculate launch configuration for normalization kernels.
 ///
 /// One block per row (batch element), with threads cooperating to compute statistics.
@@ -33,6 +50,10 @@ fn norm_launch_config(batch_size: usize, hidden_size: usize) -> (u32, u32, u32) 
 ///
 /// RMSNorm is used in LLaMA and other modern transformer architectures.
 /// It's simpler and faster than LayerNorm as it doesn't require computing mean.
+///
+/// Rows narrow enough to fit in a thread's register slice take the single-pass
+/// `rms_norm_regs` kernel, which reads the row once. Wider rows take the
+/// two-pass `rms_norm` kernel. Both accumulate in the same order.
 ///
 /// # Arguments
 ///
@@ -62,12 +83,29 @@ pub unsafe fn launch_rms_norm(
 ) -> Result<()> {
     unsafe {
         let module = get_or_load_module(context, device_index, kernel_names::NORM_MODULE)?;
-        let func_name = kernel_name("rms_norm", dtype);
+
+        let (grid_size, block_size, _) = norm_launch_config(batch_size, hidden_size);
+
+        // RMSNorm is bandwidth-bound, so the two-pass kernel's second read of the
+        // row is close to pure cost. Take the register-cached single-pass kernel
+        // whenever the row fits in each thread's register slice; wider rows would
+        // spill that array to local memory, so they keep the two-pass kernel.
+        let fits_in_regs = hidden_size <= NORM_MAX_REGS_PER_THREAD * block_size as usize;
+        let has_regs_kernel = matches!(dtype, DType::F32 | DType::F64 | DType::F16 | DType::BF16);
+        let base = if fits_in_regs && has_regs_kernel {
+            "rms_norm_regs"
+        } else {
+            "rms_norm"
+        };
+        let func_name = kernel_name(base, dtype);
         let func = get_kernel_function(&module, &func_name)?;
 
-        let (grid_size, block_size, shared_mem) = norm_launch_config(batch_size, hidden_size);
+        // Sized from the reduction's accumulator, not always f32: the F64 kernels
+        // index `blockDim.x` doubles of dynamic shared memory.
+        let shared_mem = block_size * norm_shared_elem_size(dtype);
         let batch = batch_size as u32;
         let hidden = hidden_size as u32;
+        let eps_f64 = eps as f64;
 
         let cfg = launch_config((grid_size, 1, 1), (block_size, 1, 1), shared_mem);
         let mut builder = stream.launch_builder(&func);
@@ -76,7 +114,13 @@ pub unsafe fn launch_rms_norm(
         builder.arg(&output_ptr);
         builder.arg(&batch);
         builder.arg(&hidden);
-        builder.arg(&eps);
+        // The F64 kernels take a `double` eps; pushing the f32 would leave the
+        // upper half of the parameter unwritten.
+        if dtype == DType::F64 {
+            builder.arg(&eps_f64);
+        } else {
+            builder.arg(&eps);
+        }
 
         builder
             .launch(cfg)

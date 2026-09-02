@@ -265,6 +265,7 @@ fn compile_cuda_kernels() {
         "rng_xorshift.cuh",
         "gemm_activation.cuh",
         "matmul_f32_tiled.cuh",
+        "rms_norm_regs.cuh",
         "matmul_wmma.cuh",
         "matmul_wmma_stage.cuh",
         "matmul_wmma_mma.cuh",
