@@ -186,7 +186,7 @@ pub mod cbrt_constants {
 // Breakpoints for the hyperbolic functions
 // ============================================================================
 
-/// Branch point shared by the f64 sinh and cosh paths.
+/// Branch point shared by the sinh and cosh paths.
 pub mod hyperbolic_breakpoints {
     /// Above this, both sinh and cosh are `0.5*exp(|x|)` to well within half an
     /// ulp, because `exp(-|x|)` is smaller than `exp(|x|)` by a factor of
@@ -196,13 +196,20 @@ pub mod hyperbolic_breakpoints {
     /// Taking `t = exp(|x|/2)` and forming `(0.5*t)*t` keeps every intermediate
     /// finite; `|x|/2` and `0.5*t` are both exact.
     pub const BIG_F64: f64 = 709.0;
+
+    /// The same breakpoint one precision down. `exp` overflows past
+    /// ln(f32::MAX) = 88.7228 while sinh and cosh stay finite up to 89.4159, so
+    /// without this branch every input in (88.7228, 89.4159] returns infinity
+    /// where the true result is a representable float. Above 88, `exp(-|x|)` is
+    /// smaller than `exp(|x|)` by a factor of e^-176 and contributes nothing.
+    pub const BIG_F32: f32 = 88.0;
 }
 
 // ============================================================================
 // Breakpoints for the inverse hyperbolic functions
 // ============================================================================
 
-/// Branch points shared by the f64 asinh, acosh and atanh paths.
+/// Branch points shared by the asinh, acosh and atanh paths.
 pub mod inv_hyperbolic_breakpoints {
     /// Above this, `sqrt(x² ± 1)` equals `|x|` in double, so asinh and acosh
     /// both collapse to `log(|x|) + ln(2)`. Squaring past it would also
@@ -219,6 +226,20 @@ pub mod inv_hyperbolic_breakpoints {
     /// Below it the `t + t*a/(1-a)` form keeps the low bits that forming
     /// `(1+x)/(1-x)` would round away — the whole result at small |x|.
     pub const ATANH_SPLIT_F64: f64 = 0.5;
+
+    /// The f32 analogue of `BIG_F64`: `sqrt(x² ± 1)` equals `|x|` in single
+    /// precision once `1/x² < 2^-24`, which holds from 2^12 up. The branch is
+    /// what keeps acosh and asinh correct at all: `x²` overflows f32 past
+    /// 1.8e19, and the mid branch would then feed infinity to the logarithm.
+    pub const BIG_F32: f32 = 4096.0; // 2^12
+
+    /// The f32 analogue of `NEAR_F64`, chosen for the same reason: the direct
+    /// `log(x + sqrt(x² ± 1))` cancels below it, and acosh's `x² - 1` loses
+    /// half the significant bits of `x - 1` near 1.
+    pub const NEAR_F32: f32 = 2.0;
+
+    /// The f32 analogue of `ATANH_SPLIT_F64`.
+    pub const ATANH_SPLIT_F32: f32 = 0.5;
 }
 
 // ============================================================================
@@ -228,29 +249,29 @@ pub mod inv_hyperbolic_breakpoints {
 /// Coefficients for log(1+f) where f is in [-0.2929, 0.4142]
 /// (i.e., mantissa normalized to [sqrt(2)/2, sqrt(2)])
 ///
-/// The f32 set is a direct polynomial in `f`.
-///
-/// The f64 set is a minimax polynomial in `s = f/(2+f)`, evaluated as
+/// Both sets are minimax polynomials in `s = f/(2+f)`, evaluated as
 ///   `log(1+f) = f - hfsq + s*(hfsq + R(s*s))`, with `hfsq = 0.5*f*f`.
-/// A direct polynomial in `f` is unusable at f64 precision: it is the Mercator
-/// series, whose truncation error after `n` terms is about `f^(n+1)/(n+1)`, so
-/// even nine terms leave ~1e-5 relative error at f = 0.4142 — eleven decimal
+/// A direct polynomial in `f` is the Mercator series, whose truncation error
+/// after `n` terms is about `f^(n+1)/(n+1)`: seven terms leave 1.1e-4 absolute
+/// error at f = 0.4142, and nine still leave ~1e-5 relative — eleven decimal
 /// digits short of double precision. Substituting `s` halves the argument
-/// magnitude and kills every even power, so seven terms hold the truncation
-/// error below 2^-58 over the whole interval.
+/// magnitude and kills every even power, so |s| stays under 0.1716 and the
+/// series converges in a handful of terms.
+///
+/// f32 truncates `R` at four terms, dropping `2/11 * s^12 ≈ 4e-9` absolute,
+/// which the following multiply by `s` shrinks another order of magnitude.
+/// f64 needs seven, which holds the truncation error below 2^-58.
 pub mod log_coefficients {
     /// ln(2) split head + correction, same role it plays in `exp`: the tail
     /// carries the bits that `n * ln(2)` drops for large exponents.
-    pub use super::exp_coefficients::{LN2_HI_F64, LN2_LO_F64};
+    pub use super::exp_coefficients::{LN2_HI_F32, LN2_HI_F64, LN2_LO_F32, LN2_LO_F64};
 
-    // f32 coefficients (7-term polynomial)
-    pub const C1_F32: f32 = 0.9999999995;
-    pub const C2_F32: f32 = -0.4999999206;
-    pub const C3_F32: f32 = 0.3333320848;
-    pub const C4_F32: f32 = -0.2500097652;
-    pub const C5_F32: f32 = 0.1999796621;
-    pub const C6_F32: f32 = -0.1666316004;
-    pub const C7_F32: f32 = 0.1428962594;
+    // f32 minimax coefficients for `R(z)` with `z = s*s`:
+    //   R = z*(LG1 + z*(LG2 + z*(LG3 + z*LG4)))
+    pub const LG1_F32: f32 = 6.666_666_269_302_368e-1;
+    pub const LG2_F32: f32 = 4.000_097_215_175_628_7e-1;
+    pub const LG3_F32: f32 = 2.849_878_668_785_095_2e-1;
+    pub const LG4_F32: f32 = 2.427_907_884_120_941_2e-1;
 
     // f64 minimax coefficients for `R(z)` with `z = s*s`, `w = z*z`:
     //   R = z*(LG1 + w*(LG3 + w*(LG5 + w*LG7))) + w*(LG2 + w*(LG4 + w*LG6))
@@ -270,6 +291,11 @@ pub mod log_coefficients {
     /// 2^54 clears the widest subnormal; the exponent is corrected by -54.
     pub const SUBNORMAL_SCALE_F64: f64 = 18_014_398_509_481_984.0; // 2^54
     pub const SUBNORMAL_SHIFT_F64: f64 = -54.0;
+
+    /// The same pre-scale for f32. 2^24 lifts the widest subnormal, 2^-149, to
+    /// 2^-125, which is normal; the exponent is corrected by -24.
+    pub const SUBNORMAL_SCALE_F32: f32 = 16_777_216.0; // 2^24
+    pub const SUBNORMAL_SHIFT_F32: f32 = -24.0;
 
     // IEEE 754 bit manipulation constants
     pub const EXP_BIAS_F32: i32 = 127;
@@ -405,20 +431,23 @@ pub const _EXP_ALGORITHM_DOC: () = ();
 /// 2. **Range normalization**: If m > √2, divide by 2 and increment n
 ///    - This keeps f = m - 1 in [-0.2929, 0.4142] for better polynomial convergence
 ///
-/// 3. **Polynomial approximation**: Compute log(1 + f)
-///    - f32: `log(1+f) ≈ f * (c₁ + f*(c₂ + ...))` (Horner's method)
-///    - f64: substitute `s = f/(2+f)` and evaluate
-///      `log(1+f) = f - (hfsq - s*(hfsq + R(s²)))` with `hfsq = f²/2`, which
-///      removes the even powers a direct series must otherwise carry
+/// 3. **Polynomial approximation**: Compute log(1 + f) in both precisions by
+///    substituting `s = f/(2+f)` and evaluating
+///    `log(1+f) = f - (hfsq - s*(hfsq + R(s²)))` with `hfsq = f²/2`, which
+///    removes the even powers a direct series must otherwise carry
 ///
 /// 4. **Reconstruction**: result = n * ln(2) + log(m), with ln(2) split
-///    head + tail for f64 so large exponents keep their low bits
+///    head + tail in both precisions so large exponents keep their low bits
 ///
 /// log2 and log10 reuse steps 1-3 and add the exact integer exponent back
 /// separately, which keeps exact powers of two exact.
 ///
+/// log1p never forms `1 + x` and takes its logarithm: the sum is split by
+/// Fast2Sum into an exact pair `u + c`, and `log1p(x) = log(u) + c/u` because
+/// `|c/u|` is below one ulp. Where `u` rounds to exactly 1, the answer is `x`.
+///
 /// # Accuracy
-/// - f32: Relative error < 1e-6 for positive inputs
+/// - f32: Relative error below 2 ulps for positive inputs
 /// - f64: Relative error below 2 ulps for positive inputs
 ///
 /// # Edge Cases
@@ -724,7 +753,7 @@ pub const _ASIN_ACOS_ALGORITHM_DOC: () = ();
 ///   their second operand for it
 pub const _EXP2_EXPM1_ALGORITHM_DOC: () = ();
 
-/// Algorithm for the f64 hyperbolic and inverse hyperbolic functions:
+/// Algorithm for the hyperbolic and inverse hyperbolic functions:
 ///
 /// Every one of them is written so that no step subtracts two nearly equal
 /// quantities. The naive forms all fail near zero, where the result itself is
@@ -733,7 +762,8 @@ pub const _EXP2_EXPM1_ALGORITHM_DOC: () = ();
 /// - `sinh(x) = sign(x) * (u + u/(1+u))/2`, `u = expm1(|x|)`
 /// - `tanh(x) = sign(x) * u/(u+2)`, `u = expm1(2|x|)`
 /// - `asinh(x) = sign(x) * log1p(a + a²/(1 + sqrt(1+a²)))` for `a = |x| <= 2`,
-///   `log(2a + 1/(sqrt(a²+1) + a))` up to 2^28, `log(a) + ln2` above
+///   `log(2a + 1/(sqrt(a²+1) + a))` up to the `BIG` breakpoint,
+///   `log(a) + ln2` above
 /// - `acosh(x) = log1p(t + sqrt(2t + t²))` with `t = x - 1` for x < 2, then the
 ///   same two wider branches as asinh
 /// - `atanh(x) = sign(x) * 0.5 * log1p(t + t*a/(1-a))` with `t = 2a` for
@@ -742,7 +772,13 @@ pub const _EXP2_EXPM1_ALGORITHM_DOC: () = ();
 /// The sign is carried by the sign bit rather than by negating the argument,
 /// so ±0 survives.
 ///
+/// The widest branch is load-bearing, not an optimization: past 1.8e19 in f32
+/// and 1.3e154 in f64, `x²` overflows, and the middle branch would hand the
+/// logarithm an infinity where the true result is an ordinary number near
+/// `log(2x)`.
+///
 /// # Accuracy
+/// - f32: relative error below 2 ulps, on the same terms as f64 below
 /// - f64: relative error below 2 ulps, including at |x| down to the subnormal
 ///   range, where sinh(x), tanh(x), asinh(x) and atanh(x) all equal x
 ///
@@ -753,6 +789,7 @@ pub const _EXP2_EXPM1_ALGORITHM_DOC: () = ();
 /// - NaN propagates through every branch
 ///
 /// # Input Range Warning
-/// sinh saturates where `expm1` does: |x| past 710 returns ±inf, which is the
-/// correct value, but the last binade below it inherits `expm1`'s own clamp.
+/// sinh saturates where `expm1` does: |x| past 710 in f64 and past 89.4159 in
+/// f32 returns ±inf, which is the correct value, but the last binade below it
+/// inherits `expm1`'s own clamp.
 pub const _HYPERBOLIC_ALGORITHM_DOC: () = ();

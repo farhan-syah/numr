@@ -10,7 +10,7 @@
 //! | Function | f32 | f64 | Algorithm |
 //! |----------|-----|-----|-----------|
 //! | exp      | ✓   | ✓   | Range reduction + Taylor series |
-//! | tanh     | ✓   | ✓   | f32 (e^2x - 1)/(e^2x + 1); f64 u/(u+2), u = expm1(2\|x\|) |
+//! | tanh     | ✓   | ✓   | u/(u+2), u = expm1(2\|x\|) |
 //! | log      | ✓   | ✓   | Exponent extraction + minimax polynomial |
 //! | sin      | ✓   | ✓   | Range reduction + Taylor series |
 //! | cos      | ✓   | ✓   | sin(x + π/2) |
@@ -26,7 +26,8 @@
 //! # Accuracy
 //!
 //! These approximations prioritize speed over full IEEE precision:
-//! - Relative error: < 1e-6 for f32, < 1e-12 for f64
+//! - Relative error: below 2 ulps for the exp, log and hyperbolic families in
+//!   both precisions
 //! - Valid input range: the whole representable domain for exp in both
 //!   precisions, [-104, ln(f32::MAX)] and [-745, ln(f64::MAX)]
 //! - Trigonometric functions: Accurate for |x| < 2^20; larger inputs may lose precision
