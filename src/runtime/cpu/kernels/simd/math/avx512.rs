@@ -7,7 +7,7 @@
 //!
 //! | Function | f32 | f64 | Relative Error |
 //! |----------|-----|-----|----------------|
-//! | exp      | ✓   | ✓   | < 1e-6 / 1e-12 |
+//! | exp      | ✓   | ✓   | 1 ulp / 1e-12 |
 //! | tanh     | ✓   | ✓   | < 1e-6 / 2 ulp |
 //! | log      | ✓   | ✓   | < 1e-6 / 2 ulp |
 //! | sin      | ✓   | ✓   | < 1e-6 / 4 ulp |
@@ -32,8 +32,10 @@
 //! truncated Taylor series, so they are far coarser than f32 epsilon.
 //!
 //! exp2, expm1, sinh, tanh, asinh, acosh and atanh hold below 2 ulps in f64.
-//! Their f32 counterparts still compose from `exp` and `log` and cancel at
-//! small arguments, where the result is the difference that vanishes.
+//! The f32 exp, exp2, expm1 and cbrt hold below 2 ulps as well, each over its
+//! whole representable range. The remaining f32 hyperbolics still compose from
+//! `exp` and `log` and cancel at small arguments, where the result is the
+//! difference that vanishes.
 //!
 //! # Safety
 //!
@@ -49,7 +51,7 @@
 use std::arch::x86_64::*;
 
 use super::common::{
-    asin_coefficients, atan_coefficients, exp_coefficients, exp2_coefficients,
+    asin_coefficients, atan_coefficients, cbrt_constants, exp_coefficients, exp2_coefficients,
     inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients, trig_coefficients,
 };
 
@@ -68,55 +70,41 @@ use super::common::{
 pub unsafe fn exp_f32(x: __m512) -> __m512 {
     use exp_coefficients::*;
 
-    let log2e = _mm512_set1_ps(std::f32::consts::LOG2_E);
-    let ln2 = _mm512_set1_ps(std::f32::consts::LN_2);
+    // The bound is the FIRST operand: max/min return their second operand when
+    // either is NaN, so this order lets a NaN input through instead of
+    // replacing it with the clamp bound.
+    let xc = _mm512_max_ps(_mm512_set1_ps(MIN_F32), x);
+    let xc = _mm512_min_ps(_mm512_set1_ps(MAX_F32), xc);
 
-    let c0 = _mm512_set1_ps(C0_F32);
-    let c1 = _mm512_set1_ps(C1_F32);
-    let c2 = _mm512_set1_ps(C2_F32);
-    let c3 = _mm512_set1_ps(C3_F32);
-    let c4 = _mm512_set1_ps(C4_F32);
-    let c5 = _mm512_set1_ps(C5_F32);
-    let c6 = _mm512_set1_ps(C6_F32);
-
-    // Clamp input to avoid overflow/underflow
-    let x = _mm512_max_ps(x, _mm512_set1_ps(MIN_F32));
-    let x = _mm512_min_ps(x, _mm512_set1_ps(MAX_F32));
-
-    // y = x * log2(e)
-    let y = _mm512_mul_ps(x, log2e);
-
-    // n = round(y)
+    let y = _mm512_mul_ps(xc, _mm512_set1_ps(std::f32::consts::LOG2_E));
     let n = _mm512_roundscale_ps::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(y);
 
-    // f = y - n (fractional part)
-    let f = _mm512_sub_ps(y, n);
+    // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F32 is exact
+    let r = _mm512_fnmadd_ps(n, _mm512_set1_ps(LN2_HI_F32), xc);
+    let r = _mm512_fnmadd_ps(n, _mm512_set1_ps(LN2_LO_F32), r);
 
-    // r = f * ln(2)
-    let r = _mm512_mul_ps(f, ln2);
+    // Horner: one rounding per term, and no r^k powers to lose bits in
+    let mut poly = _mm512_set1_ps(C7_F32);
+    poly = _mm512_fmadd_ps(poly, r, _mm512_set1_ps(C6_F32));
+    poly = _mm512_fmadd_ps(poly, r, _mm512_set1_ps(C5_F32));
+    poly = _mm512_fmadd_ps(poly, r, _mm512_set1_ps(C4_F32));
+    poly = _mm512_fmadd_ps(poly, r, _mm512_set1_ps(C3_F32));
+    poly = _mm512_fmadd_ps(poly, r, _mm512_set1_ps(C2_F32));
+    poly = _mm512_fmadd_ps(poly, r, _mm512_set1_ps(C1_F32));
+    poly = _mm512_fmadd_ps(poly, r, _mm512_set1_ps(C0_F32));
 
-    // Polynomial approximation
-    let r2 = _mm512_mul_ps(r, r);
-    let r3 = _mm512_mul_ps(r2, r);
-    let r4 = _mm512_mul_ps(r2, r2);
-    let r5 = _mm512_mul_ps(r4, r);
-    let r6 = _mm512_mul_ps(r4, r2);
-
-    let mut poly = c0;
-    poly = _mm512_fmadd_ps(c1, r, poly);
-    poly = _mm512_fmadd_ps(c2, r2, poly);
-    poly = _mm512_fmadd_ps(c3, r3, poly);
-    poly = _mm512_fmadd_ps(c4, r4, poly);
-    poly = _mm512_fmadd_ps(c5, r5, poly);
-    poly = _mm512_fmadd_ps(c6, r6, poly);
-
-    // Compute 2^n using IEEE 754 bit manipulation
+    // 2^n as two halved powers of two. 2^128 on its own is infinity, yet the
+    // largest finite result needs it; splitting keeps both factors normal, so
+    // an overflow reaches infinity in the second multiply and a subnormal
+    // result takes exactly one rounding.
     let n_i32 = _mm512_cvtps_epi32(n);
+    let n_hi = _mm512_srai_epi32::<1>(n_i32);
+    let n_lo = _mm512_sub_epi32(n_i32, n_hi);
     let bias = _mm512_set1_epi32(127);
-    let exp_bits = _mm512_slli_epi32::<23>(_mm512_add_epi32(n_i32, bias));
-    let pow2n = _mm512_castsi512_ps(exp_bits);
+    let p_hi = _mm512_castsi512_ps(_mm512_slli_epi32::<23>(_mm512_add_epi32(n_hi, bias)));
+    let p_lo = _mm512_castsi512_ps(_mm512_slli_epi32::<23>(_mm512_add_epi32(n_lo, bias)));
 
-    _mm512_mul_ps(pow2n, poly)
+    _mm512_mul_ps(_mm512_mul_ps(poly, p_hi), p_lo)
 }
 
 /// Fast SIMD exp approximation for f64 using AVX-512
@@ -205,7 +193,14 @@ pub unsafe fn tanh_f32(x: __m512) -> __m512 {
     let two = _mm512_set1_ps(2.0);
     let one = _mm512_set1_ps(1.0);
 
-    let exp2x = exp_f32(_mm512_mul_ps(two, x));
+    // exp overflows past 89, and inf/inf below would be NaN. |2x| = 20 already
+    // puts the quotient within 5e-9 of ±1, which rounds to ±1 in f32, so the
+    // clamp costs nothing. The bound leads so that NaN survives it.
+    let t = _mm512_mul_ps(two, x);
+    let t = _mm512_min_ps(_mm512_set1_ps(20.0), t);
+    let t = _mm512_max_ps(_mm512_set1_ps(-20.0), t);
+
+    let exp2x = exp_f32(t);
     let num = _mm512_sub_ps(exp2x, one);
     let den = _mm512_add_ps(exp2x, one);
 
@@ -917,11 +912,43 @@ pub unsafe fn rsqrt_f64(x: __m512d) -> __m512d {
 }
 
 /// Fast SIMD exp2 (2^x) for f32 using AVX-512
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. Handing `x * ln2` to `exp_f32`
+/// rounds a value as large as 128 before the exponential, which the
+/// exponential turns into 5e-6 of relative error — forty ulps.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn exp2_f32(x: __m512) -> __m512 {
-    let ln2 = _mm512_set1_ps(std::f32::consts::LN_2);
-    exp_f32(_mm512_mul_ps(x, ln2))
+    use exp_coefficients::{C0_F32, C1_F32, C2_F32, C3_F32, C4_F32, C5_F32, C6_F32, C7_F32};
+    use exp2_coefficients::{MAX_F32, MIN_F32};
+
+    // The bound leads so that max/min let NaN through; see `exp_f32`.
+    let xc = _mm512_max_ps(_mm512_set1_ps(MIN_F32), x);
+    let xc = _mm512_min_ps(_mm512_set1_ps(MAX_F32), xc);
+
+    // n and r are both exact, so the reduction itself costs nothing.
+    let n = _mm512_roundscale_ps::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(xc);
+    let r = _mm512_sub_ps(xc, n);
+    let rl = _mm512_mul_ps(r, _mm512_set1_ps(std::f32::consts::LN_2));
+
+    let mut poly = _mm512_set1_ps(C7_F32);
+    poly = _mm512_fmadd_ps(poly, rl, _mm512_set1_ps(C6_F32));
+    poly = _mm512_fmadd_ps(poly, rl, _mm512_set1_ps(C5_F32));
+    poly = _mm512_fmadd_ps(poly, rl, _mm512_set1_ps(C4_F32));
+    poly = _mm512_fmadd_ps(poly, rl, _mm512_set1_ps(C3_F32));
+    poly = _mm512_fmadd_ps(poly, rl, _mm512_set1_ps(C2_F32));
+    poly = _mm512_fmadd_ps(poly, rl, _mm512_set1_ps(C1_F32));
+    poly = _mm512_fmadd_ps(poly, rl, _mm512_set1_ps(C0_F32));
+
+    // Two halved powers of two, as in `exp_f32`.
+    let n_i32 = _mm512_cvtps_epi32(n);
+    let n_hi = _mm512_srai_epi32::<1>(n_i32);
+    let n_lo = _mm512_sub_epi32(n_i32, n_hi);
+    let bias = _mm512_set1_epi32(127);
+    let p_hi = _mm512_castsi512_ps(_mm512_slli_epi32::<23>(_mm512_add_epi32(n_hi, bias)));
+    let p_lo = _mm512_castsi512_ps(_mm512_slli_epi32::<23>(_mm512_add_epi32(n_lo, bias)));
+
+    _mm512_mul_ps(_mm512_mul_ps(poly, p_hi), p_lo)
 }
 
 /// Fast SIMD exp2 (2^x) for f64 using AVX-512
@@ -981,25 +1008,55 @@ pub unsafe fn exp2_f64(x: __m512d) -> __m512d {
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f32 using AVX-512
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. A degree-4 Taylor series on
+/// |x| <= 0.5 drops `x⁵/120`, which is 2.6e-4 at the interval edge — over two
+/// thousand ulps — and `exp(x) - 1` above it cancels the whole result away.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn expm1_f32(x: __m512) -> __m512 {
-    let one = _mm512_set1_ps(1.0);
-    let half = _mm512_set1_ps(0.5);
-    let abs_x = _mm512_abs_ps(x);
+    use exp_coefficients::*;
 
-    // Taylor series for small |x|
-    let x2 = _mm512_mul_ps(x, x);
-    let x3 = _mm512_mul_ps(x2, x);
-    let x4 = _mm512_mul_ps(x2, x2);
-    let c2 = _mm512_set1_ps(0.5);
-    let c3 = _mm512_set1_ps(1.0 / 6.0);
-    let c4 = _mm512_set1_ps(1.0 / 24.0);
-    let taylor = _mm512_fmadd_ps(c4, x4, _mm512_fmadd_ps(c3, x3, _mm512_fmadd_ps(c2, x2, x)));
+    // The bound leads so that max/min let NaN through; see `exp_f32`.
+    let xc = _mm512_max_ps(_mm512_set1_ps(EXPM1_MIN_F32), x);
+    let xc = _mm512_min_ps(_mm512_set1_ps(EXPM1_MAX_F32), xc);
 
-    let exp_result = _mm512_sub_ps(exp_f32(x), one);
-    let mask = _mm512_cmp_ps_mask::<_CMP_GT_OQ>(abs_x, half);
-    _mm512_mask_blend_ps(mask, taylor, exp_result)
+    let y = _mm512_mul_ps(xc, _mm512_set1_ps(std::f32::consts::LOG2_E));
+    let n = _mm512_roundscale_ps::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(y);
+
+    // Cody-Waite reduction, identical to exp_f32: r = x - n*ln2, |r| <= ln2/2.
+    let r = _mm512_fnmadd_ps(n, _mm512_set1_ps(LN2_HI_F32), xc);
+    let r = _mm512_fnmadd_ps(n, _mm512_set1_ps(LN2_LO_F32), r);
+
+    // Q is the exp series from its r² term up, so expm1(r) = r + r²*Q(r) keeps
+    // r itself outside the polynomial and never rounds against a leading 1.
+    let mut q = _mm512_set1_ps(C7_F32);
+    q = _mm512_fmadd_ps(q, r, _mm512_set1_ps(C6_F32));
+    q = _mm512_fmadd_ps(q, r, _mm512_set1_ps(C5_F32));
+    q = _mm512_fmadd_ps(q, r, _mm512_set1_ps(C4_F32));
+    q = _mm512_fmadd_ps(q, r, _mm512_set1_ps(C3_F32));
+    q = _mm512_fmadd_ps(q, r, _mm512_set1_ps(C2_F32));
+    let e = _mm512_fmadd_ps(_mm512_mul_ps(r, r), q, r);
+
+    // 2^n*(1+E) - 1 = 2*(t*E + (t - 0.5)) with t = 2^(n-1). t and t - 0.5 are
+    // both exact, and the halved scale keeps n = 128 representable, so an
+    // overflow happens in the final doubling rather than in 2^n.
+    let n_i32 = _mm512_cvtps_epi32(n);
+    let bias = _mm512_set1_epi32(127 - 1);
+    let t = _mm512_castsi512_ps(_mm512_slli_epi32::<23>(_mm512_add_epi32(n_i32, bias)));
+    let out = _mm512_mul_ps(
+        _mm512_set1_ps(2.0),
+        _mm512_fmadd_ps(t, e, _mm512_sub_ps(t, _mm512_set1_ps(0.5))),
+    );
+
+    // At n = 0 the scale is exactly 1 and the answer is E itself. Taking it
+    // directly matters for a subnormal E, where the halved form's `0.5 * E`
+    // rounds the last bit to even and loses the whole value.
+    let zero = _mm512_setzero_ps();
+    let out = _mm512_mask_blend_ps(_mm512_cmp_ps_mask::<_CMP_EQ_OQ>(n, zero), out, e);
+
+    // expm1(±0) = ±0, which the reduction would otherwise return as +0.
+    _mm512_mask_blend_ps(_mm512_cmp_ps_mask::<_CMP_EQ_OQ>(x, zero), out, x)
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f64 using AVX-512
@@ -1473,9 +1530,16 @@ pub unsafe fn acos_f64(x: __m512d) -> __m512d {
 }
 
 /// Fast SIMD cbrt (cube root) for f32 using AVX-512
+///
+/// See `common::cbrt_constants`. The seed divides the whole bit pattern of
+/// |x| by three, mantissa included, which lands within 3.3%; two Halley steps
+/// then cube that error twice over. Seeding from `exp(log(|x|)/3)` instead
+/// inherits the coarse f32 log, and costs two transcendentals to do it.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn cbrt_f32(x: __m512) -> __m512 {
+    use cbrt_constants::*;
+
     // Bit masks are applied through the integer domain: `_mm512_and_si512` and
     // `_mm512_andnot_si512` are AVX-512F, while `_mm512_and_ps`/`_mm512_andnot_ps`
     // require AVX-512DQ, which `detect_simd` does not check for. The casts are
@@ -1485,22 +1549,48 @@ pub unsafe fn cbrt_f32(x: __m512) -> __m512 {
     let x_bits = _mm512_castps_si512(x);
     let sign = _mm512_and_si512(x_bits, sign_bit);
     let abs_x = _mm512_castsi512_ps(_mm512_andnot_si512(sign_bit, x_bits));
+    let one = _mm512_set1_ps(1.0);
 
-    let one_third = _mm512_set1_ps(1.0 / 3.0);
-    let log_x = log_f32(abs_x);
-    let guess = exp_f32(_mm512_mul_ps(log_x, one_third));
+    // Move the two ends of the range into the middle: the iteration forms
+    // x + 2*t³, which overflows near f32::MAX, and the seed assumes an
+    // implicit leading 1, which a subnormal does not have. Both shifts are
+    // 2^96, a power of two whose exponent is a multiple of three, so undoing
+    // them on the result is exact.
+    let big = _mm512_cmp_ps_mask::<_CMP_GE_OQ>(abs_x, _mm512_set1_ps(BIG_F32));
+    let small = _mm512_cmp_ps_mask::<_CMP_LT_OQ>(abs_x, _mm512_set1_ps(SMALL_F32));
+    let s_in = _mm512_mask_blend_ps(small, one, _mm512_set1_ps(SCALE_UP_F32));
+    let s_in = _mm512_mask_blend_ps(big, s_in, _mm512_set1_ps(SCALE_DOWN_F32));
+    let s_out = _mm512_mask_blend_ps(small, one, _mm512_set1_ps(UNSCALE_DOWN_F32));
+    let s_out = _mm512_mask_blend_ps(big, s_out, _mm512_set1_ps(UNSCALE_UP_F32));
+    let a = _mm512_mul_ps(abs_x, s_in);
 
-    let two = _mm512_set1_ps(2.0);
-    let three = _mm512_set1_ps(3.0);
+    // Seed: t = bits(a)/3 + B1, read back as a float. The integer-to-float
+    // conversion drops the low bits of the bit pattern, which is worth 1e-5
+    // of relative error against a seed that is already only good to 3.3%.
+    let a_bits = _mm512_cvtepi32_ps(_mm512_castps_si512(a));
+    let q = _mm512_fmadd_ps(a_bits, _mm512_set1_ps(1.0 / 3.0), _mm512_set1_ps(B1_F32));
+    let t = _mm512_castsi512_ps(_mm512_cvtps_epi32(q));
 
-    let y = guess;
-    let y2 = _mm512_mul_ps(y, y);
-    let y_new = _mm512_div_ps(_mm512_fmadd_ps(two, y, _mm512_div_ps(abs_x, y2)), three);
+    // Halley: t*(2a + t³)/(a + 2t³), whose error cubes each step.
+    let r = _mm512_mul_ps(_mm512_mul_ps(t, t), t);
+    let num = _mm512_add_ps(_mm512_add_ps(a, a), r);
+    let den = _mm512_add_ps(_mm512_add_ps(a, r), r);
+    let t = _mm512_mul_ps(t, _mm512_div_ps(num, den));
 
-    let y2 = _mm512_mul_ps(y_new, y_new);
-    let result = _mm512_div_ps(_mm512_fmadd_ps(two, y_new, _mm512_div_ps(abs_x, y2)), three);
+    let r = _mm512_mul_ps(_mm512_mul_ps(t, t), t);
+    let num = _mm512_add_ps(_mm512_add_ps(a, a), r);
+    let den = _mm512_add_ps(_mm512_add_ps(a, r), r);
+    let t = _mm512_mul_ps(t, _mm512_div_ps(num, den));
 
-    _mm512_castsi512_ps(_mm512_or_si512(_mm512_castps_si512(result), sign))
+    let scaled = _mm512_castps_si512(_mm512_mul_ps(t, s_out));
+    let out = _mm512_castsi512_ps(_mm512_or_si512(scaled, sign));
+
+    // ±0, ±inf and NaN are their own cube roots, and none of them survives the
+    // iteration: zero divides zero and infinity subtracts infinity.
+    let zero = _mm512_setzero_ps();
+    let ordinary = _mm512_cmp_ps_mask::<_CMP_GT_OQ>(abs_x, zero)
+        & _mm512_cmp_ps_mask::<_CMP_LT_OQ>(abs_x, _mm512_set1_ps(f32::INFINITY));
+    _mm512_mask_blend_ps(ordinary, x, out)
 }
 
 /// Fast SIMD cbrt (cube root) for f64 using AVX-512

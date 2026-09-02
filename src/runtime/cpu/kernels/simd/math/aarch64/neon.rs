@@ -7,7 +7,7 @@
 //!
 //! | Function | f32 | f64 | Relative Error |
 //! |----------|-----|-----|----------------|
-//! | exp      | 4   | 2   | < 1e-6 / 1e-12 |
+//! | exp      | 4   | 2   | 1 ulp / 1e-12 |
 //! | tanh     | 4   | 2   | < 1e-6 / 2 ulp |
 //! | log      | 4   | 2   | < 1e-6 / 2 ulp |
 //! | sin      | 4   | 2   | < 1e-6 / 4 ulp |
@@ -32,8 +32,10 @@
 //! truncated Taylor series, so they are far coarser than f32 epsilon.
 //!
 //! exp2, expm1, sinh, tanh, asinh, acosh and atanh hold below 2 ulps in f64.
-//! Their f32 counterparts still compose from `exp` and `log` and cancel at
-//! small arguments, where the result is the difference that vanishes.
+//! The f32 exp, exp2, expm1 and cbrt hold below 2 ulps as well, each over its
+//! whole representable range. The remaining f32 hyperbolics still compose from
+//! `exp` and `log` and cancel at small arguments, where the result is the
+//! difference that vanishes.
 //!
 //! # Safety
 //!
@@ -43,7 +45,7 @@
 use std::arch::aarch64::*;
 
 use super::super::common::{
-    asin_coefficients, atan_coefficients, exp_coefficients, exp2_coefficients,
+    asin_coefficients, atan_coefficients, cbrt_constants, exp_coefficients, exp2_coefficients,
     inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients, trig_coefficients,
 };
 
@@ -129,57 +131,40 @@ pub unsafe fn hmin_f64(v: float64x2_t) -> f64 {
 pub unsafe fn exp_f32(x: float32x4_t) -> float32x4_t {
     use exp_coefficients::*;
 
-    let log2e = vdupq_n_f32(std::f32::consts::LOG2_E);
-    let ln2 = vdupq_n_f32(std::f32::consts::LN_2);
+    // FMAX/FMIN propagate NaN, so the clamp needs no NaN repair here; the x86
+    // paths order the operands to get the same behaviour out of maxps/minps.
+    let xc = vmaxq_f32(x, vdupq_n_f32(MIN_F32));
+    let xc = vminq_f32(xc, vdupq_n_f32(MAX_F32));
 
-    let c0 = vdupq_n_f32(C0_F32);
-    let c1 = vdupq_n_f32(C1_F32);
-    let c2 = vdupq_n_f32(C2_F32);
-    let c3 = vdupq_n_f32(C3_F32);
-    let c4 = vdupq_n_f32(C4_F32);
-    let c5 = vdupq_n_f32(C5_F32);
-    let c6 = vdupq_n_f32(C6_F32);
-
-    // Clamp input to avoid overflow/underflow
-    let x = vmaxq_f32(x, vdupq_n_f32(MIN_F32));
-    let x = vminq_f32(x, vdupq_n_f32(MAX_F32));
-
-    // y = x * log2(e)
-    let y = vmulq_f32(x, log2e);
-
-    // n = round(y) - integer part
+    let y = vmulq_f32(xc, vdupq_n_f32(std::f32::consts::LOG2_E));
     let n = vrndnq_f32(y);
 
-    // f = y - n - fractional part in [-0.5, 0.5]
-    let f = vsubq_f32(y, n);
+    // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F32 is exact
+    let r = vfmsq_f32(xc, n, vdupq_n_f32(LN2_HI_F32));
+    let r = vfmsq_f32(r, n, vdupq_n_f32(LN2_LO_F32));
 
-    // r = f * ln(2) - convert back to natural log scale
-    let r = vmulq_f32(f, ln2);
+    // Horner: one rounding per term, and no r^k powers to lose bits in
+    let mut poly = vdupq_n_f32(C7_F32);
+    poly = vfmaq_f32(vdupq_n_f32(C6_F32), poly, r);
+    poly = vfmaq_f32(vdupq_n_f32(C5_F32), poly, r);
+    poly = vfmaq_f32(vdupq_n_f32(C4_F32), poly, r);
+    poly = vfmaq_f32(vdupq_n_f32(C3_F32), poly, r);
+    poly = vfmaq_f32(vdupq_n_f32(C2_F32), poly, r);
+    poly = vfmaq_f32(vdupq_n_f32(C1_F32), poly, r);
+    poly = vfmaq_f32(vdupq_n_f32(C0_F32), poly, r);
 
-    // Polynomial approximation using Horner's method with FMA
-    let r2 = vmulq_f32(r, r);
-    let r3 = vmulq_f32(r2, r);
-    let r4 = vmulq_f32(r2, r2);
-    let r5 = vmulq_f32(r4, r);
-    let r6 = vmulq_f32(r4, r2);
-
-    let mut poly = c0;
-    poly = vfmaq_f32(poly, c1, r);
-    poly = vfmaq_f32(poly, c2, r2);
-    poly = vfmaq_f32(poly, c3, r3);
-    poly = vfmaq_f32(poly, c4, r4);
-    poly = vfmaq_f32(poly, c5, r5);
-    poly = vfmaq_f32(poly, c6, r6);
-
-    // Compute 2^n using IEEE 754 bit manipulation
-    // 2^n = reinterpret((n + 127) << 23) for f32
+    // 2^n as two halved powers of two. 2^128 on its own is infinity, yet the
+    // largest finite result needs it; splitting keeps both factors normal, so
+    // an overflow reaches infinity in the second multiply and a subnormal
+    // result takes exactly one rounding.
     let n_i32 = vcvtq_s32_f32(n);
+    let n_hi = vshrq_n_s32::<1>(n_i32);
+    let n_lo = vsubq_s32(n_i32, n_hi);
     let bias = vdupq_n_s32(127);
-    let exp_bits = vshlq_n_s32::<23>(vaddq_s32(n_i32, bias));
-    let pow2n = vreinterpretq_f32_s32(exp_bits);
+    let p_hi = vreinterpretq_f32_s32(vshlq_n_s32::<23>(vaddq_s32(n_hi, bias)));
+    let p_lo = vreinterpretq_f32_s32(vshlq_n_s32::<23>(vaddq_s32(n_lo, bias)));
 
-    // Result = 2^n * exp(r)
-    vmulq_f32(pow2n, poly)
+    vmulq_f32(vmulq_f32(poly, p_hi), p_lo)
 }
 
 /// Fast SIMD exp approximation for f64 using NEON
@@ -265,7 +250,14 @@ pub unsafe fn tanh_f32(x: float32x4_t) -> float32x4_t {
     let two = vdupq_n_f32(2.0);
     let one = vdupq_n_f32(1.0);
 
-    let exp2x = exp_f32(vmulq_f32(two, x));
+    // exp overflows past 89, and inf/inf below would be NaN. |2x| = 20 already
+    // puts the quotient within 5e-9 of ±1, which rounds to ±1 in f32, so the
+    // clamp costs nothing.
+    let t = vmulq_f32(two, x);
+    let t = vminq_f32(t, vdupq_n_f32(20.0));
+    let t = vmaxq_f32(t, vdupq_n_f32(-20.0));
+
+    let exp2x = exp_f32(t);
     let num = vsubq_f32(exp2x, one);
     let den = vaddq_f32(exp2x, one);
 
@@ -965,12 +957,43 @@ pub unsafe fn rsqrt_f64(x: float64x2_t) -> float64x2_t {
 }
 
 /// Fast SIMD exp2 (2^x) for f32 using NEON
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. Handing `x * ln2` to `exp_f32`
+/// rounds a value as large as 128 before the exponential, which the
+/// exponential turns into 5e-6 of relative error — forty ulps.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn exp2_f32(x: float32x4_t) -> float32x4_t {
-    let ln2 = vdupq_n_f32(std::f32::consts::LN_2);
-    exp_f32(vmulq_f32(x, ln2))
+    use exp_coefficients::{C0_F32, C1_F32, C2_F32, C3_F32, C4_F32, C5_F32, C6_F32, C7_F32};
+    use exp2_coefficients::{MAX_F32, MIN_F32};
+
+    let xc = vmaxq_f32(x, vdupq_n_f32(MIN_F32));
+    let xc = vminq_f32(xc, vdupq_n_f32(MAX_F32));
+
+    // n and r are both exact, so the reduction itself costs nothing.
+    let n = vrndnq_f32(xc);
+    let r = vsubq_f32(xc, n);
+    let rl = vmulq_f32(r, vdupq_n_f32(std::f32::consts::LN_2));
+
+    let mut poly = vdupq_n_f32(C7_F32);
+    poly = vfmaq_f32(vdupq_n_f32(C6_F32), poly, rl);
+    poly = vfmaq_f32(vdupq_n_f32(C5_F32), poly, rl);
+    poly = vfmaq_f32(vdupq_n_f32(C4_F32), poly, rl);
+    poly = vfmaq_f32(vdupq_n_f32(C3_F32), poly, rl);
+    poly = vfmaq_f32(vdupq_n_f32(C2_F32), poly, rl);
+    poly = vfmaq_f32(vdupq_n_f32(C1_F32), poly, rl);
+    poly = vfmaq_f32(vdupq_n_f32(C0_F32), poly, rl);
+
+    // Two halved powers of two, as in `exp_f32`.
+    let n_i32 = vcvtq_s32_f32(n);
+    let n_hi = vshrq_n_s32::<1>(n_i32);
+    let n_lo = vsubq_s32(n_i32, n_hi);
+    let bias = vdupq_n_s32(127);
+    let p_hi = vreinterpretq_f32_s32(vshlq_n_s32::<23>(vaddq_s32(n_hi, bias)));
+    let p_lo = vreinterpretq_f32_s32(vshlq_n_s32::<23>(vaddq_s32(n_lo, bias)));
+
+    vmulq_f32(vmulq_f32(poly, p_hi), p_lo)
 }
 
 /// Fast SIMD exp2 (2^x) for f64 using NEON
@@ -1023,29 +1046,54 @@ pub unsafe fn exp2_f64(x: float64x2_t) -> float64x2_t {
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f32 using NEON
+///
+/// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. A degree-4 Taylor series on
+/// |x| <= 0.5 drops `x⁵/120`, which is 2.6e-4 at the interval edge — over two
+/// thousand ulps — and `exp(x) - 1` above it cancels the whole result away.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn expm1_f32(x: float32x4_t) -> float32x4_t {
-    let one = vdupq_n_f32(1.0);
-    let half = vdupq_n_f32(0.5);
-    let abs_x = vabsq_f32(x);
+    use exp_coefficients::*;
 
-    // For small |x|, use Taylor series
-    let x2 = vmulq_f32(x, x);
-    let x3 = vmulq_f32(x2, x);
-    let x4 = vmulq_f32(x2, x2);
-    let c2 = vdupq_n_f32(0.5);
-    let c3 = vdupq_n_f32(1.0 / 6.0);
-    let c4 = vdupq_n_f32(1.0 / 24.0);
-    let taylor = vfmaq_f32(vfmaq_f32(vfmaq_f32(x, c2, x2), c3, x3), c4, x4);
+    let xc = vmaxq_f32(x, vdupq_n_f32(EXPM1_MIN_F32));
+    let xc = vminq_f32(xc, vdupq_n_f32(EXPM1_MAX_F32));
 
-    // For large |x|, use exp(x) - 1
-    let exp_result = vsubq_f32(exp_f32(x), one);
+    let y = vmulq_f32(xc, vdupq_n_f32(std::f32::consts::LOG2_E));
+    let n = vrndnq_f32(y);
 
-    // Blend based on |x| > 0.5
-    let mask = vcgtq_f32(abs_x, half);
-    vbslq_f32(mask, exp_result, taylor)
+    // Cody-Waite reduction, identical to exp_f32: r = x - n*ln2, |r| <= ln2/2.
+    let r = vfmsq_f32(xc, n, vdupq_n_f32(LN2_HI_F32));
+    let r = vfmsq_f32(r, n, vdupq_n_f32(LN2_LO_F32));
+
+    // Q is the exp series from its r² term up, so expm1(r) = r + r²*Q(r) keeps
+    // r itself outside the polynomial and never rounds against a leading 1.
+    let mut q = vdupq_n_f32(C7_F32);
+    q = vfmaq_f32(vdupq_n_f32(C6_F32), q, r);
+    q = vfmaq_f32(vdupq_n_f32(C5_F32), q, r);
+    q = vfmaq_f32(vdupq_n_f32(C4_F32), q, r);
+    q = vfmaq_f32(vdupq_n_f32(C3_F32), q, r);
+    q = vfmaq_f32(vdupq_n_f32(C2_F32), q, r);
+    let e = vfmaq_f32(r, vmulq_f32(r, r), q);
+
+    // 2^n*(1+E) - 1 = 2*(t*E + (t - 0.5)) with t = 2^(n-1). t and t - 0.5 are
+    // both exact, and the halved scale keeps n = 128 representable, so an
+    // overflow happens in the final doubling rather than in 2^n.
+    let bias = vdupq_n_s32(127 - 1);
+    let t = vreinterpretq_f32_s32(vshlq_n_s32::<23>(vaddq_s32(vcvtq_s32_f32(n), bias)));
+    let out = vmulq_f32(
+        vdupq_n_f32(2.0),
+        vfmaq_f32(vsubq_f32(t, vdupq_n_f32(0.5)), t, e),
+    );
+
+    // At n = 0 the scale is exactly 1 and the answer is E itself. Taking it
+    // directly matters for a subnormal E, where the halved form's `0.5 * E`
+    // rounds the last bit to even and loses the whole value.
+    let zero = vdupq_n_f32(0.0);
+    let out = vbslq_f32(vceqq_f32(n, zero), e, out);
+
+    // expm1(±0) = ±0, which the reduction would otherwise return as +0.
+    vbslq_f32(vceqq_f32(x, zero), x, out)
 }
 
 /// Fast SIMD expm1 (e^x - 1) for f64 using NEON
@@ -1530,41 +1578,62 @@ pub unsafe fn acos_f64(x: float64x2_t) -> float64x2_t {
 }
 
 /// Fast SIMD cbrt (cube root) for f32 using NEON
+///
+/// See `common::cbrt_constants`. The seed divides the whole bit pattern of
+/// |x| by three, mantissa included, which lands within 3.3%; two Halley steps
+/// then cube that error twice over. Seeding from the exponent alone is off by
+/// up to 37%, and the same two steps only bring that to 5e-2.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn cbrt_f32(x: float32x4_t) -> float32x4_t {
-    // Handle sign separately
-    let sign_mask = vdupq_n_u32(0x80000000);
-    let sign = vandq_u32(vreinterpretq_u32_f32(x), sign_mask);
+    use cbrt_constants::*;
+
+    let sign = vandq_u32(vreinterpretq_u32_f32(x), vdupq_n_u32(0x8000_0000));
     let abs_x = vabsq_f32(x);
+    let one = vdupq_n_f32(1.0);
 
-    let one_third = vdupq_n_f32(1.0 / 3.0);
-    let bias = vdupq_n_f32(127.0);
+    // Move the two ends of the range into the middle: the iteration forms
+    // x + 2*t³, which overflows near f32::MAX, and the seed assumes an
+    // implicit leading 1, which a subnormal does not have. Both shifts are
+    // 2^96, a power of two whose exponent is a multiple of three, so undoing
+    // them on the result is exact.
+    let big = vcgeq_f32(abs_x, vdupq_n_f32(BIG_F32));
+    let small = vcltq_f32(abs_x, vdupq_n_f32(SMALL_F32));
+    let s_in = vbslq_f32(small, vdupq_n_f32(SCALE_UP_F32), one);
+    let s_in = vbslq_f32(big, vdupq_n_f32(SCALE_DOWN_F32), s_in);
+    let s_out = vbslq_f32(small, vdupq_n_f32(UNSCALE_DOWN_F32), one);
+    let s_out = vbslq_f32(big, vdupq_n_f32(UNSCALE_UP_F32), s_out);
+    let a = vmulq_f32(abs_x, s_in);
 
-    // Extract exponent
-    let xi = vreinterpretq_s32_f32(abs_x);
-    let exp_bits = vshrq_n_s32::<23>(xi);
-    let exp_f = vcvtq_f32_s32(vsubq_s32(exp_bits, vdupq_n_s32(127)));
+    // Seed: t = bits(a)/3 + B1, read back as a float. The integer-to-float
+    // conversion drops the low bits of the bit pattern, which is worth 1e-5
+    // of relative error against a seed that is already only good to 3.3%.
+    let a_bits = vcvtq_f32_s32(vreinterpretq_s32_f32(a));
+    let q = vfmaq_f32(vdupq_n_f32(B1_F32), a_bits, vdupq_n_f32(1.0 / 3.0));
+    let t = vreinterpretq_f32_s32(vcvtnq_s32_f32(q));
 
-    // Initial guess: 2^(e/3)
-    let new_exp = vmulq_f32(exp_f, one_third);
-    let new_exp_i = vcvtq_s32_f32(vaddq_f32(new_exp, bias));
-    let guess = vreinterpretq_f32_s32(vshlq_n_s32::<23>(new_exp_i));
+    // Halley: t*(2a + t³)/(a + 2t³), whose error cubes each step.
+    let r = vmulq_f32(vmulq_f32(t, t), t);
+    let num = vaddq_f32(vaddq_f32(a, a), r);
+    let den = vaddq_f32(vaddq_f32(a, r), r);
+    let t = vmulq_f32(t, vdivq_f32(num, den));
 
-    // Newton-Raphson: y = (2*y + x/y^2) / 3
-    let two = vdupq_n_f32(2.0);
-    let three = vdupq_n_f32(3.0);
+    let r = vmulq_f32(vmulq_f32(t, t), t);
+    let num = vaddq_f32(vaddq_f32(a, a), r);
+    let den = vaddq_f32(vaddq_f32(a, r), r);
+    let t = vmulq_f32(t, vdivq_f32(num, den));
 
-    let y = guess;
-    let y2 = vmulq_f32(y, y);
-    let y_new = vdivq_f32(vfmaq_f32(vdivq_f32(abs_x, y2), two, y), three);
+    let scaled = vreinterpretq_u32_f32(vmulq_f32(t, s_out));
+    let out = vreinterpretq_f32_u32(vorrq_u32(scaled, sign));
 
-    let y2 = vmulq_f32(y_new, y_new);
-    let result = vdivq_f32(vfmaq_f32(vdivq_f32(abs_x, y2), two, y_new), three);
-
-    // Restore sign
-    vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(result), sign))
+    // ±0, ±inf and NaN are their own cube roots, and none of them survives the
+    // iteration: zero divides zero and infinity subtracts infinity.
+    let ordinary = vandq_u32(
+        vcgtq_f32(abs_x, vdupq_n_f32(0.0)),
+        vcltq_f32(abs_x, vdupq_n_f32(f32::INFINITY)),
+    );
+    vbslq_f32(ordinary, out, x)
 }
 
 /// Fast SIMD cbrt (cube root) for f64 using NEON

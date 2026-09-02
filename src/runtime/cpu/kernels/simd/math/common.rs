@@ -12,7 +12,9 @@
 /// Taylor series coefficients for exp(r) where r is in [-ln(2)/2, ln(2)/2]
 /// exp(r) ≈ 1 + r + r²/2! + r³/3! + ...
 ///
-/// f32 truncates at degree 6: |r|⁷/7! ≤ 1.2e-7, which is f32 epsilon.
+/// f32 truncates at degree 7: |r|⁸/8! ≤ 5.2e-9, an order of magnitude below
+/// f32 epsilon (1.2e-7). Degree 6 leaves |r|⁷/7! ≤ 1.2e-7, a full ulp of
+/// truncation error before any rounding is counted.
 ///
 /// f64 truncates at degree 13: |r|¹⁴/14! ≤ 4.1e-18, well below f64 epsilon
 /// (2.2e-16). Degree 6 would leave a truncation error near 1.2e-7 — nine
@@ -25,6 +27,7 @@ pub mod exp_coefficients {
     pub const C4_F32: f32 = 1.0 / 24.0;
     pub const C5_F32: f32 = 1.0 / 120.0;
     pub const C6_F32: f32 = 1.0 / 720.0;
+    pub const C7_F32: f32 = 1.0 / 5040.0;
 
     pub const C0_F64: f64 = 1.0;
     pub const C1_F64: f64 = 1.0;
@@ -51,9 +54,26 @@ pub mod exp_coefficients {
     pub const LN2_HI_F64: f64 = 6.931471803691238164e-01;
     pub const LN2_LO_F64: f64 = 1.908214929270587700e-10;
 
-    /// Input clamp range to avoid overflow/underflow
-    pub const MIN_F32: f32 = -88.0;
-    pub const MAX_F32: f32 = 88.0;
+    /// Two-part ln(2) for Cody-Waite range reduction in f32, the same
+    /// construction as the f64 pair above.
+    ///
+    /// `LN2_HI_F32` carries 9 significant bits, so `n * LN2_HI_F32` is exact
+    /// for every `|n| <= 2^15`, far past the `|n| <= 152` this range reaches.
+    /// Together the two parts hold ln(2) to within 1.7e-12, so the reduction
+    /// contributes at most 2.5e-10 of relative error at the end of the range.
+    /// Reducing as `(x*log2(e) - n) * ln(2)` instead leaves an absolute error
+    /// in `r` proportional to `|x|`: 3.6e-6 at |x| near 88, thirty ulps.
+    pub const LN2_HI_F32: f32 = 0.693_359_375;
+    pub const LN2_LO_F32: f32 = -2.121_944_4e-4;
+
+    /// Input clamp range for the f32 exp reduction. Below -105 the true result
+    /// is under half of 2^-149 and rounds to zero, and 2^-151 from the clamp
+    /// bound does too; above 89 it overflows, and so does the clamp bound.
+    /// Clamping tighter than this replaces representable results — the whole
+    /// subnormal tail below -88, and everything in [88, ln(f32::MAX)] — with a
+    /// wrong finite value.
+    pub const MIN_F32: f32 = -105.0;
+    pub const MAX_F32: f32 = 89.0;
     pub const MIN_F64: f64 = -709.0;
     pub const MAX_F64: f64 = 709.0;
 
@@ -64,6 +84,14 @@ pub mod exp_coefficients {
     /// final doubling instead of in `2^n`.
     pub const EXPM1_MIN_F64: f64 = -708.0;
     pub const EXPM1_MAX_F64: f64 = 710.0;
+
+    /// Input clamp range for the f32 expm1 reduction. The scale `2^(n-1)` needs
+    /// `n >= -125` for the biased exponent to stay non-negative, which -87
+    /// satisfies; expm1 is already exactly -1 in f32 below -17.4, so nothing is
+    /// lost. At 89 the result overflows, and the halved scale keeps `n = 128`
+    /// representable so the overflow happens in the final doubling.
+    pub const EXPM1_MIN_F32: f32 = -87.0;
+    pub const EXPM1_MAX_F32: f32 = 89.0;
 }
 
 // ============================================================================
@@ -80,8 +108,12 @@ pub mod exp_coefficients {
 ///
 /// Degree 13 leaves `(ln2/2)^14/14! ≈ 4e-18` absolute, below f64 epsilon.
 ///
-/// The f32 path keeps the `exp(x * ln2)` form: one f32 rounding of the product
-/// is already below the truncation error of the degree-6 exp kernel.
+/// The f32 path splits on `n = round(x)` for the same reason and then reuses
+/// the exp series at `r * ln(2)`. That single product is exact to half an ulp
+/// of 0.347, worth 2e-8 of relative error in the result — a fifth of an ulp.
+/// Forming `exp(x * ln2)` from the *unreduced* x is what fails: it rounds a
+/// value as large as 128 before the exponential, leaving 5e-6 of relative
+/// error, forty ulps.
 pub mod exp2_coefficients {
     pub const C0_F64: f64 = 1.0;
     pub const C1_F64: f64 = std::f64::consts::LN_2;
@@ -104,6 +136,42 @@ pub mod exp2_coefficients {
     /// result take exactly one rounding.
     pub const MIN_F64: f64 = -1075.0;
     pub const MAX_F64: f64 = 1024.0;
+
+    /// Input clamp range for f32, the same reasoning: 2^129 overflows and
+    /// 2^-151 rounds to zero, so nothing outside carries information. Clamping
+    /// to the exp bounds of ±88 instead would truncate the entire subnormal
+    /// tail below -126 and every result above 2^88.
+    pub const MIN_F32: f32 = -151.0;
+    pub const MAX_F32: f32 = 129.0;
+}
+
+// ============================================================================
+// Constants for cbrt(x)
+// ============================================================================
+
+/// Seed and scaling constants for the f32 cube root.
+///
+/// The seed is the classic exponent-domain estimate: dividing the whole
+/// IEEE 754 bit pattern of |x| by three and adding `B1_F32` lands within 3.3%
+/// of the answer, mantissa included. Taking the exponent alone — `2^(e/3)`
+/// with the mantissa discarded — is off by up to 37%, which two Newton steps
+/// cannot recover: their error squares, so 0.37 becomes 0.05, not 1e-7.
+pub mod cbrt_constants {
+    /// `(127 - 127/3 - 0.03306235651) * 2^23`, the offset that turns
+    /// `bits(|x|)/3` back into a float near `cbrt(|x|)`.
+    pub const B1_F32: f32 = 709_958_130.0;
+
+    /// Inputs at or above `BIG_F32` are scaled down and inputs below
+    /// `SMALL_F32` scaled up before the iteration, so `x + 2*t³` never
+    /// overflows and a subnormal never reaches the exponent-domain seed, which
+    /// assumes an implicit leading 1. The shift is 96, a multiple of three, so
+    /// undoing it on the result is an exact power of two.
+    pub const BIG_F32: f32 = 1.267_650_600_228_229_4e30; // 2^100
+    pub const SMALL_F32: f32 = f32::MIN_POSITIVE; // 2^-126
+    pub const SCALE_DOWN_F32: f32 = 1.262_177_448_353_619e-29; // 2^-96
+    pub const SCALE_UP_F32: f32 = 7.922_816_251_426_434e28; // 2^96
+    pub const UNSCALE_UP_F32: f32 = 4_294_967_296.0; // 2^32
+    pub const UNSCALE_DOWN_F32: f32 = 2.328_306_436_538_696_3e-10; // 2^-32
 }
 
 // ============================================================================
@@ -281,21 +349,27 @@ pub mod tan_coefficients {
 ///    - n = round(y) (integer part)
 ///    - f = y - n (fractional part in [-0.5, 0.5])
 ///
-/// 2. **Polynomial approximation**: Compute exp(f * ln(2)) using Taylor series
-///    - r = f * ln(2) for f32; for f64, Cody-Waite gives r = x - n*LN2_HI - n*LN2_LO,
-///      which avoids an absolute error in r that grows with |x|
-///    - exp(r) ≈ 1 + r + r²/2! + r³/3! + ... (degree 6 for f32, degree 13 for f64)
+/// 2. **Polynomial approximation**: Compute exp(r) using a Taylor series
+///    - Cody-Waite gives r = x - n*LN2_HI - n*LN2_LO in both precisions, which
+///      avoids an absolute error in r that grows with |x|
+///    - exp(r) ≈ 1 + r + r²/2! + r³/3! + ... (degree 7 for f32, degree 13 for f64)
 ///
 /// 3. **Reconstruction**: Multiply by 2^n using IEEE 754 bit manipulation
 ///    - For f32: 2^n = reinterpret((n + 127) << 23)
 ///    - For f64: 2^n = reinterpret((n + 1023) << 52)
+///    - f32 applies it as two halved powers of two, because the largest finite
+///      result needs n = 128 and 2^128 alone is already infinity
 ///
 /// # Accuracy
-/// - f32: Relative error < 1e-6 for inputs in [-88, 88]
+/// - f32: relative error below 1 ulp over the whole representable range,
+///   [-104, ln(f32::MAX)]
 /// - f64: Relative error within a few ulp for inputs in [-709, 709]
 ///
 /// # Edge Cases
-/// - Inputs outside the valid range are clamped to avoid overflow/underflow
+/// - The clamp bounds sit outside the representable range, so overflow still
+///   reaches +inf and underflow still reaches zero or the correct subnormal
+/// - exp(-inf) = 0, exp(+inf) = +inf, NaN propagates in f32; the f64 clamp
+///   still swallows NaN, because max/min return their second operand for it
 pub const _EXP_ALGORITHM_DOC: () = ();
 
 /// Algorithm for log(x):
@@ -555,13 +629,14 @@ pub const _ATAN_ALGORITHM_DOC: () = ();
 /// - |x| > 1 or x = NaN: NaN
 pub const _ASIN_ACOS_ALGORITHM_DOC: () = ();
 
-/// Algorithm for exp2(x) and expm1(x) in f64:
+/// Algorithm for exp2(x) and expm1(x):
 ///
 /// **exp2**: `n = round(x)` and `r = x - n` are both exact, so the reduction
-/// costs nothing. `2^r` comes from the Taylor series in `exp2_coefficients`,
-/// and the scale is applied as `(poly * 2^(n/2)) * 2^(n - n/2)`. Splitting the
-/// power of two keeps both factors normal, so an overflow reaches infinity on
-/// its own and a subnormal result takes exactly one rounding.
+/// costs nothing. `2^r` comes from the Taylor series in `exp2_coefficients` in
+/// f64, and from the exp series at `r * ln(2)` in f32. The scale is applied as
+/// `(poly * 2^(n/2)) * 2^(n - n/2)`. Splitting the power of two keeps both
+/// factors normal, so an overflow reaches infinity on its own and a subnormal
+/// result takes exactly one rounding.
 ///
 /// **expm1**: the Cody-Waite reduction from `exp`, then
 /// `expm1(r) = r + r²*Q(r)` with `Q` the exp series from its r² term up. The
@@ -569,6 +644,7 @@ pub const _ASIN_ACOS_ALGORITHM_DOC: () = ();
 /// exact at n = 0 and never forms `exp(x) - 1` where that subtraction cancels.
 ///
 /// # Accuracy
+/// - f32: relative error below 1 ulp over the whole representable range
 /// - f64: relative error below 2 ulps over the whole representable range
 ///
 /// # Edge Cases

@@ -2,6 +2,10 @@
 //!
 //! Tensors are sized past the SIMD threshold; short tensors take the scalar
 //! tail, which is exact and hides a polynomial that is too low-degree for f64.
+//!
+//! Each range runs to the REPRESENTABLE limit, not a comfortable interior. An
+//! earlier version swept exp over [-700, 700] and so could never reach the
+//! clamp at +-709, which was truncating valid results.
 
 use numr::ops::UnaryOps;
 use numr::prelude::*;
@@ -19,6 +23,53 @@ fn atanh_reference(x: f64) -> f64 {
     if x < 0.0 { -(-x).atanh() } else { x.atanh() }
 }
 
+/// f32 sweep bounds. The f64 ranges run to the f64 representable limits, which
+/// mostly fall outside f32 and would be filtered out, silently testing nothing.
+fn range32(name: &str) -> (f64, f64) {
+    match name {
+        "exp" => (-104.0, 88.72),
+        "exp2" => (-149.0, 127.9),
+        "log" | "log2" | "log10" => (1e-37, 1e37),
+        "sqrt" => (1e-37, 1e37),
+        "recip" => (1e-37, 1e37),
+        "cbrt" => (-1e37, 1e37),
+        "sinh" | "cosh" => (-88.0, 88.0),
+        "acosh" => (1.0000001, 1e37),
+        _ => (0.0, 0.0),
+    }
+}
+
+fn kernel32(
+    name: &str,
+    c: &CpuClient,
+    t: &Tensor<CpuRuntime>,
+) -> numr::error::Result<Tensor<CpuRuntime>> {
+    match name {
+        "sqrt" => c.sqrt(t),
+        "cbrt" => c.cbrt(t),
+        "recip" => c.recip(t),
+        "exp" => c.exp(t),
+        "exp2" => c.exp2(t),
+        "expm1" => c.expm1(t),
+        "log" => c.log(t),
+        "log2" => c.log2(t),
+        "log10" => c.log10(t),
+        "log1p" => c.log1p(t),
+        "sin" => c.sin(t),
+        "cos" => c.cos(t),
+        "tan" => c.tan(t),
+        "asin" => c.asin(t),
+        "acos" => c.acos(t),
+        "atan" => c.atan(t),
+        "sinh" => c.sinh(t),
+        "cosh" => c.cosh(t),
+        "tanh" => c.tanh(t),
+        "asinh" => c.asinh(t),
+        "acosh" => c.acosh(t),
+        _ => c.atanh(t),
+    }
+}
+
 fn main() {
     let device = CpuDevice::default();
     let client = CpuRuntime::default_client(&device);
@@ -27,27 +78,28 @@ fn main() {
         ("sqrt", |c, t| c.sqrt(t), f64::sqrt, 1e-3, 100.0),
         ("cbrt", |c, t| c.cbrt(t), f64::cbrt, -100.0, 100.0),
         ("recip", |c, t| c.recip(t), |x| 1.0 / x, 0.1, 100.0),
-        ("exp", |c, t| c.exp(t), f64::exp, -700.0, 700.0),
-        ("exp2", |c, t| c.exp2(t), f64::exp2, -1000.0, 1000.0),
+        ("exp", |c, t| c.exp(t), f64::exp, -745.0, 709.78),
+        ("exp2", |c, t| c.exp2(t), f64::exp2, -1074.0, 1023.9),
         ("expm1", |c, t| c.expm1(t), f64::exp_m1, -2.0, 2.0),
-        ("log", |c, t| c.log(t), f64::ln, 1e-3, 1e3),
-        ("log2", |c, t| c.log2(t), f64::log2, 1e-3, 1e3),
-        ("log10", |c, t| c.log10(t), f64::log10, 1e-3, 1e3),
+        ("log", |c, t| c.log(t), f64::ln, 1e-300, 1e300),
+        ("log2", |c, t| c.log2(t), f64::log2, 1e-300, 1e300),
+        ("log10", |c, t| c.log10(t), f64::log10, 1e-300, 1e300),
         ("log1p", |c, t| c.log1p(t), f64::ln_1p, -0.9, 10.0),
-        ("sin", |c, t| c.sin(t), f64::sin, -20.0, 20.0),
-        ("cos", |c, t| c.cos(t), f64::cos, -20.0, 20.0),
+        ("sin", |c, t| c.sin(t), f64::sin, -100000.0, 100000.0),
+        ("cos", |c, t| c.cos(t), f64::cos, -100000.0, 100000.0),
         ("tan", |c, t| c.tan(t), f64::tan, -1.4, 1.4),
         ("asin", |c, t| c.asin(t), f64::asin, -0.99, 0.99),
         ("acos", |c, t| c.acos(t), f64::acos, -0.99, 0.99),
         ("atan", |c, t| c.atan(t), f64::atan, -50.0, 50.0),
-        ("sinh", |c, t| c.sinh(t), f64::sinh, -10.0, 10.0),
-        ("cosh", |c, t| c.cosh(t), f64::cosh, -10.0, 10.0),
+        ("sinh", |c, t| c.sinh(t), f64::sinh, -700.0, 700.0),
+        ("cosh", |c, t| c.cosh(t), f64::cosh, -700.0, 700.0),
         ("tanh", |c, t| c.tanh(t), f64::tanh, -10.0, 10.0),
         ("asinh", |c, t| c.asinh(t), f64::asinh, -50.0, 50.0),
         ("acosh", |c, t| c.acosh(t), f64::acosh, 1.01, 50.0),
         ("atanh", |c, t| c.atanh(t), atanh_reference, -0.99, 0.99),
     ];
 
+    let cases32 = cases.clone();
     const N: usize = 4096;
     println!("{:>7}  {:>11}  {:>9}  verdict", "op", "worst rel", "ulps");
     let mut broken = Vec::new();
@@ -99,5 +151,56 @@ fn main() {
         );
     }
     println!("\nf64 eps = {:.3e}", f64::EPSILON);
-    println!("broken ({}): {}", broken.len(), broken.join(" "));
+    println!("broken f64 ({}): {}", broken.len(), broken.join(" "));
+
+    // Same sweep in f32. The reference stays f64 and is rounded once at the
+    // end, so the comparison measures the kernel rather than the reference.
+    println!(
+        "\n{:>7}  {:>11}  {:>9}  verdict (f32)",
+        "op", "worst rel", "ulps"
+    );
+    let mut broken32 = Vec::new();
+    for (name, _, reference, lo, hi) in cases32 {
+        // Ops whose f64 range is already inside f32 keep it; the rest are
+        // overridden so the sweep stays inside the representable domain.
+        let (lo, hi) = match range32(name) {
+            (0.0, 0.0) => (lo, hi),
+            other => other,
+        };
+        let args: Vec<f32> = (0..N)
+            .map(|i| (lo + (hi - lo) * (i as f64) / (N as f64 - 1.0)) as f32)
+            .collect();
+        let Ok(t) = Tensor::<CpuRuntime>::from_slice(&args, &[N], &device) else {
+            continue;
+        };
+        let Ok(r) = kernel32(name, &client, &t) else {
+            println!("{name:>7}  unsupported");
+            continue;
+        };
+        let got = r.to_vec::<f32>();
+        let mut worst = 0.0f64;
+        let mut at = 0.0f32;
+        for (i, &x) in args.iter().enumerate() {
+            let want = reference(x as f64) as f32;
+            if want.is_finite() && want.abs() > 1e-30 && got[i].is_finite() {
+                let rel = (((got[i] - want) / want) as f64).abs();
+                if rel > worst {
+                    worst = rel;
+                    at = x;
+                }
+            }
+        }
+        let ulps = worst / f64::from(f32::EPSILON);
+        let verdict = if ulps > 64.0 {
+            broken32.push(name);
+            "BROKEN"
+        } else if ulps > 4.0 {
+            "marginal"
+        } else {
+            "ok"
+        };
+        println!("{name:>7}  {worst:>11.3e}  {ulps:>9.1}  {verdict:<9} at x={at}");
+    }
+    println!("\nf32 eps = {:.3e}", f32::EPSILON);
+    println!("broken f32 ({}): {}", broken32.len(), broken32.join(" "));
 }
