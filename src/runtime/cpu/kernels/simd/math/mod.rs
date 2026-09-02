@@ -27,7 +27,8 @@
 //!
 //! These approximations prioritize speed over full IEEE precision:
 //! - Relative error: < 1e-6 for f32, < 1e-12 for f64
-//! - Valid input range: [-88, 88] for f32 exp, [-709, 709] for f64 exp
+//! - Valid input range: the whole representable domain for exp in both
+//!   precisions, [-104, ln(f32::MAX)] and [-745, ln(f64::MAX)]
 //! - Trigonometric functions: Accurate for |x| < 2^20; larger inputs may lose precision
 //!
 //! # Design Notes

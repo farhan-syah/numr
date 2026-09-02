@@ -46,7 +46,8 @@ use std::arch::aarch64::*;
 
 use super::super::common::{
     asin_coefficients, atan_coefficients, cbrt_constants, exp_coefficients, exp2_coefficients,
-    inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients, trig_coefficients,
+    hyperbolic_breakpoints, inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients,
+    trig_coefficients,
 };
 
 // ============================================================================
@@ -196,15 +197,16 @@ pub unsafe fn exp_f64(x: float64x2_t) -> float64x2_t {
     let c12 = vdupq_n_f64(C12_F64);
     let c13 = vdupq_n_f64(C13_F64);
 
-    // Clamp input
-    let x = vmaxq_f64(x, vdupq_n_f64(MIN_F64));
-    let x = vminq_f64(x, vdupq_n_f64(MAX_F64));
+    // FMAX/FMIN propagate NaN, so the clamp needs no NaN repair here; the x86
+    // paths order the operands to get the same behaviour out of maxpd/minpd.
+    let xc = vmaxq_f64(x, vdupq_n_f64(MIN_F64));
+    let xc = vminq_f64(xc, vdupq_n_f64(MAX_F64));
 
-    let y = vmulq_f64(x, log2e);
+    let y = vmulq_f64(xc, log2e);
     let n = vrndnq_f64(y);
 
     // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F64 is exact
-    let r = vfmsq_f64(x, n, ln2_hi);
+    let r = vfmsq_f64(xc, n, ln2_hi);
     let r = vfmsq_f64(r, n, ln2_lo);
 
     // Horner: one rounding per term, and no r^k powers to lose bits in
@@ -223,14 +225,18 @@ pub unsafe fn exp_f64(x: float64x2_t) -> float64x2_t {
     poly = vfmaq_f64(c1, poly, r);
     poly = vfmaq_f64(c0, poly, r);
 
-    // Compute 2^n using IEEE 754 bit manipulation for f64
-    // 2^n = reinterpret((n + 1023) << 52) for f64
-    let n_i64 = vcvtq_s64_f64(n);
+    // 2^n as two halved powers of two. 2^1024 on its own is infinity, yet the
+    // largest finite result needs it, and 2^-1076 is not representable at all.
+    // Splitting keeps both factors normal, so an overflow reaches infinity in
+    // the second multiply and a subnormal result takes exactly one rounding
+    // because the first multiply is exact.
+    let n_hi = vrndq_f64(vmulq_f64(n, vdupq_n_f64(0.5)));
+    let n_lo = vsubq_f64(n, n_hi);
     let bias = vdupq_n_s64(1023);
-    let exp_bits = vshlq_n_s64::<52>(vaddq_s64(n_i64, bias));
-    let pow2n = vreinterpretq_f64_s64(exp_bits);
+    let p_hi = vreinterpretq_f64_s64(vshlq_n_s64::<52>(vaddq_s64(vcvtq_s64_f64(n_hi), bias)));
+    let p_lo = vreinterpretq_f64_s64(vshlq_n_s64::<52>(vaddq_s64(vcvtq_s64_f64(n_lo), bias)));
 
-    vmulq_f64(pow2n, poly)
+    vmulq_f64(vmulq_f64(poly, p_hi), p_lo)
 }
 
 // ============================================================================
@@ -1288,6 +1294,14 @@ pub unsafe fn sinh_f64(x: float64x2_t) -> float64x2_t {
     let d = vbslq_f64(is_inf, one, d);
     let s = vmulq_f64(vdupq_n_f64(0.5), vaddq_f64(u, d));
 
+    // expm1 overflows at ln(f64::MAX) = 709.7827 while sinh stays finite up to
+    // 710.4758. Past the breakpoint sinh is 0.5*exp(|x|), built as in cosh_f64.
+    let half = vdupq_n_f64(0.5);
+    let t = exp_f64(vmulq_f64(half, a));
+    let far = vmulq_f64(vmulq_f64(half, t), t);
+    let big = vcgtq_f64(a, vdupq_n_f64(hyperbolic_breakpoints::BIG_F64));
+    let s = vbslq_f64(big, far, s);
+
     copy_sign_f64(s, x)
 }
 
@@ -1303,14 +1317,29 @@ pub unsafe fn cosh_f32(x: float32x4_t) -> float32x4_t {
 }
 
 /// Fast SIMD cosh for f64 using NEON
+///
+/// See `common::hyperbolic_breakpoints`. `(e^x + e^-x)/2` returns infinity over
+/// the whole band where exp has overflowed but cosh has not, [709.7827,
+/// 710.4758], so |x| past the breakpoint takes the squared form instead.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn cosh_f64(x: float64x2_t) -> float64x2_t {
     let half = vdupq_n_f64(0.5);
+    let a = vabsq_f64(x);
+
     let exp_x = exp_f64(x);
     let exp_neg_x = exp_f64(vnegq_f64(x));
-    vmulq_f64(half, vaddq_f64(exp_x, exp_neg_x))
+    let near = vmulq_f64(half, vaddq_f64(exp_x, exp_neg_x));
+
+    // (0.5*t)*t with t = exp(|x|/2) is 0.5*exp(|x|) with no intermediate past
+    // f64::MAX. Halving t first, not the product, is what keeps it finite.
+    let t = exp_f64(vmulq_f64(half, a));
+    let far = vmulq_f64(vmulq_f64(half, t), t);
+
+    // NaN compares false and takes the near branch, where exp propagates it.
+    let big = vcgtq_f64(a, vdupq_n_f64(hyperbolic_breakpoints::BIG_F64));
+    vbslq_f64(big, far, near)
 }
 
 /// Fast SIMD asinh for f32 using NEON

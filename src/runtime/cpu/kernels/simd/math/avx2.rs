@@ -46,7 +46,8 @@ use std::arch::x86_64::*;
 
 use super::common::{
     asin_coefficients, atan_coefficients, cbrt_constants, exp_coefficients, exp2_coefficients,
-    inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients, trig_coefficients,
+    hyperbolic_breakpoints, inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients,
+    trig_coefficients,
 };
 
 // ============================================================================
@@ -136,15 +137,17 @@ pub unsafe fn exp_f64(x: __m256d) -> __m256d {
     let c12 = _mm256_set1_pd(C12_F64);
     let c13 = _mm256_set1_pd(C13_F64);
 
-    // Clamp input
-    let x = _mm256_max_pd(x, _mm256_set1_pd(MIN_F64));
-    let x = _mm256_min_pd(x, _mm256_set1_pd(MAX_F64));
+    // The bound is the FIRST operand: maxpd/minpd return their second operand
+    // when either is NaN, so this order lets a NaN input through instead of
+    // replacing it with the clamp bound.
+    let xc = _mm256_max_pd(_mm256_set1_pd(MIN_F64), x);
+    let xc = _mm256_min_pd(_mm256_set1_pd(MAX_F64), xc);
 
-    let y = _mm256_mul_pd(x, log2e);
+    let y = _mm256_mul_pd(xc, log2e);
     let n = _mm256_round_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(y);
 
     // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F64 is exact
-    let r = _mm256_fnmadd_pd(n, ln2_hi, x);
+    let r = _mm256_fnmadd_pd(n, ln2_hi, xc);
     let r = _mm256_fnmadd_pd(n, ln2_lo, r);
 
     // Horner: one rounding per term, and no r^k powers to lose bits in
@@ -163,8 +166,12 @@ pub unsafe fn exp_f64(x: __m256d) -> __m256d {
     poly = _mm256_fmadd_pd(poly, r, c1);
     poly = _mm256_fmadd_pd(poly, r, c0);
 
-    // AVX2 lacks _mm256_cvtpd_epi64, use scalar conversion for 2^n
-    // This is a known AVX2 limitation - polynomial eval is still SIMD
+    // AVX2 lacks _mm256_cvtpd_epi64, so the scale drops to scalar - polynomial
+    // eval is still SIMD. The power of two is split in half: 2^1024 alone is
+    // already infinity, yet the largest finite result needs it, and 2^-1076 is
+    // not representable at all. Both halves stay normal, so an overflow reaches
+    // infinity in the second multiply and a subnormal result takes exactly one
+    // rounding because the first multiply is exact.
     let mut result = [0.0f64; 4];
     let mut n_arr = [0.0f64; 4];
     let mut poly_arr = [0.0f64; 4];
@@ -174,9 +181,11 @@ pub unsafe fn exp_f64(x: __m256d) -> __m256d {
 
     for i in 0..4 {
         let n_i = n_arr[i] as i64;
-        let exp_bits = ((n_i + 1023) as u64) << 52;
-        let pow2n = f64::from_bits(exp_bits);
-        result[i] = pow2n * poly_arr[i];
+        let hi = n_i / 2;
+        let lo = n_i - hi;
+        let p_hi = f64::from_bits(((hi + 1023) as u64) << 52);
+        let p_lo = f64::from_bits(((lo + 1023) as u64) << 52);
+        result[i] = (poly_arr[i] * p_hi) * p_lo;
     }
 
     _mm256_loadu_pd(result.as_ptr())
@@ -1343,6 +1352,14 @@ pub unsafe fn sinh_f64(x: __m256d) -> __m256d {
     let d = _mm256_blendv_pd(d, one, is_inf);
     let s = _mm256_mul_pd(_mm256_set1_pd(0.5), _mm256_add_pd(u, d));
 
+    // expm1 overflows at ln(f64::MAX) = 709.7827 while sinh stays finite up to
+    // 710.4758. Past the breakpoint sinh is 0.5*exp(|x|), built as in cosh_f64.
+    let half = _mm256_set1_pd(0.5);
+    let t = exp_f64(_mm256_mul_pd(half, a));
+    let far = _mm256_mul_pd(_mm256_mul_pd(half, t), t);
+    let big = _mm256_cmp_pd::<_CMP_GT_OQ>(a, _mm256_set1_pd(hyperbolic_breakpoints::BIG_F64));
+    let s = _mm256_blendv_pd(s, far, big);
+
     _mm256_or_pd(s, _mm256_and_pd(x, sign_mask))
 }
 
@@ -1358,13 +1375,28 @@ pub unsafe fn cosh_f32(x: __m256) -> __m256 {
 }
 
 /// Fast SIMD cosh for f64 using AVX2
+///
+/// See `common::hyperbolic_breakpoints`. `(e^x + e^-x)/2` returns infinity over
+/// the whole band where exp has overflowed but cosh has not, [709.7827,
+/// 710.4758], so |x| past the breakpoint takes the squared form instead.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn cosh_f64(x: __m256d) -> __m256d {
     let half = _mm256_set1_pd(0.5);
+    let a = _mm256_andnot_pd(_mm256_set1_pd(-0.0), x);
+
     let exp_x = exp_f64(x);
     let exp_neg_x = exp_f64(_mm256_sub_pd(_mm256_setzero_pd(), x));
-    _mm256_mul_pd(half, _mm256_add_pd(exp_x, exp_neg_x))
+    let near = _mm256_mul_pd(half, _mm256_add_pd(exp_x, exp_neg_x));
+
+    // (0.5*t)*t with t = exp(|x|/2) is 0.5*exp(|x|) with no intermediate past
+    // f64::MAX. Halving t first, not the product, is what keeps it finite.
+    let t = exp_f64(_mm256_mul_pd(half, a));
+    let far = _mm256_mul_pd(_mm256_mul_pd(half, t), t);
+
+    // NaN compares false and takes the near branch, where exp propagates it.
+    let big = _mm256_cmp_pd::<_CMP_GT_OQ>(a, _mm256_set1_pd(hyperbolic_breakpoints::BIG_F64));
+    _mm256_blendv_pd(near, far, big)
 }
 
 /// Fast SIMD asinh for f32 using AVX2

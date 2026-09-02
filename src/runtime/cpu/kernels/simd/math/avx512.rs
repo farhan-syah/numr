@@ -52,7 +52,8 @@ use std::arch::x86_64::*;
 
 use super::common::{
     asin_coefficients, atan_coefficients, cbrt_constants, exp_coefficients, exp2_coefficients,
-    inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients, trig_coefficients,
+    hyperbolic_breakpoints, inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients,
+    trig_coefficients,
 };
 
 // ============================================================================
@@ -141,15 +142,17 @@ pub unsafe fn exp_f64(x: __m512d) -> __m512d {
     let c12 = _mm512_set1_pd(C12_F64);
     let c13 = _mm512_set1_pd(C13_F64);
 
-    // Clamp input
-    let x = _mm512_max_pd(x, _mm512_set1_pd(MIN_F64));
-    let x = _mm512_min_pd(x, _mm512_set1_pd(MAX_F64));
+    // The bound is the FIRST operand: vmaxpd/vminpd return their second operand
+    // when either is NaN, so this order lets a NaN input through instead of
+    // replacing it with the clamp bound.
+    let xc = _mm512_max_pd(_mm512_set1_pd(MIN_F64), x);
+    let xc = _mm512_min_pd(_mm512_set1_pd(MAX_F64), xc);
 
-    let y = _mm512_mul_pd(x, log2e);
+    let y = _mm512_mul_pd(xc, log2e);
     let n = _mm512_roundscale_pd::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(y);
 
     // Cody-Waite reduction: r = x - n*ln2, split so that n*LN2_HI_F64 is exact
-    let r = _mm512_fnmadd_pd(n, ln2_hi, x);
+    let r = _mm512_fnmadd_pd(n, ln2_hi, xc);
     let r = _mm512_fnmadd_pd(n, ln2_lo, r);
 
     // Horner: one rounding per term, and no r^k powers to lose bits in
@@ -168,13 +171,27 @@ pub unsafe fn exp_f64(x: __m512d) -> __m512d {
     poly = _mm512_fmadd_pd(poly, r, c1);
     poly = _mm512_fmadd_pd(poly, r, c0);
 
-    // AVX-512 has native 64-bit integer conversion
-    let n_i64 = _mm512_cvtpd_epi64(n);
+    // 2^n as two halved powers of two. 2^1024 on its own is infinity, yet the
+    // largest finite result needs it, and 2^-1076 is not representable at all.
+    // Splitting keeps both factors normal, so an overflow reaches infinity in
+    // the second multiply and a subnormal result takes exactly one rounding
+    // because the first multiply is exact.
+    let n_hi = _mm512_roundscale_pd::<{ _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC }>(_mm512_mul_pd(
+        n,
+        _mm512_set1_pd(0.5),
+    ));
+    let n_lo = _mm512_sub_pd(n, n_hi);
     let bias = _mm512_set1_epi64(1023);
-    let exp_bits = _mm512_slli_epi64::<52>(_mm512_add_epi64(n_i64, bias));
-    let pow2n = _mm512_castsi512_pd(exp_bits);
+    let p_hi = _mm512_castsi512_pd(_mm512_slli_epi64::<52>(_mm512_add_epi64(
+        _mm512_cvtpd_epi64(n_hi),
+        bias,
+    )));
+    let p_lo = _mm512_castsi512_pd(_mm512_slli_epi64::<52>(_mm512_add_epi64(
+        _mm512_cvtpd_epi64(n_lo),
+        bias,
+    )));
 
-    _mm512_mul_pd(pow2n, poly)
+    _mm512_mul_pd(_mm512_mul_pd(poly, p_hi), p_lo)
 }
 
 // ============================================================================
@@ -1245,6 +1262,14 @@ pub unsafe fn sinh_f64(x: __m512d) -> __m512d {
     let d = _mm512_mask_blend_pd(is_inf, d, one);
     let s = _mm512_mul_pd(_mm512_set1_pd(0.5), _mm512_add_pd(u, d));
 
+    // expm1 overflows at ln(f64::MAX) = 709.7827 while sinh stays finite up to
+    // 710.4758. Past the breakpoint sinh is 0.5*exp(|x|), built as in cosh_f64.
+    let half = _mm512_set1_pd(0.5);
+    let t = exp_f64(_mm512_mul_pd(half, a));
+    let far = _mm512_mul_pd(_mm512_mul_pd(half, t), t);
+    let big = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(a, _mm512_set1_pd(hyperbolic_breakpoints::BIG_F64));
+    let s = _mm512_mask_blend_pd(big, s, far);
+
     copy_sign_f64(s, x)
 }
 
@@ -1259,13 +1284,28 @@ pub unsafe fn cosh_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD cosh for f64 using AVX-512
+///
+/// See `common::hyperbolic_breakpoints`. `(e^x + e^-x)/2` returns infinity over
+/// the whole band where exp has overflowed but cosh has not, [709.7827,
+/// 710.4758], so |x| past the breakpoint takes the squared form instead.
 #[target_feature(enable = "avx512f")]
 #[inline]
 pub unsafe fn cosh_f64(x: __m512d) -> __m512d {
     let half = _mm512_set1_pd(0.5);
+    let a = _mm512_abs_pd(x);
+
     let exp_x = exp_f64(x);
     let exp_neg_x = exp_f64(_mm512_sub_pd(_mm512_setzero_pd(), x));
-    _mm512_mul_pd(half, _mm512_add_pd(exp_x, exp_neg_x))
+    let near = _mm512_mul_pd(half, _mm512_add_pd(exp_x, exp_neg_x));
+
+    // (0.5*t)*t with t = exp(|x|/2) is 0.5*exp(|x|) with no intermediate past
+    // f64::MAX. Halving t first, not the product, is what keeps it finite.
+    let t = exp_f64(_mm512_mul_pd(half, a));
+    let far = _mm512_mul_pd(_mm512_mul_pd(half, t), t);
+
+    // NaN compares false and takes the near branch, where exp propagates it.
+    let big = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(a, _mm512_set1_pd(hyperbolic_breakpoints::BIG_F64));
+    _mm512_mask_blend_pd(big, near, far)
 }
 
 /// Fast SIMD asinh for f32 using AVX-512

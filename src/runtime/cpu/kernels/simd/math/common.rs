@@ -46,11 +46,11 @@ pub mod exp_coefficients {
 
     /// Two-part ln(2) for Cody-Waite range reduction in f64.
     ///
-    /// `LN2_HI_F64` carries only the top 33 mantissa bits, so `n * LN2_HI_F64`
-    /// is exact for every integer `|n| <= 1024` reachable from the clamped
-    /// input range. Reducing with a single rounded ln(2) instead leaves an
-    /// absolute error in `r` proportional to `|x|`, which alone costs ~3 decimal
-    /// digits at |x| near 709.
+    /// `LN2_HI_F64` carries only the top 32 mantissa bits, so `n * LN2_HI_F64`
+    /// is exact for every integer `|n| <= 2^21`, far past the `|n| <= 1076`
+    /// this range reaches. Reducing with a single rounded ln(2) instead leaves
+    /// an absolute error in `r` proportional to `|x|`, which alone costs
+    /// ~3 decimal digits at |x| near 709.
     pub const LN2_HI_F64: f64 = 6.931471803691238164e-01;
     pub const LN2_LO_F64: f64 = 1.908214929270587700e-10;
 
@@ -74,8 +74,16 @@ pub mod exp_coefficients {
     /// wrong finite value.
     pub const MIN_F32: f32 = -105.0;
     pub const MAX_F32: f32 = 89.0;
-    pub const MIN_F64: f64 = -709.0;
-    pub const MAX_F64: f64 = 709.0;
+
+    /// Input clamp range for the f64 exp reduction, the same reasoning one
+    /// precision up. Below -746 the true result is under half of 2^-1074 and
+    /// rounds to zero, and so does the clamp bound; above 710 it overflows, and
+    /// so does the clamp bound. Clamping at ±709 instead replaces representable
+    /// results with wrong finite ones — the whole subnormal tail below -708,
+    /// and everything in [709, ln(f64::MAX)], where ln(f64::MAX) = 709.7827 and
+    /// exp(709) is 54% low.
+    pub const MIN_F64: f64 = -746.0;
+    pub const MAX_F64: f64 = 710.0;
 
     /// Input clamp range for the f64 expm1 reduction, wider than the exp clamp
     /// because expm1 rebuilds the scale as `2^(n-1)`. At -708 the result is
@@ -172,6 +180,22 @@ pub mod cbrt_constants {
     pub const SCALE_UP_F32: f32 = 7.922_816_251_426_434e28; // 2^96
     pub const UNSCALE_UP_F32: f32 = 4_294_967_296.0; // 2^32
     pub const UNSCALE_DOWN_F32: f32 = 2.328_306_436_538_696_3e-10; // 2^-32
+}
+
+// ============================================================================
+// Breakpoints for the hyperbolic functions
+// ============================================================================
+
+/// Branch point shared by the f64 sinh and cosh paths.
+pub mod hyperbolic_breakpoints {
+    /// Above this, both sinh and cosh are `0.5*exp(|x|)` to well within half an
+    /// ulp, because `exp(-|x|)` is smaller than `exp(|x|)` by a factor of
+    /// e^-1418 there. The switch is needed, not merely cheaper: `exp` overflows
+    /// past ln(f64::MAX) = 709.7827 while sinh and cosh stay finite up to
+    /// 710.4758, so the direct forms return infinity over that whole band.
+    /// Taking `t = exp(|x|/2)` and forming `(0.5*t)*t` keeps every intermediate
+    /// finite; `|x|/2` and `0.5*t` are both exact.
+    pub const BIG_F64: f64 = 709.0;
 }
 
 // ============================================================================
@@ -357,19 +381,22 @@ pub mod tan_coefficients {
 /// 3. **Reconstruction**: Multiply by 2^n using IEEE 754 bit manipulation
 ///    - For f32: 2^n = reinterpret((n + 127) << 23)
 ///    - For f64: 2^n = reinterpret((n + 1023) << 52)
-///    - f32 applies it as two halved powers of two, because the largest finite
-///      result needs n = 128 and 2^128 alone is already infinity
+///    - Both precisions apply it as two halved powers of two, because the
+///      largest finite result needs n = 128 in f32 and n = 1024 in f64, and
+///      2^128 and 2^1024 are each already infinity on their own
 ///
 /// # Accuracy
 /// - f32: relative error below 1 ulp over the whole representable range,
 ///   [-104, ln(f32::MAX)]
-/// - f64: Relative error within a few ulp for inputs in [-709, 709]
+/// - f64: relative error below 2 ulps over the whole representable range,
+///   [-745, ln(f64::MAX)]
 ///
 /// # Edge Cases
 /// - The clamp bounds sit outside the representable range, so overflow still
 ///   reaches +inf and underflow still reaches zero or the correct subnormal
-/// - exp(-inf) = 0, exp(+inf) = +inf, NaN propagates in f32; the f64 clamp
-///   still swallows NaN, because max/min return their second operand for it
+/// - exp(-inf) = 0, exp(+inf) = +inf, and NaN propagates in both precisions:
+///   the clamp puts the bound first, since max/min return their second operand
+///   for NaN on x86 and FMAX/FMIN propagate it on AArch64
 pub const _EXP_ALGORITHM_DOC: () = ();
 
 /// Algorithm for log(x):
