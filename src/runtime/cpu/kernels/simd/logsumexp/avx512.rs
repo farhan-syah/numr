@@ -61,7 +61,7 @@ pub unsafe fn logsumexp_f32(a: *const f32, out: *mut f32, reduce_size: usize, ou
 }
 
 /// AVX-512 logsumexp for f64
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn logsumexp_f64(a: *const f64, out: *mut f64, reduce_size: usize, outer_size: usize) {
     let chunks = reduce_size / F64_LANES;
 

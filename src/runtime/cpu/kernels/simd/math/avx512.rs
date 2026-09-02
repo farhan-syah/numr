@@ -106,8 +106,8 @@ pub unsafe fn exp_f32(x: __m512) -> __m512 {
 /// implementation is fully vectorized with no scalar operations.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn exp_f64(x: __m512d) -> __m512d {
     use exp_coefficients::*;
@@ -231,8 +231,8 @@ unsafe fn copy_sign_f32(magnitude: __m512, source: __m512) -> __m512 {
 /// never forms that difference.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn tanh_f64(x: __m512d) -> __m512d {
     let a = _mm512_abs_pd(x);
@@ -256,7 +256,7 @@ pub unsafe fn tanh_f64(x: __m512d) -> __m512d {
 ///
 /// Bit masks go through the integer domain: `_mm512_and_si512` and
 /// `_mm512_or_si512` are AVX-512F, while `_mm512_and_pd`/`_mm512_or_pd` require
-/// AVX-512DQ, which `detect_simd` does not check for.
+/// AVX-512DQ. The integer form is AVX-512F.
 ///
 /// # Safety
 /// Requires AVX-512F CPU feature.
@@ -397,8 +397,8 @@ pub unsafe fn log_f32(x: __m512) -> __m512 {
 /// AVX-512 has native 64-bit integer operations, so this is fully vectorized.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 unsafe fn log_reduce_f64(x: __m512d) -> (__m512d, __m512d) {
     use log_coefficients::*;
@@ -503,8 +503,8 @@ unsafe fn log_special_f64(x: __m512d, r: __m512d) -> __m512d {
 /// Relative error stays below 2 ulps over the whole positive range.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn log_f64(x: __m512d) -> __m512d {
     use log_coefficients::{LN2_HI_F64, LN2_LO_F64};
@@ -716,8 +716,8 @@ unsafe fn cos_kernel_f64(y: __m512d) -> __m512d {
 /// Evaluate sin on quadrant `j + offset`, the shared core of sin and cos.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 unsafe fn sin_quadrant_f64(x: __m512d, offset: i64) -> __m512d {
     let (j, y) = trig_reduce_f64(x);
@@ -748,8 +748,8 @@ unsafe fn sin_quadrant_f64(x: __m512d, offset: i64) -> __m512d {
 /// Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn sin_f64(x: __m512d) -> __m512d {
     let r = sin_quadrant_f64(x, 0);
@@ -781,8 +781,8 @@ pub unsafe fn cos_f32(x: __m512) -> __m512 {
 /// |x|. Relative error stays below 4 ulps for |x| <= 2^21 * π/2.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn cos_f64(x: __m512d) -> __m512d {
     sin_quadrant_f64(x, 1)
@@ -825,8 +825,8 @@ pub unsafe fn tan_f32(x: __m512) -> __m512 {
 /// |x| <= 2^21 * π/2.
 ///
 /// # Safety
-/// Requires AVX-512F CPU feature.
-#[target_feature(enable = "avx512f")]
+/// Requires AVX-512F and AVX-512DQ CPU features.
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn tan_f64(x: __m512d) -> __m512d {
     let (j, y) = trig_reduce_f64(x);
@@ -1062,7 +1062,7 @@ pub unsafe fn exp2_f32(x: __m512) -> __m512 {
 /// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. Borrowing `exp(x * ln2)` would
 /// round the product once, and the exponential turns that absolute error into
 /// a relative one — about 1e-13 near |x| = 1000.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn exp2_f64(x: __m512d) -> __m512d {
     use exp2_coefficients::*;
@@ -1170,7 +1170,7 @@ pub unsafe fn expm1_f32(x: __m512) -> __m512 {
 /// See `common::_EXP2_EXPM1_ALGORITHM_DOC`. A degree-4 Taylor series on
 /// |x| <= 0.5 drops `x⁵/120`, which is 2.6e-4 at the interval edge — twelve
 /// decimal digits short of double precision.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn expm1_f64(x: __m512d) -> __m512d {
     use exp_coefficients::*;
@@ -1243,7 +1243,7 @@ pub unsafe fn log2_f32(x: __m512) -> __m512 {
 ///
 /// Scaling `log(x)` would fold the exponent through two roundings and miss
 /// exact powers of two, so the exponent is added back untouched instead.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn log2_f64(x: __m512d) -> __m512d {
     let (n, logm) = log_reduce_f64(x);
@@ -1268,7 +1268,7 @@ pub unsafe fn log10_f32(x: __m512) -> __m512 {
 ///
 /// `log10(x) = n*log10(2) + log(m)*log10(e)`, keeping the exact exponent out
 /// of the mantissa's rounding for the same reason as `log2_f64`.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn log10_f64(x: __m512d) -> __m512d {
     let (n, logm) = log_reduce_f64(x);
@@ -1320,7 +1320,7 @@ pub unsafe fn log1p_f32(x: __m512) -> __m512 {
 /// is carried as an exact pair `u + c` and the residual is folded back in.
 /// Relative error stays below 2 ulps, including for |x| down to the subnormal
 /// range where log1p(x) == x.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn log1p_f64(x: __m512d) -> __m512d {
     let one = _mm512_set1_pd(1.0);
@@ -1385,7 +1385,7 @@ pub unsafe fn sinh_f32(x: __m512) -> __m512 {
 /// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `(e^x - e^-x)/2` subtracts two
 /// values that both approach 1 as x approaches 0, so it keeps none of the
 /// result; `(u + u/(1+u))/2` with `u = expm1(|x|)` keeps all of it.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn sinh_f64(x: __m512d) -> __m512d {
     let one = _mm512_set1_pd(1.0);
@@ -1442,7 +1442,7 @@ pub unsafe fn cosh_f32(x: __m512) -> __m512 {
 /// See `common::hyperbolic_breakpoints`. `(e^x + e^-x)/2` returns infinity over
 /// the whole band where exp has overflowed but cosh has not, [709.7827,
 /// 710.4758], so |x| past the breakpoint takes the squared form instead.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn cosh_f64(x: __m512d) -> __m512d {
     let half = _mm512_set1_pd(0.5);
@@ -1505,7 +1505,7 @@ pub unsafe fn asinh_f32(x: __m512) -> __m512 {
 /// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `log(x + sqrt(x²+1))` cancels for
 /// every negative x — at x = -49.6 the two addends agree to twelve digits —
 /// so the sign is taken out first and the work is done on |x|.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn asinh_f64(x: __m512d) -> __m512d {
     use inv_hyperbolic_breakpoints::{BIG_F64, NEAR_F64};
@@ -1581,7 +1581,7 @@ pub unsafe fn acosh_f32(x: __m512) -> __m512 {
 ///
 /// See `common::_HYPERBOLIC_ALGORITHM_DOC`. Forming `x² - 1` near x = 1 throws
 /// away half the significant bits of `x - 1`, which is the whole result there.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn acosh_f64(x: __m512d) -> __m512d {
     use inv_hyperbolic_breakpoints::{BIG_F64, NEAR_F64};
@@ -1653,7 +1653,7 @@ pub unsafe fn atanh_f32(x: __m512) -> __m512 {
 /// See `common::_HYPERBOLIC_ALGORITHM_DOC`. `0.5*log((1+x)/(1-x))` rounds
 /// `1 + x` before the log, which at x = 7e-4 discards every bit the result is
 /// made of; log1p keeps them.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn atanh_f64(x: __m512d) -> __m512d {
     use inv_hyperbolic_breakpoints::ATANH_SPLIT_F64;
@@ -1908,7 +1908,7 @@ pub unsafe fn cbrt_f32(x: __m512) -> __m512 {
 
     // Bit masks are applied through the integer domain: `_mm512_and_si512` and
     // `_mm512_andnot_si512` are AVX-512F, while `_mm512_and_ps`/`_mm512_andnot_ps`
-    // require AVX-512DQ, which `detect_simd` does not check for. The casts are
+    // require AVX-512DQ. The integer form is AVX-512F. The casts are
     // reinterpretations and emit no code. `_mm512_andnot_si512(a, b)` computes
     // `(!a) & b`, matching `_mm512_andnot_ps(a, b)`.
     let sign_bit = _mm512_set1_epi32(0x8000_0000u32 as i32);
@@ -1960,12 +1960,12 @@ pub unsafe fn cbrt_f32(x: __m512) -> __m512 {
 }
 
 /// Fast SIMD cbrt (cube root) for f64 using AVX-512
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 #[inline]
 pub unsafe fn cbrt_f64(x: __m512d) -> __m512d {
     // Bit masks are applied through the integer domain: `_mm512_and_si512` and
     // `_mm512_andnot_si512` are AVX-512F, while `_mm512_and_pd`/`_mm512_andnot_pd`
-    // require AVX-512DQ, which `detect_simd` does not check for. The casts are
+    // require AVX-512DQ. The integer form is AVX-512F. The casts are
     // reinterpretations and emit no code. `_mm512_andnot_si512(a, b)` computes
     // `(!a) & b`, matching `_mm512_andnot_pd(a, b)`.
     let sign_bit = _mm512_set1_epi64(0x8000_0000_0000_0000u64 as i64);

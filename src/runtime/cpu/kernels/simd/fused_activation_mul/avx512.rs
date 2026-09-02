@@ -48,7 +48,7 @@ pub unsafe fn silu_mul_f32(a: *const f32, b: *const f32, out: *mut f32, len: usi
 /// AVX-512 silu_mul for f64
 ///
 /// Computes: (a / (1 + exp(-a))) * b
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn silu_mul_f64(a: *const f64, b: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let one = _mm512_set1_pd(1.0);
@@ -115,7 +115,7 @@ pub unsafe fn gelu_mul_f32(a: *const f32, b: *const f32, out: *mut f32, len: usi
 /// AVX-512 gelu_mul for f64
 ///
 /// Computes: 0.5 * a * (1 + tanh(sqrt(2/pi) * (a + 0.044715 * a^3))) * b
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn gelu_mul_f64(a: *const f64, b: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let half = _mm512_set1_pd(0.5);
@@ -238,7 +238,7 @@ pub unsafe fn sigmoid_mul_f32(a: *const f32, b: *const f32, out: *mut f32, len: 
 /// AVX-512 sigmoid_mul for f64
 ///
 /// Computes: (1 / (1 + exp(-a))) * b
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn sigmoid_mul_f64(a: *const f64, b: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let one = _mm512_set1_pd(1.0);

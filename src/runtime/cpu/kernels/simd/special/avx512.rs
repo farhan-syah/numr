@@ -77,7 +77,7 @@ pub unsafe fn erf_f32(input: *const f32, output: *mut f32, len: usize) {
 ///
 /// Uses Maclaurin series for |x| < 3, Laplace continued fraction for 3 ≤ |x| < 6,
 /// and asymptotic ±1 for |x| ≥ 6. Accuracy: ~1e-15 (full f64 precision).
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn erf_f64(input: *const f64, output: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let remainder = len % F64_LANES;
@@ -172,7 +172,7 @@ pub unsafe fn erfc_f32(input: *const f32, output: *mut f32, len: usize) {
 }
 
 /// Vectorized erfc for f64 using AVX-512
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn erfc_f64(input: *const f64, output: *mut f64, len: usize) {
     erf_f64(input, output, len);
 
@@ -415,7 +415,7 @@ pub unsafe fn bessel_i0_f32(input: *const f32, output: *mut f32, len: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn bessel_i0_f64(input: *const f64, output: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let remainder = len % F64_LANES;

@@ -97,7 +97,7 @@ pub unsafe fn softmax_f32(a: *const f32, out: *mut f32, outer_size: usize, dim_s
 }
 
 /// AVX-512 softmax for f64 using online algorithm.
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn softmax_f64(a: *const f64, out: *mut f64, outer_size: usize, dim_size: usize) {
     let chunks = dim_size / F64_LANES;
 

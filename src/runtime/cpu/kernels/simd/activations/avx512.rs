@@ -37,7 +37,7 @@ pub unsafe fn sigmoid_f32(a: *const f32, out: *mut f32, len: usize) {
 }
 
 /// AVX-512 sigmoid for f64
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn sigmoid_f64(a: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let one = _mm512_set1_pd(1.0);
@@ -79,7 +79,7 @@ pub unsafe fn silu_f32(a: *const f32, out: *mut f32, len: usize) {
 }
 
 /// AVX-512 SiLU for f64
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn silu_f64(a: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let one = _mm512_set1_pd(1.0);
@@ -128,7 +128,7 @@ pub unsafe fn gelu_f32(a: *const f32, out: *mut f32, len: usize) {
 }
 
 /// AVX-512 GELU for f64
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn gelu_f64(a: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let half = _mm512_set1_pd(0.5);
@@ -234,7 +234,7 @@ pub unsafe fn elu_f32(a: *const f32, out: *mut f32, len: usize, alpha: f32) {
 }
 
 /// AVX-512 ELU for f64
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn elu_f64(a: *const f64, out: *mut f64, len: usize, alpha: f64) {
     let chunks = len / F64_LANES;
     let v_alpha = _mm512_set1_pd(alpha);

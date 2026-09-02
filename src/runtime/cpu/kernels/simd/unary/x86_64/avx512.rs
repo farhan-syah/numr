@@ -93,7 +93,7 @@ pub unsafe fn unary_f32(op: UnaryOp, a: *const f32, out: *mut f32, len: usize) {
 }
 
 /// AVX-512 unary operation for f64
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn unary_f64(op: UnaryOp, a: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let remainder = len % F64_LANES;
@@ -238,8 +238,8 @@ unsafe fn unary_neg_f32(a: *const f32, out: *mut f32, chunks: usize) {
 #[target_feature(enable = "avx512f")]
 unsafe fn unary_abs_f32(a: *const f32, out: *mut f32, chunks: usize) {
     // The sign bit is cleared through the integer domain: `_mm512_and_si512` is
-    // AVX-512F, while `_mm512_and_ps` requires AVX-512DQ, which `detect_simd`
-    // does not check for. The casts are reinterpretations and emit no code.
+    // AVX-512F, while `_mm512_and_ps` requires AVX-512DQ. The casts are
+    // reinterpretations and emit no code.
     let mask = _mm512_set1_epi32(0x7FFF_FFFF); // Clear sign bit
     for i in 0..chunks {
         let offset = i * F32_LANES;
@@ -312,7 +312,7 @@ unsafe fn unary_ceil_f32(a: *const f32, out: *mut f32, chunks: usize) {
 unsafe fn unary_round_f32(a: *const f32, out: *mut f32, chunks: usize) {
     // Bit masks are applied through the integer domain: `_mm512_and_si512` and
     // `_mm512_or_si512` are AVX-512F, while `_mm512_and_ps`/`_mm512_or_ps`
-    // require AVX-512DQ, which `detect_simd` does not check for.
+    // require AVX-512DQ. The integer form is AVX-512F.
     let sign_mask = _mm512_set1_epi32(0x8000_0000u32 as i32);
     let abs_mask = _mm512_set1_epi32(0x7fff_ffff);
     let neg_half = _mm512_set1_ps(-0.5);
@@ -606,8 +606,8 @@ unsafe fn unary_neg_f64(a: *const f64, out: *mut f64, chunks: usize) {
 #[target_feature(enable = "avx512f")]
 unsafe fn unary_abs_f64(a: *const f64, out: *mut f64, chunks: usize) {
     // The sign bit is cleared through the integer domain: `_mm512_and_si512` is
-    // AVX-512F, while `_mm512_and_pd` requires AVX-512DQ, which `detect_simd`
-    // does not check for. The casts are reinterpretations and emit no code.
+    // AVX-512F, while `_mm512_and_pd` requires AVX-512DQ. The casts are
+    // reinterpretations and emit no code.
     let mask = _mm512_set1_epi64(0x7FFF_FFFF_FFFF_FFFF);
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -707,7 +707,7 @@ unsafe fn unary_round_ties_even_f64(a: *const f64, out: *mut f64, chunks: usize)
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_exp_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -717,7 +717,7 @@ unsafe fn unary_exp_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_tanh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -727,7 +727,7 @@ unsafe fn unary_tanh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_log_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -737,7 +737,7 @@ unsafe fn unary_log_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_sin_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -747,7 +747,7 @@ unsafe fn unary_sin_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_cos_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -757,7 +757,7 @@ unsafe fn unary_cos_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_tan_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -806,7 +806,7 @@ unsafe fn unary_rsqrt_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_cbrt_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -816,7 +816,7 @@ unsafe fn unary_cbrt_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_exp2_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -826,7 +826,7 @@ unsafe fn unary_exp2_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_expm1_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -836,7 +836,7 @@ unsafe fn unary_expm1_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_log2_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -846,7 +846,7 @@ unsafe fn unary_log2_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_log10_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -856,7 +856,7 @@ unsafe fn unary_log10_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_log1p_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -886,7 +886,7 @@ unsafe fn unary_acos_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_sinh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -896,7 +896,7 @@ unsafe fn unary_sinh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_cosh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -906,7 +906,7 @@ unsafe fn unary_cosh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_asinh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -916,7 +916,7 @@ unsafe fn unary_asinh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_acosh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;
@@ -926,7 +926,7 @@ unsafe fn unary_acosh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     }
 }
 
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 unsafe fn unary_atanh_f64(a: *const f64, out: *mut f64, chunks: usize) {
     for i in 0..chunks {
         let offset = i * F64_LANES;

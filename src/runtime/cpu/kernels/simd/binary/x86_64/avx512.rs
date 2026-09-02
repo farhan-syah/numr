@@ -145,7 +145,7 @@ macro_rules! impl_pow_f32_avx512 {
 
 macro_rules! impl_pow_f64_avx512 {
     ($name:ident, $store:ident) => {
-        #[target_feature(enable = "avx512f")]
+        #[target_feature(enable = "avx512f", enable = "avx512dq")]
         unsafe fn $name(a: *const f64, b: *const f64, out: *mut f64, chunks: usize) {
             let inf = _mm512_set1_pd(f64::INFINITY);
             for i in 0..chunks {
@@ -257,9 +257,9 @@ pub unsafe fn binary_f32(op: BinaryOp, a: *const f32, b: *const f32, out: *mut f
 /// Uses streaming (non-temporal) stores for arrays > 1MB when output is 64-byte aligned.
 ///
 /// # Safety
-/// - CPU must support AVX-512F
+/// - CPU must support AVX-512F and AVX-512DQ
 /// - All pointers must be valid for `len` elements
-#[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512f", enable = "avx512dq")]
 pub unsafe fn binary_f64(op: BinaryOp, a: *const f64, b: *const f64, out: *mut f64, len: usize) {
     let chunks = len / F64_LANES;
     let remainder = len % F64_LANES;
