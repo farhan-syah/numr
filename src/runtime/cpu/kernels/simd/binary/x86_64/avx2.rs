@@ -101,6 +101,8 @@ macro_rules! impl_pow_f32_avx2 {
     ($name:ident, $store:ident) => {
         #[target_feature(enable = "avx2", enable = "fma")]
         unsafe fn $name(a: *const f32, b: *const f32, out: *mut f32, chunks: usize) {
+            let inf = _mm256_set1_ps(f32::INFINITY);
+            let abs_mask = _mm256_set1_ps(-0.0);
             for i in 0..chunks {
                 let offset = i * F32_LANES;
                 let va = _mm256_loadu_ps(a.add(offset));
@@ -109,7 +111,34 @@ macro_rules! impl_pow_f32_avx2 {
                 let log_a = log_vec_f32(va);
                 let b_log_a = _mm256_mul_ps(vb, log_a);
                 let vr = exp_vec_f32(b_log_a);
-                $store(out.add(offset), vr);
+
+                // The identity only holds for a > 0. Elsewhere log(a) is -inf
+                // or NaN, and results like pow(0, 0) = 1 or pow(-2, 3) = -8
+                // have no form in it at all. Unordered compare, so NaN bases
+                // land here too.
+                let undefined = _mm256_cmp_ps::<_CMP_NGT_UQ>(va, _mm256_setzero_ps());
+                // A non-finite product is the other escape: `b * log(a)` is
+                // 0 * inf for pow(+inf, 0) and pow(1, ±inf), which IEEE 754
+                // fixes at exactly 1, and the exponential of NaN cannot
+                // recover that.
+                let wild = _mm256_cmp_ps::<_CMP_NLT_UQ>(_mm256_andnot_ps(abs_mask, b_log_a), inf);
+                let undefined = _mm256_or_ps(undefined, wild);
+
+                if _mm256_movemask_ps(undefined) == 0 {
+                    $store(out.add(offset), vr);
+                } else {
+                    let mut lanes = [0.0f32; F32_LANES];
+                    let mut products = [0.0f32; F32_LANES];
+                    _mm256_storeu_ps(lanes.as_mut_ptr(), vr);
+                    _mm256_storeu_ps(products.as_mut_ptr(), b_log_a);
+                    for (lane, slot) in lanes.iter_mut().enumerate() {
+                        let base = *a.add(offset + lane);
+                        if base.is_nan() || base <= 0.0 || !products[lane].is_finite() {
+                            *slot = base.powf(*b.add(offset + lane));
+                        }
+                    }
+                    $store(out.add(offset), _mm256_loadu_ps(lanes.as_ptr()));
+                }
             }
         }
     };
@@ -119,6 +148,8 @@ macro_rules! impl_pow_f64_avx2 {
     ($name:ident, $store:ident) => {
         #[target_feature(enable = "avx2", enable = "fma")]
         unsafe fn $name(a: *const f64, b: *const f64, out: *mut f64, chunks: usize) {
+            let inf = _mm256_set1_pd(f64::INFINITY);
+            let abs_mask = _mm256_set1_pd(-0.0);
             for i in 0..chunks {
                 let offset = i * F64_LANES;
                 let va = _mm256_loadu_pd(a.add(offset));
@@ -133,14 +164,23 @@ macro_rules! impl_pow_f64_avx2 {
                 // have no form in it at all. Unordered compare, so NaN bases
                 // land here too.
                 let undefined = _mm256_cmp_pd::<_CMP_NGT_UQ>(va, _mm256_setzero_pd());
+                // A non-finite product is the other escape: `b * log(a)` is
+                // 0 * inf for pow(+inf, 0) and pow(1, ±inf), which IEEE 754
+                // fixes at exactly 1, and the exponential of NaN cannot
+                // recover that.
+                let wild = _mm256_cmp_pd::<_CMP_NLT_UQ>(_mm256_andnot_pd(abs_mask, b_log_a), inf);
+                let undefined = _mm256_or_pd(undefined, wild);
+
                 if _mm256_movemask_pd(undefined) == 0 {
                     $store(out.add(offset), vr);
                 } else {
                     let mut lanes = [0.0f64; F64_LANES];
+                    let mut products = [0.0f64; F64_LANES];
                     _mm256_storeu_pd(lanes.as_mut_ptr(), vr);
+                    _mm256_storeu_pd(products.as_mut_ptr(), b_log_a);
                     for (lane, slot) in lanes.iter_mut().enumerate() {
                         let base = *a.add(offset + lane);
-                        if base.is_nan() || base <= 0.0 {
+                        if base.is_nan() || base <= 0.0 || !products[lane].is_finite() {
                             *slot = base.powf(*b.add(offset + lane));
                         }
                     }

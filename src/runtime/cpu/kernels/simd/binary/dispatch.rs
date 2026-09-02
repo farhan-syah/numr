@@ -584,4 +584,96 @@ mod tests {
         assert!(is_aligned_avx512(128 as *const f32));
         assert!(!is_aligned_avx512(32 as *const f32));
     }
+
+    /// IEEE 754 fixes `pow` at exactly 1 for `pow(x, ±0)`, `pow(1, y)` and
+    /// `pow(1, NaN)`, whatever `x` and `y` are. The SIMD identity
+    /// `exp(b * log(a))` cannot produce that: `b * log(a)` is `0 * inf` for
+    /// `pow(+inf, 0)` and for `pow(1, ±inf)`, and the exponential of the
+    /// resulting NaN is NaN. Only a non-finite product routes those to the
+    /// scalar fallback. The infinite exponents below check that widening the
+    /// mask does not divert the cases where an infinite product is the right
+    /// answer.
+    #[test]
+    fn test_binary_pow_f32_ieee_identities() {
+        const LEN: usize = 2048;
+        let cases: [(f32, f32, f32); 12] = [
+            (f32::INFINITY, 0.0, 1.0),
+            (f32::INFINITY, -0.0, 1.0),
+            (1.0, f32::INFINITY, 1.0),
+            (1.0, f32::NEG_INFINITY, 1.0),
+            (1.0, f32::NAN, 1.0),
+            (f32::NAN, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (-2.0, 3.0, -8.0),
+            (2.0, 3.0, 8.0),
+            (4.0, 0.5, 2.0),
+            (2.0, f32::INFINITY, f32::INFINITY),
+            (0.5, f32::INFINITY, 0.0),
+        ];
+
+        let a: Vec<f32> = (0..LEN).map(|i| cases[i % cases.len()].0).collect();
+        let b: Vec<f32> = (0..LEN).map(|i| cases[i % cases.len()].1).collect();
+        let mut out = vec![0.0f32; LEN];
+
+        unsafe { binary_f32(BinaryOp::Pow, a.as_ptr(), b.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = cases[i % cases.len()].2;
+            let close = expected.is_finite()
+                && expected != 0.0
+                && (out[i] - expected).abs() / expected.abs() < 1e-6;
+            assert!(
+                out[i] == expected || close,
+                "pow({}, {}) = {}, expected {} at index {}",
+                a[i],
+                b[i],
+                out[i],
+                expected,
+                i
+            );
+        }
+    }
+
+    /// The f64 counterpart of `test_binary_pow_f32_ieee_identities`; fixing one
+    /// precision alone would leave the two disagreeing on the same input.
+    #[test]
+    fn test_binary_pow_f64_ieee_identities() {
+        const LEN: usize = 2048;
+        let cases: [(f64, f64, f64); 12] = [
+            (f64::INFINITY, 0.0, 1.0),
+            (f64::INFINITY, -0.0, 1.0),
+            (1.0, f64::INFINITY, 1.0),
+            (1.0, f64::NEG_INFINITY, 1.0),
+            (1.0, f64::NAN, 1.0),
+            (f64::NAN, 0.0, 1.0),
+            (0.0, 0.0, 1.0),
+            (-2.0, 3.0, -8.0),
+            (2.0, 3.0, 8.0),
+            (4.0, 0.5, 2.0),
+            (2.0, f64::INFINITY, f64::INFINITY),
+            (0.5, f64::INFINITY, 0.0),
+        ];
+
+        let a: Vec<f64> = (0..LEN).map(|i| cases[i % cases.len()].0).collect();
+        let b: Vec<f64> = (0..LEN).map(|i| cases[i % cases.len()].1).collect();
+        let mut out = vec![0.0f64; LEN];
+
+        unsafe { binary_f64(BinaryOp::Pow, a.as_ptr(), b.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = cases[i % cases.len()].2;
+            let close = expected.is_finite()
+                && expected != 0.0
+                && (out[i] - expected).abs() / expected.abs() < 1e-12;
+            assert!(
+                out[i] == expected || close,
+                "pow({}, {}) = {}, expected {} at index {}",
+                a[i],
+                b[i],
+                out[i],
+                expected,
+                i
+            );
+        }
+    }
 }
