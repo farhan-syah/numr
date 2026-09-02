@@ -33,13 +33,23 @@ use super::names::kernel_names;
 /// - M > 16 (keep existing m<=16 GEMV fast path)
 #[inline]
 pub(crate) fn use_wmma(dtype: DType, caps: DeviceCaps, m: usize, n: usize, k: usize) -> bool {
-    // The WMMA kernel is only correct for 16-aligned M/N/K (its sub-16 fragment
-    // boundary handling is buggy). The matmul op (src/ops/cuda/matmul.rs) PADS
-    // unaligned F16/BF16 operands up to the next multiple of 16 before dispatch,
-    // so by the time we get here the dims are aligned — critical for the varlen
-    // embedding path where M = total_tokens is rarely a multiple of 16 (without
-    // the pad+WMMA, F16 fell to the ~100x-slower generic kernel: 57 vs 8500
-    // GFLOP/s). `m > 16` keeps tiny-M matmuls on the GEMV path.
+    // The matmul op (src/ops/cuda/matmul.rs) PADS unaligned F16/BF16 operands up
+    // to the next multiple of 16 before dispatch, so by the time we get here the
+    // dims are aligned — critical for the varlen embedding path where
+    // M = total_tokens is rarely a multiple of 16 (without the pad+WMMA, F16 fell
+    // to a ~100x-slower generic kernel). `m > 16` keeps tiny-M matmuls on the
+    // GEMV path.
+    //
+    // The M test is a POLICY of this path, not a kernel limitation. An earlier
+    // version of this comment claimed the kernel's sub-16 fragment handling was
+    // buggy; that is not true of the kernel as it stands. `WMMA_KERNEL_BODY`
+    // bounds-checks its A-tile staging and its epilogue store per ROW against M,
+    // so a ragged M is zero-filled and masked rather than mis-read — which is
+    // exactly what the grouped path relies on, where M is a per-group count in
+    // device memory that the host cannot pad (see `use_wmma_grouped` in
+    // grouped_matmul.rs). Keeping the alignment test here is still right for the
+    // dense path: M is a host-known launch argument, padding it is cheap, and an
+    // aligned M keeps the 128-bit staging path live.
     let dtype_ok = match dtype {
         DType::F16 => caps.f16_mma,
         DType::BF16 => caps.bf16,

@@ -1,7 +1,10 @@
 //! CUDA implementation of `GroupedMatmulOps`.
 //!
-//! Launches the grouped entry points in `kernels/grouped_matmul.cu`, which wrap
-//! the same compile-time-tiled GEMM core the dense F32 path uses.
+//! Launches the grouped entry points in `kernels/grouped_matmul.cu` (tiled
+//! core, shared with the dense F32 path) or, for 16-aligned F16/BF16 on a
+//! capable device, the grouped tensor-core kernels in `kernels/matmul_wmma.cu`.
+//! The choice is made by the loader (`use_wmma_grouped`); this file only
+//! forwards the device's capability snapshot.
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
@@ -95,6 +98,11 @@ fn grouped_matmul_launch(
     let b_c = b.contiguous()?;
     let o_c = group_offsets.contiguous()?;
 
+    // Same predicate the loader uses to choose WMMA vs tiled — passed
+    // through as data, not pre-decided here, so the decision stays in one
+    // place (`use_wmma_grouped` in the loader).
+    let caps = device.profile().caps;
+
     unsafe {
         launch_grouped_matmul(
             client.context(),
@@ -109,6 +117,7 @@ fn grouped_matmul_launch(
             k,
             num_groups,
             a.dtype(),
+            caps,
             activation.map(GemmActivation::code),
         )?;
     }

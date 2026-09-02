@@ -244,6 +244,12 @@ static_assert(WMMA_STAGES >= 2,
 #define WMMA_EPILOGUE_BIAS_F16(VAL, ROW, COL)   ((VAL) + __half2float(bias[(COL)]))
 #define WMMA_EPILOGUE_BIAS_BF16(VAL, ROW, COL)  ((VAL) + __bfloat162float(bias[(COL)]))
 
+/* Activation with no bias, for the grouped GEMM: an expert's GEMM has a weight
+   matrix per group but no per-group bias vector. Same `activation_type` code
+   and same apply_activation_f32 as the bias forms above, so the two cannot
+   disagree about an activation. */
+#define WMMA_EPILOGUE_ACT(VAL, ROW, COL) apply_activation_f32((VAL), activation_type)
+
 /* bias + activation. `activation_type` is the kernel parameter carrying the
    code `activation_to_u32` emits (gemm_epilogue/launcher.rs); the math itself
    is apply_activation_f32 from gemm_activation.cuh, the same function the

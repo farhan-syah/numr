@@ -81,6 +81,64 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_wmma_batched_##NAME(     \
                      A_b, B_b, C_b)                                           \
 }
 
+// Grouped: one independent GEMM per group, with the row boundaries in device
+// memory. Same shape as the batched form above — slice by blockIdx.z and hand
+// the body the sliced pointers — except the row count comes from `offsets`
+// rather than being uniform across slices.
+//
+// The launcher covers the TOTAL row count in grid.y for every group, because it
+// cannot see the per-group counts. A block whose row tile is past its own
+// group's count returns immediately; the test is block-uniform, so it skips the
+// whole K loop rather than running it and discarding the result.
+#define DEFINE_WMMA_GROUPED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA, ZERO_EXPR, STORE_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void grouped_matmul_wmma_##NAME(     \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const int*    __restrict__ offsets,                                       \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int N,                                                           \
+    unsigned int K,                                                           \
+    int num_groups                                                            \
+) {                                                                           \
+    const int group = blockIdx.z;                                             \
+    if (group >= num_groups) return;                                          \
+    const int start = offsets[group];                                         \
+    const int count = offsets[group + 1] - start;                             \
+    if (count <= 0) return;                                                   \
+    if ((long long)blockIdx.y * (WARP_ROWS * (WM) * WMMA_M) >= (long long)count) return; \
+    const unsigned int M = (unsigned int)count;                               \
+    const HALF_T* A_g = A + (size_t)start * K;                                \
+    const HALF_T* B_g = B + (size_t)group * K * N;                            \
+    HALF_T*       C_g = C + (size_t)start * N;                                \
+    WMMA_KERNEL_BODY(WM, WN, BLOCK_K_VAL, HALF_T, MMA, ZERO_EXPR, STORE_FN,   \
+                     A_g, B_g, C_g)                                           \
+}
+
+#define DEFINE_WMMA_GROUPED_ACT(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA, ZERO_EXPR, STORE_FN) \
+extern "C" __global__ WMMA_LAUNCH_BOUNDS void grouped_matmul_act_wmma_##NAME( \
+    const HALF_T* __restrict__ A,                                             \
+    const HALF_T* __restrict__ B,                                             \
+    const int*    __restrict__ offsets,                                       \
+    HALF_T*       __restrict__ C,                                             \
+    unsigned int N,                                                           \
+    unsigned int K,                                                           \
+    int num_groups,                                                           \
+    unsigned int activation_type                                              \
+) {                                                                           \
+    const int group = blockIdx.z;                                             \
+    if (group >= num_groups) return;                                          \
+    const int start = offsets[group];                                         \
+    const int count = offsets[group + 1] - start;                             \
+    if (count <= 0) return;                                                   \
+    if ((long long)blockIdx.y * (WARP_ROWS * (WM) * WMMA_M) >= (long long)count) return; \
+    const unsigned int M = (unsigned int)count;                               \
+    const HALF_T* A_g = A + (size_t)start * K;                                \
+    const HALF_T* B_g = B + (size_t)group * K * N;                            \
+    HALF_T*       C_g = C + (size_t)start * N;                                \
+    WMMA_KERNEL_BODY_EPI(WM, WN, BLOCK_K_VAL, HALF_T, MMA, ZERO_EXPR,         \
+                         STORE_FN, A_g, B_g, C_g, WMMA_EPILOGUE_ACT)          \
+}
+
 #define DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA, ZERO_EXPR, STORE_FN, EPI_FN) \
 extern "C" __global__ WMMA_LAUNCH_BOUNDS void matmul_bias_wmma_##NAME(        \
     const HALF_T* __restrict__ A,                                             \
@@ -198,6 +256,10 @@ extern "C" __global__ WMMA_LAUNCH_BOUNDS void gemm_bias_residual_wmma_batched_##
                        STORE_FN)                                              \
     DEFINE_WMMA_MATMUL_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA,        \
                                ZERO_EXPR, STORE_FN)                           \
+    DEFINE_WMMA_GROUPED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA, ZERO_EXPR,    \
+                        STORE_FN)                                             \
+    DEFINE_WMMA_GROUPED_ACT(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA,           \
+                            ZERO_EXPR, STORE_FN)                              \
     DEFINE_WMMA_MATMUL_BIAS(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA, ZERO_EXPR, \
                             STORE_FN, EPI_BIAS)                               \
     DEFINE_WMMA_MATMUL_BIAS_BATCHED(NAME, WM, WN, BLOCK_K_VAL, HALF_T, MMA,   \
