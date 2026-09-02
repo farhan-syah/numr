@@ -264,6 +264,66 @@ mod tests {
         }
     }
 
+    /// A scattered -inf mask leaves a whole SIMD lane at -inf while its
+    /// neighbours are live, so the online rescale forms `exp(-inf - (-inf))`.
+    /// exp propagates NaN, so without the per-lane validity masks that NaN
+    /// spreads through the horizontal sum and poisons every live element of
+    /// the row, not just the masked ones.
+    ///
+    /// dim_size 300 is 75 whole f64 AVX2 lanes, so nothing falls through to
+    /// the scalar tail, which skips -inf already.
+    #[test]
+    fn test_softmax_f64_scattered_neg_inf_mask() {
+        let dim_size = 300;
+        let outer_size = 4;
+        let input: Vec<f64> = (0..(outer_size * dim_size))
+            .map(|i| {
+                if i % 7 == 3 {
+                    f64::NEG_INFINITY
+                } else {
+                    (i % 23) as f64 * 0.2 - 1.5
+                }
+            })
+            .collect();
+        let mut out = vec![0.0f64; outer_size * dim_size];
+        let mut out_ref = vec![0.0f64; outer_size * dim_size];
+
+        unsafe {
+            softmax_f64(input.as_ptr(), out.as_mut_ptr(), outer_size, dim_size);
+            softmax_scalar_f64(input.as_ptr(), out_ref.as_mut_ptr(), outer_size, dim_size);
+        }
+
+        for i in 0..(outer_size * dim_size) {
+            assert!(
+                out[i].is_finite(),
+                "non-finite output at {}: {} (input {})",
+                i,
+                out[i],
+                input[i]
+            );
+            let rel_err = (out[i] - out_ref[i]).abs() / out_ref[i].abs().max(f64::MIN_POSITIVE);
+            assert!(
+                rel_err < 1e-12,
+                "mismatch at {}: {} vs {} (rel_err: {})",
+                i,
+                out[i],
+                out_ref[i],
+                rel_err
+            );
+        }
+
+        // A masked row must still normalize: the masked lanes contribute zero.
+        for o in 0..outer_size {
+            let row_sum: f64 = out[o * dim_size..(o + 1) * dim_size].iter().sum();
+            assert!(
+                (row_sum - 1.0).abs() < 1e-12,
+                "row {} sum = {}, expected 1.0",
+                o,
+                row_sum
+            );
+        }
+    }
+
     #[test]
     fn test_softmax_sum_to_one() {
         let dim_size = 64;

@@ -218,6 +218,38 @@ pub unsafe fn logsumexp_bf16(
 mod tests {
     use super::*;
 
+    /// A fully masked row has max = -inf, so every `exp(x - max)` would be
+    /// `exp(-inf - (-inf))` = NaN. logsumexp over an empty set is -inf.
+    #[test]
+    fn test_logsumexp_f64_all_neg_inf_row() {
+        let reduce_size = 128;
+        let outer_size = 3;
+        let input: Vec<f64> = (0..(outer_size * reduce_size))
+            .map(|i| {
+                if i / reduce_size == 1 {
+                    f64::NEG_INFINITY
+                } else {
+                    (i % 17) as f64 * 0.3 - 2.0
+                }
+            })
+            .collect();
+        let mut out = vec![0.0f64; outer_size];
+
+        unsafe {
+            logsumexp_f64(input.as_ptr(), out.as_mut_ptr(), reduce_size, outer_size);
+        }
+
+        assert_eq!(
+            out[1],
+            f64::NEG_INFINITY,
+            "all-masked row gave {}, expected -inf",
+            out[1]
+        );
+        for o in [0, 2] {
+            assert!(out[o].is_finite(), "row {} gave {}", o, out[o]);
+        }
+    }
+
     #[test]
     fn test_logsumexp_f32() {
         let reduce_size = 128;

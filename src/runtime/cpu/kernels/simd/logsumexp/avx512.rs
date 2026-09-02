@@ -85,6 +85,13 @@ pub unsafe fn logsumexp_f64(a: *const f64, out: *mut f64, reduce_size: usize, ou
             }
         }
 
+        // Every element is -inf, so exp(x - max) would be exp(-inf - (-inf)) = NaN.
+        // logsumexp of an all-masked row is -inf.
+        if max_val == f64::NEG_INFINITY {
+            *out.add(o) = f64::NEG_INFINITY;
+            continue;
+        }
+
         // Step 2: SIMD exp(x - max) and sum
         let v_max = _mm512_set1_pd(max_val);
         let mut sum_vec = _mm512_setzero_pd();
