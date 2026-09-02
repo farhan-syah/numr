@@ -10,26 +10,20 @@
 //! | exp      | ✓   | ✓   | 1 ulp / 1e-12 |
 //! | tanh     | ✓   | ✓   | < 1e-6 / 2 ulp |
 //! | log      | ✓   | ✓   | < 1e-6 / 2 ulp |
-//! | sin      | ✓   | ✓   | < 1e-6 / 4 ulp |
-//! | cos      | ✓   | ✓   | < 1e-6 / 4 ulp |
-//! | tan      | ✓   | ✓   | < 2e-4 / 4 ulp |
-//! | atan     | ✓   | ✓   | see note / 2 ulp |
-//! | asin     | ✓   | ✓   | see note / 2 ulp |
-//! | acos     | ✓   | ✓   | see note / 2 ulp |
+//! | sin      | ✓   | ✓   | 2 ulp / 4 ulp |
+//! | cos      | ✓   | ✓   | 2 ulp / 4 ulp |
+//! | tan      | ✓   | ✓   | 2 ulp / 4 ulp |
+//! | atan     | ✓   | ✓   | 2 ulp / 2 ulp |
+//! | asin     | ✓   | ✓   | 2 ulp / 2 ulp |
+//! | acos     | ✓   | ✓   | 2 ulp / 2 ulp |
 //!
-//! Note: the f32 atan/asin/acos paths reduce with `atan(x) = π/2 - atan(1/x)`
-//! and a Gregory series, whose truncation error grows toward the |x| = 1
-//! boundary. The f64 paths use the multi-centre reduction in `common.rs`
-//! instead and hold below 2 ulps everywhere.
+//! The log family is still split: the f64 log/log2/log10/log1p paths hold below
+//! 2 ulps, while their f32 counterparts use a truncated series and are far
+//! coarser than f32 epsilon.
 //!
-//! The same split applies to the log family: the f64 log/log2/log10/log1p
-//! paths hold below 2 ulps, while their f32 counterparts still use a truncated
-//! series and are far coarser than f32 epsilon.
-//!
-//! The f64 sin/cos/tan bounds hold for |x| <= 2^21 * π/2 (about 3.3e6), the
-//! limit of the Cody-Waite reduction in `common.rs`, and for tan away from its
-//! poles. Their f32 counterparts reduce with a single rounded π/2 and use
-//! truncated Taylor series, so they are far coarser than f32 epsilon.
+//! The sin/cos/tan bounds hold for |x| <= 2^21 * π/2 (about 3.3e6) in f64 and
+//! |x| <= 2^17 in f32, the limits of the Cody-Waite reductions in `common.rs`,
+//! and for tan away from its poles.
 //!
 //! exp2, expm1, sinh, tanh, asinh, acosh and atanh hold below 2 ulps in f64.
 //! The f32 exp, exp2, expm1 and cbrt hold below 2 ulps as well, each over its
@@ -46,8 +40,7 @@ use std::arch::x86_64::*;
 
 use super::common::{
     asin_coefficients, atan_coefficients, cbrt_constants, exp_coefficients, exp2_coefficients,
-    hyperbolic_breakpoints, inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients,
-    trig_coefficients,
+    hyperbolic_breakpoints, inv_hyperbolic_breakpoints, log_coefficients, trig_coefficients,
 };
 
 // ============================================================================
@@ -464,78 +457,121 @@ pub unsafe fn log_f64(x: __m256d) -> __m256d {
 // Trigonometric functions: sin, cos, tan
 // ============================================================================
 
+/// Cody-Waite reduction of `x` modulo π/2 for f32.
+///
+/// Returns the quadrant index and the reduced argument in [-π/4, π/4]. See
+/// `common::_TRIG_ALGORITHM_DOC`; the subtraction chain is exact for |j| below
+/// 2^24, and the quadrant index itself stays exact for |x| <= 2^17.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn trig_reduce_f32(x: __m256) -> (__m256i, __m256) {
+    use trig_coefficients::{PIO2_1_F32, PIO2_2_F32, PIO2_3_F32};
+
+    let j = _mm256_round_ps::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(_mm256_mul_ps(
+        x,
+        _mm256_set1_ps(std::f32::consts::FRAC_2_PI),
+    ));
+
+    let y = _mm256_fnmadd_ps(j, _mm256_set1_ps(PIO2_1_F32), x);
+    let y = _mm256_fnmadd_ps(j, _mm256_set1_ps(PIO2_2_F32), y);
+    let y = _mm256_fnmadd_ps(j, _mm256_set1_ps(PIO2_3_F32), y);
+
+    (_mm256_cvtps_epi32(j), y)
+}
+
+/// Minimax sin kernel on the reduced argument, |y| <= π/4.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn sin_kernel_f32(y: __m256) -> __m256 {
+    use trig_coefficients::{SIN0_F32, SIN1_F32, SIN2_F32};
+
+    let z = _mm256_mul_ps(y, y);
+
+    let mut p = _mm256_set1_ps(SIN0_F32);
+    p = _mm256_fmadd_ps(p, z, _mm256_set1_ps(SIN1_F32));
+    p = _mm256_fmadd_ps(p, z, _mm256_set1_ps(SIN2_F32));
+
+    // y is added last, so a tiny y comes back unchanged and keeps its sign.
+    _mm256_fmadd_ps(_mm256_mul_ps(z, y), p, y)
+}
+
+/// Minimax cos kernel on the reduced argument, |y| <= π/4.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn cos_kernel_f32(y: __m256) -> __m256 {
+    use trig_coefficients::{COS0_F32, COS1_F32, COS2_F32};
+
+    let one = _mm256_set1_ps(1.0);
+    let z = _mm256_mul_ps(y, y);
+
+    let mut p = _mm256_set1_ps(COS0_F32);
+    p = _mm256_fmadd_ps(p, z, _mm256_set1_ps(COS1_F32));
+    p = _mm256_fmadd_ps(p, z, _mm256_set1_ps(COS2_F32));
+    let r = _mm256_mul_ps(_mm256_mul_ps(z, z), p);
+
+    // `1 - z/2` rounds; `(1 - w) - hz` is exact and returns the rounded bits.
+    let hz = _mm256_mul_ps(_mm256_set1_ps(0.5), z);
+    let w = _mm256_sub_ps(one, hz);
+    let correction = _mm256_sub_ps(_mm256_sub_ps(one, w), hz);
+    _mm256_add_ps(w, _mm256_add_ps(correction, r))
+}
+
+/// Evaluate sin on quadrant `j + offset`, the shared core of f32 sin and cos.
+///
+/// # Safety
+/// Requires AVX2 and FMA CPU features.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn sin_quadrant_f32(x: __m256, offset: i32) -> __m256 {
+    let (j, y) = trig_reduce_f32(x);
+    let sin_y = sin_kernel_f32(y);
+    let cos_y = cos_kernel_f32(y);
+
+    // j mod 4 = 0: sin(y), 1: cos(y), 2: -sin(y), 3: -cos(y)
+    let j_mod_4 = _mm256_and_si256(
+        _mm256_add_epi32(j, _mm256_set1_epi32(offset)),
+        _mm256_set1_epi32(3),
+    );
+
+    let use_cos_mask = _mm256_castsi256_ps(_mm256_cmpeq_epi32(
+        _mm256_and_si256(j_mod_4, _mm256_set1_epi32(1)),
+        _mm256_set1_epi32(1),
+    ));
+    let negate_mask = _mm256_castsi256_ps(_mm256_cmpeq_epi32(
+        _mm256_and_si256(j_mod_4, _mm256_set1_epi32(2)),
+        _mm256_set1_epi32(2),
+    ));
+
+    let result = _mm256_blendv_ps(sin_y, cos_y, use_cos_mask);
+    let negated = _mm256_xor_ps(result, _mm256_set1_ps(-0.0));
+    _mm256_blendv_ps(result, negated, negate_mask)
+}
+
 /// Fast SIMD sin approximation for f32 using AVX2+FMA
 ///
 /// See `common::_TRIG_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 2 ulps for |x| <= 2^17.
 ///
 /// # Safety
 /// Requires AVX2 and FMA CPU features.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn sin_f32(x: __m256) -> __m256 {
-    use trig_coefficients::*;
+    let r = sin_quadrant_f32(x, 0);
 
-    let two_over_pi = _mm256_set1_ps(std::f32::consts::FRAC_2_PI);
-    let pi_over_2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
-
-    let s1 = _mm256_set1_ps(S1_F32);
-    let s3 = _mm256_set1_ps(S3_F32);
-    let s5 = _mm256_set1_ps(S5_F32);
-    let s7 = _mm256_set1_ps(S7_F32);
-
-    let c0 = _mm256_set1_ps(C0_F32);
-    let c2 = _mm256_set1_ps(C2_F32);
-    let c4 = _mm256_set1_ps(C4_F32);
-    let c6 = _mm256_set1_ps(C6_F32);
-
-    // Range reduction: j = round(x * 2/π), y = x - j * π/2
-    let j = _mm256_round_ps::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(_mm256_mul_ps(
-        x,
-        two_over_pi,
-    ));
-    let j_int = _mm256_cvtps_epi32(j);
-
-    let y = _mm256_fnmadd_ps(j, pi_over_2, x);
-
-    let y2 = _mm256_mul_ps(y, y);
-    let y3 = _mm256_mul_ps(y2, y);
-    let y4 = _mm256_mul_ps(y2, y2);
-    let y5 = _mm256_mul_ps(y4, y);
-    let y6 = _mm256_mul_ps(y4, y2);
-    let y7 = _mm256_mul_ps(y4, y3);
-
-    // sin(y) polynomial
-    let sin_y = _mm256_fmadd_ps(
-        s7,
-        y7,
-        _mm256_fmadd_ps(s5, y5, _mm256_fmadd_ps(s3, y3, _mm256_mul_ps(s1, y))),
-    );
-
-    // cos(y) polynomial
-    let cos_y = _mm256_fmadd_ps(c6, y6, _mm256_fmadd_ps(c4, y4, _mm256_fmadd_ps(c2, y2, c0)));
-
-    // Select sin or cos based on j mod 4
-    // j mod 4 = 0: sin(y), 1: cos(y), 2: -sin(y), 3: -cos(y)
-    let j_mod_4 = _mm256_and_si256(j_int, _mm256_set1_epi32(3));
-
-    // Use cos when j mod 4 is 1 or 3
-    let use_cos_mask = _mm256_cmpeq_epi32(
-        _mm256_and_si256(j_mod_4, _mm256_set1_epi32(1)),
-        _mm256_set1_epi32(1),
-    );
-    let use_cos_mask = _mm256_castsi256_ps(use_cos_mask);
-
-    // Negate when j mod 4 is 2 or 3
-    let negate_mask = _mm256_cmpeq_epi32(
-        _mm256_and_si256(j_mod_4, _mm256_set1_epi32(2)),
-        _mm256_set1_epi32(2),
-    );
-    let negate_mask = _mm256_castsi256_ps(negate_mask);
-    let sign_bit = _mm256_set1_ps(-0.0); // Just the sign bit
-
-    let result = _mm256_blendv_ps(sin_y, cos_y, use_cos_mask);
-    let negated = _mm256_xor_ps(result, sign_bit);
-    _mm256_blendv_ps(result, negated, negate_mask)
+    // sin(±0) = ±0. The reduction computes 0 - (-0 * π/2), which is +0 for both
+    // signed zeros, so the input is restored here.
+    let is_zero = _mm256_cmp_ps::<_CMP_EQ_OQ>(x, _mm256_setzero_ps());
+    _mm256_blendv_ps(r, x, is_zero)
 }
 
 /// Cody-Waite reduction of `x` modulo π/2 for f64.
@@ -668,15 +704,16 @@ pub unsafe fn sin_f64(x: __m256d) -> __m256d {
 
 /// Fast SIMD cos approximation for f32 using AVX2+FMA
 ///
-/// Implemented as: cos(x) = sin(x + π/2)
+/// Shifts the quadrant index by one rather than evaluating `sin(x + π/2)`,
+/// which would round the sum before reduction and lose bits proportional to
+/// |x|. Relative error stays below 2 ulps for |x| <= 2^17.
 ///
 /// # Safety
 /// Requires AVX2 and FMA CPU features.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn cos_f32(x: __m256) -> __m256 {
-    let pi_over_2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
-    sin_f32(_mm256_add_ps(x, pi_over_2))
+    sin_quadrant_f32(x, 1)
 }
 
 /// Fast SIMD cos approximation for f64 using AVX2+FMA
@@ -696,54 +733,31 @@ pub unsafe fn cos_f64(x: __m256d) -> __m256d {
 /// Fast SIMD tan approximation for f32 using AVX2+FMA
 ///
 /// See `common::_TAN_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 2 ulps away from the poles, for |x| <= 2^17.
 ///
 /// # Safety
 /// Requires AVX2 and FMA CPU features.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn tan_f32(x: __m256) -> __m256 {
-    use tan_coefficients::*;
+    let (j, y) = trig_reduce_f32(x);
+    let sin_y = sin_kernel_f32(y);
+    let cos_y = cos_kernel_f32(y);
 
-    let two_over_pi = _mm256_set1_ps(std::f32::consts::FRAC_2_PI);
-    let pi_over_2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
-
-    // Range reduction
-    let j = _mm256_round_ps::<{ _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC }>(_mm256_mul_ps(
-        x,
-        two_over_pi,
-    ));
-    let y = _mm256_fnmadd_ps(j, pi_over_2, x);
-
-    let t1 = _mm256_set1_ps(T1_F32);
-    let t3 = _mm256_set1_ps(T3_F32);
-    let t5 = _mm256_set1_ps(T5_F32);
-    let t7 = _mm256_set1_ps(T7_F32);
-    let t9 = _mm256_set1_ps(T9_F32);
-    let t11 = _mm256_set1_ps(T11_F32);
-
-    let y2 = _mm256_mul_ps(y, y);
-
-    // Horner's method: tan(y) ≈ y * (1 + y²*(t3 + y²*(t5 + y²*(t7 + y²*(t9 + y²*t11)))))
-    let mut poly = t11;
-    poly = _mm256_fmadd_ps(poly, y2, t9);
-    poly = _mm256_fmadd_ps(poly, y2, t7);
-    poly = _mm256_fmadd_ps(poly, y2, t5);
-    poly = _mm256_fmadd_ps(poly, y2, t3);
-    poly = _mm256_fmadd_ps(poly, y2, t1);
-    let tan_y = _mm256_mul_ps(y, poly);
-
-    // For quadrants 1 and 3, tan(y + π/2) = -1/tan(y) = -cot(y)
-    let j_int = _mm256_cvtps_epi32(j);
-    let use_cot_mask = _mm256_cmpeq_epi32(
-        _mm256_and_si256(j_int, _mm256_set1_epi32(1)),
+    // Odd quadrant: tan(x) = -cot(y) = -cos(y)/sin(y). Swapping the ratio costs
+    // one rounding, where inverting an already-rounded tan(y) costs two.
+    let odd_mask = _mm256_castsi256_ps(_mm256_cmpeq_epi32(
+        _mm256_and_si256(j, _mm256_set1_epi32(1)),
         _mm256_set1_epi32(1),
-    );
-    let use_cot_mask = _mm256_castsi256_ps(use_cot_mask);
+    ));
+    let neg_cos = _mm256_xor_ps(cos_y, _mm256_set1_ps(-0.0));
+    let num = _mm256_blendv_ps(sin_y, neg_cos, odd_mask);
+    let den = _mm256_blendv_ps(cos_y, sin_y, odd_mask);
+    let r = _mm256_div_ps(num, den);
 
-    let neg_one = _mm256_set1_ps(-1.0);
-    let cot_y = _mm256_div_ps(neg_one, tan_y);
-
-    _mm256_blendv_ps(tan_y, cot_y, use_cot_mask)
+    // tan(±0) = ±0; the reduction turns -0 into +0.
+    let is_zero = _mm256_cmp_ps::<_CMP_EQ_OQ>(x, _mm256_setzero_ps());
+    _mm256_blendv_ps(r, x, is_zero)
 }
 
 /// Fast SIMD tan approximation for f64 using AVX2+FMA
@@ -806,42 +820,44 @@ pub unsafe fn atan_f32(x: __m256) -> __m256 {
     use atan_coefficients::*;
 
     let one = _mm256_set1_ps(1.0);
-    let pi_over_2 = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
-
-    // Save sign and work with absolute value
-    let sign_mask = _mm256_set1_ps(-0.0); // 0x80000000
+    let sign_mask = _mm256_set1_ps(-0.0);
     let sign = _mm256_and_ps(x, sign_mask);
-    let abs_x = _mm256_andnot_ps(sign_mask, x);
+    let ax = _mm256_andnot_ps(sign_mask, x);
 
-    // Range reduction: for |x| > 1, compute atan(1/x) then adjust
-    let need_recip = _mm256_cmp_ps::<_CMP_GT_OQ>(abs_x, one);
-    let recip_x = _mm256_div_ps(one, abs_x);
-    let y = _mm256_blendv_ps(abs_x, recip_x, need_recip);
+    // Pick the reduction centre and the matching atan(c) head/correction. The
+    // breakpoint masks are nested, so blending from the widest bucket inward
+    // leaves each lane holding its tightest match.
+    //
+    // The widest bucket has the centre at infinity: t = -1/|x|. NaN fails every
+    // comparison and stays there, which propagates NaN through the division.
+    let mut t = _mm256_div_ps(_mm256_set1_ps(-1.0), ax);
+    let mut hi = _mm256_set1_ps(ATAN_HI1_F32);
+    let mut lo = _mm256_set1_ps(ATAN_LO1_F32);
 
-    // Polynomial approximation for atan(y) where y in [0, 1]
-    let a0 = _mm256_set1_ps(A0_F32);
-    let a2 = _mm256_set1_ps(A2_F32);
-    let a4 = _mm256_set1_ps(A4_F32);
-    let a6 = _mm256_set1_ps(A6_F32);
-    let a8 = _mm256_set1_ps(A8_F32);
-    let a10 = _mm256_set1_ps(A10_F32);
-    let a12 = _mm256_set1_ps(A12_F32);
+    let in1 = _mm256_cmp_ps::<_CMP_LT_OQ>(ax, _mm256_set1_ps(BREAK1_F32));
+    let t_mid = _mm256_div_ps(_mm256_sub_ps(ax, one), _mm256_add_ps(ax, one));
+    t = _mm256_blendv_ps(t, t_mid, in1);
+    hi = _mm256_blendv_ps(hi, _mm256_set1_ps(ATAN_HI0_F32), in1);
+    lo = _mm256_blendv_ps(lo, _mm256_set1_ps(ATAN_LO0_F32), in1);
 
-    let y2 = _mm256_mul_ps(y, y);
+    let zero = _mm256_setzero_ps();
+    let in0 = _mm256_cmp_ps::<_CMP_LT_OQ>(ax, _mm256_set1_ps(BREAK0_F32));
+    t = _mm256_blendv_ps(t, ax, in0);
+    hi = _mm256_blendv_ps(hi, zero, in0);
+    lo = _mm256_blendv_ps(lo, zero, in0);
 
-    // Horner's method: a0 + y²*(a2 + y²*(a4 + y²*(a6 + y²*(a8 + y²*(a10 + y²*a12)))))
-    let mut poly = a12;
-    poly = _mm256_fmadd_ps(poly, y2, a10);
-    poly = _mm256_fmadd_ps(poly, y2, a8);
-    poly = _mm256_fmadd_ps(poly, y2, a6);
-    poly = _mm256_fmadd_ps(poly, y2, a4);
-    poly = _mm256_fmadd_ps(poly, y2, a2);
-    poly = _mm256_fmadd_ps(poly, y2, a0);
-    let atan_y = _mm256_mul_ps(y, poly);
+    // t in [-0.4143, 0.4143]; |x| = inf gives t = -0.0, so the result is π/2.
+    let z = _mm256_mul_ps(t, t);
 
-    // Apply range reduction inverse: if |x| > 1, result = π/2 - atan(1/x)
-    let adjusted = _mm256_sub_ps(pi_over_2, atan_y);
-    let result = _mm256_blendv_ps(atan_y, adjusted, need_recip);
+    let mut p = _mm256_set1_ps(AT0_F32);
+    p = _mm256_fmadd_ps(p, z, _mm256_set1_ps(AT1_F32));
+    p = _mm256_fmadd_ps(p, z, _mm256_set1_ps(AT2_F32));
+    p = _mm256_fmadd_ps(p, z, _mm256_set1_ps(AT3_F32));
+
+    // atan(x) = atan(c) + atan(t), with the correction term added beside the
+    // polynomial rather than beside the head.
+    let poly = _mm256_fmadd_ps(_mm256_mul_ps(z, t), p, t);
+    let result = _mm256_add_ps(hi, _mm256_add_ps(lo, poly));
 
     // Restore sign
     _mm256_or_ps(result, sign)
@@ -1556,17 +1572,59 @@ pub unsafe fn atanh_f64(x: __m256d) -> __m256d {
     _mm256_or_pd(r, _mm256_and_pd(x, sign_mask))
 }
 
+/// Shared polynomial correction `t * R(t)` for f32 asin/acos.
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC`. Valid for t in [0, 0.5]; the caller
+/// multiplies by its own argument to form `y * t * R(t)`.
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn asin_r_f32(t: __m256) -> __m256 {
+    use asin_coefficients::*;
+
+    let mut p = _mm256_set1_ps(PS0_F32);
+    p = _mm256_fmadd_ps(p, t, _mm256_set1_ps(PS1_F32));
+    p = _mm256_fmadd_ps(p, t, _mm256_set1_ps(PS2_F32));
+    p = _mm256_fmadd_ps(p, t, _mm256_set1_ps(PS3_F32));
+    p = _mm256_fmadd_ps(p, t, _mm256_set1_ps(PS4_F32));
+
+    _mm256_mul_ps(t, p)
+}
+
 /// Fast SIMD asin for f32 using AVX2
-/// Uses polynomial approximation with range reduction
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn asin_f32(x: __m256) -> __m256 {
-    // asin(x) = atan(x / sqrt(1 - x^2))
+    use asin_coefficients::*;
+
     let one = _mm256_set1_ps(1.0);
-    let x2 = _mm256_mul_ps(x, x);
-    let sqrt_term = _mm256_sqrt_ps(_mm256_sub_ps(one, x2));
-    let ratio = _mm256_div_ps(x, sqrt_term);
-    atan_f32(ratio)
+    let half = _mm256_set1_ps(HALF_F32);
+    let sign_mask = _mm256_set1_ps(-0.0);
+    let sign = _mm256_and_ps(x, sign_mask);
+    let ax = _mm256_andnot_ps(sign_mask, x);
+
+    // |x| > 1 leaves the reflection argument negative, so sqrt yields NaN.
+    // NaN input fails the comparison and takes the same reflection path.
+    let small = _mm256_cmp_ps::<_CMP_LT_OQ>(ax, half);
+    let t_refl = _mm256_mul_ps(_mm256_sub_ps(one, ax), half);
+    let t = _mm256_blendv_ps(t_refl, _mm256_mul_ps(ax, ax), small);
+    let s = _mm256_sqrt_ps(t);
+    let v = _mm256_blendv_ps(s, ax, small);
+
+    // w is asin(|x|) on the direct branch and asin(sqrt(t)) on the reflection.
+    let w = _mm256_fmadd_ps(v, asin_r_f32(t), v);
+
+    // π/2 - 2*asin(sqrt(t)), with the low half of π/2 folded into the
+    // subtracted term so the cancellation keeps the trailing bits.
+    let two_w = _mm256_add_ps(w, w);
+    let res_refl = _mm256_sub_ps(
+        _mm256_set1_ps(PIO2_HI_F32),
+        _mm256_sub_ps(two_w, _mm256_set1_ps(PIO2_LO_F32)),
+    );
+
+    let result = _mm256_blendv_ps(res_refl, w, small);
+    _mm256_or_ps(result, sign)
 }
 
 /// Shared rational correction `R(t) = p(t)/q(t)` for f64 asin/acos.
@@ -1632,12 +1690,48 @@ pub unsafe fn asin_f64(x: __m256d) -> __m256d {
 }
 
 /// Fast SIMD acos for f32 using AVX2
-/// acos(x) = pi/2 - asin(x)
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details. Built from the
+/// reflection directly, not as π/2 - asin(x): that subtraction cancels away the
+/// whole result as x approaches 1.
 #[target_feature(enable = "avx2", enable = "fma")]
 #[inline]
 pub unsafe fn acos_f32(x: __m256) -> __m256 {
-    let pi_half = _mm256_set1_ps(std::f32::consts::FRAC_PI_2);
-    _mm256_sub_ps(pi_half, asin_f32(x))
+    use asin_coefficients::*;
+
+    let one = _mm256_set1_ps(1.0);
+    let half = _mm256_set1_ps(HALF_F32);
+    let pio2_lo = _mm256_set1_ps(PIO2_LO_F32);
+    let sign_mask = _mm256_set1_ps(-0.0);
+    let ax = _mm256_andnot_ps(sign_mask, x);
+
+    let small = _mm256_cmp_ps::<_CMP_LT_OQ>(ax, half);
+    let t_refl = _mm256_mul_ps(_mm256_sub_ps(one, ax), half);
+    let t = _mm256_blendv_ps(t_refl, _mm256_mul_ps(x, x), small);
+    let q = asin_r_f32(t);
+    let s = _mm256_sqrt_ps(t);
+
+    // |x| <= 0.5: π/2 - asin(x), evaluated without forming asin(x) first.
+    let px = _mm256_mul_ps(x, q);
+    let res_small = _mm256_sub_ps(
+        _mm256_set1_ps(PIO2_HI_F32),
+        _mm256_add_ps(x, _mm256_sub_ps(px, pio2_lo)),
+    );
+
+    // x >= 0.5: 2*asin(sqrt(t)), which is small and free of cancellation.
+    let ps = _mm256_mul_ps(s, q);
+    let s_sr = _mm256_add_ps(s, ps);
+    let res_pos = _mm256_add_ps(s_sr, s_sr);
+
+    // x <= -0.5: π - 2*asin(sqrt(t)).
+    let w = _mm256_add_ps(s, _mm256_sub_ps(ps, pio2_lo));
+    let res_neg = _mm256_sub_ps(_mm256_set1_ps(PI_HI_F32), _mm256_add_ps(w, w));
+
+    // NaN fails both comparisons and lands on the negative branch, where the
+    // NaN sqrt argument propagates.
+    let positive = _mm256_cmp_ps::<_CMP_GT_OQ>(x, _mm256_setzero_ps());
+    let res_refl = _mm256_blendv_ps(res_neg, res_pos, positive);
+    _mm256_blendv_ps(res_refl, res_small, small)
 }
 
 /// Fast SIMD acos for f64 using AVX2

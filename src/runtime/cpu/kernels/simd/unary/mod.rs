@@ -2105,6 +2105,394 @@ mod tests {
         }
     }
 
+    /// Probe points for f32 sin/cos: every multiple of π/2 the reduction has to
+    /// survive, plus magnitudes far past the sweep.
+    fn trig_probe_points_f32(len: usize) -> Vec<f32> {
+        let mut a: Vec<f32> = Vec::with_capacity(len);
+
+        // Every multiple of π/2 out to |x| = 100, and its immediate
+        // neighbourhood. One of sin or cos crosses zero at each of them, so the
+        // reduced argument carries the whole result.
+        for k in -64i32..=64 {
+            let c = (k as f32) * std::f32::consts::FRAC_PI_2;
+            a.push(c);
+            for step in 1i32..=3 {
+                a.push(c + (step as f32) * 1e-6);
+                a.push(c - (step as f32) * 1e-6);
+            }
+        }
+
+        // Multiples of π/2 out to |x| = 1.2e5. Reducing with a single rounded
+        // π/2 leaves an absolute phase error of |j| * 4.4e-8 here — over 3e-3,
+        // which is the whole answer.
+        for k in 0i32..120 {
+            let c = ((20_000 + k * 500) as f32) * std::f32::consts::FRAC_PI_2;
+            a.push(c);
+            a.push(-c);
+        }
+
+        // Magnitudes on a stride that lines up with no multiple of π/2.
+        for k in 0i32..200 {
+            let d = 1.0e3 + (k as f32) * 601.0;
+            a.push(d);
+            a.push(-d);
+        }
+
+        fill_range_f32(&mut a, len, -100.0, 100.0);
+        a
+    }
+
+    /// f32 sin must reach single precision across the reduction range.
+    ///
+    /// Reducing with a single rounded π/2 costs |j| * 4.4e-8 of absolute phase,
+    /// so this fails by more than the answer itself past |x| ~ 1e4. The
+    /// degree-6 cos Taylor series it paired with is separately worth 3.6e-6 at
+    /// y = π/4, thirty ulps.
+    ///
+    /// The length forces the SIMD path (>= SIMD_THRESHOLD, and a whole number
+    /// of AVX2, AVX-512 and NEON f32 lanes), so no element falls through to the
+    /// exact scalar fallback.
+    #[test]
+    fn test_unary_sin_f32_single_precision() {
+        const LEN: usize = 2048;
+        let a = trig_probe_points_f32(LEN);
+
+        let mut out = vec![0.0f32; LEN];
+        unsafe { unary_f32(UnaryOp::Sin, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = (a[i] as f64).sin() as f32;
+            let rel_err = rel_err_f32(out[i], expected);
+            assert!(
+                rel_err < 1e-6,
+                "sin({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    /// f32 cos must reach single precision across the reduction range.
+    ///
+    /// Building cos as `sin(x + π/2)` rounds the sum before reduction, which
+    /// costs an ulp of x — already the whole answer near a zero of cos.
+    #[test]
+    fn test_unary_cos_f32_single_precision() {
+        const LEN: usize = 2048;
+        let a = trig_probe_points_f32(LEN);
+
+        let mut out = vec![0.0f32; LEN];
+        unsafe { unary_f32(UnaryOp::Cos, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = (a[i] as f64).cos() as f32;
+            let rel_err = rel_err_f32(out[i], expected);
+            assert!(
+                rel_err < 1e-6,
+                "cos({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    /// f32 tan must reach single precision away from its poles.
+    ///
+    /// The truncated Taylor series this replaced dropped a term worth 1.5e-4 at
+    /// y = ±π/4, which the dense band there reaches on every point.
+    #[test]
+    fn test_unary_tan_f32_single_precision() {
+        const LEN: usize = 2048;
+        let mut a: Vec<f32> = Vec::with_capacity(LEN);
+
+        // ±π/4 is the edge of the reduction interval and the worst point of any
+        // fixed-degree polynomial in the reduced argument.
+        for &b in &[std::f32::consts::FRAC_PI_4, 0.5, 1.0] {
+            for k in -60i32..=60 {
+                let d = b + (k as f32) * 1e-6;
+                a.push(d);
+                a.push(-d);
+            }
+        }
+
+        // Multiples of π, where tan crosses zero and the reduction cancels.
+        for k in -30i32..=30 {
+            a.push((k as f32) * std::f32::consts::PI);
+        }
+
+        // Large |x|, where reduction error dominates. Points near a pole are
+        // dropped: there the result itself is ill-conditioned, not the kernel.
+        for k in 0i32..200 {
+            let d = 1.0e3 + (k as f32) * 601.0 + 0.37;
+            if (d as f64).cos().abs() > 1e-3 {
+                a.push(d);
+                a.push(-d);
+            }
+        }
+
+        fill_range_f32(&mut a, LEN, -1.5, 1.5);
+
+        let mut out = vec![0.0f32; LEN];
+        unsafe { unary_f32(UnaryOp::Tan, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = (a[i] as f64).tan() as f32;
+            let rel_err = rel_err_f32(out[i], expected);
+            assert!(
+                rel_err < 1e-6,
+                "tan({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    /// Probe points for f32 asin/acos: the branch points, the endpoints, and a
+    /// sweep of the whole domain.
+    fn inverse_trig_probe_points_f32(len: usize) -> Vec<f32> {
+        let mut a: Vec<f32> = Vec::with_capacity(len);
+
+        // 1/sqrt(2) is where asin crosses from the direct series to the
+        // reflection in any atan-based formulation, because atan's argument
+        // reaches exactly 1 there. 0.5 is this implementation's own branch
+        // point, and ±1 is the endpoint the reflection has to land on exactly.
+        for &b in &[std::f32::consts::FRAC_1_SQRT_2, 0.5, 1.0] {
+            for k in -80i32..=80 {
+                let d = b + (k as f32) * 1e-7;
+                if d <= 1.0 {
+                    a.push(d);
+                    a.push(-d);
+                }
+            }
+        }
+
+        fill_range_f32(&mut a, len, -1.0, 1.0);
+        a
+    }
+
+    /// f32 asin must reach single precision over [-1, 1].
+    ///
+    /// Composing it as `atan(x / sqrt(1 - x²))` sends atan's argument to 1 at
+    /// |x| = 1/sqrt(2), the slowest-converging point of the Gregory series it
+    /// used to call, worth 4.5e-2 relative.
+    #[test]
+    fn test_unary_asin_f32_single_precision() {
+        const LEN: usize = 2048;
+        let a = inverse_trig_probe_points_f32(LEN);
+
+        let mut out = vec![0.0f32; LEN];
+        unsafe { unary_f32(UnaryOp::Asin, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = (a[i] as f64).asin() as f32;
+            let rel_err = rel_err_f32(out[i], expected);
+            assert!(
+                rel_err < 1e-6,
+                "asin({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    /// f32 acos must reach single precision over [-1, 1].
+    ///
+    /// `π/2 - asin(x)` inherits every defect of asin and adds cancellation as
+    /// x approaches 1, where the result is the difference that vanishes.
+    #[test]
+    fn test_unary_acos_f32_single_precision() {
+        const LEN: usize = 2048;
+        let a = inverse_trig_probe_points_f32(LEN);
+
+        let mut out = vec![0.0f32; LEN];
+        unsafe { unary_f32(UnaryOp::Acos, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = (a[i] as f64).acos() as f32;
+            let rel_err = rel_err_f32(out[i], expected);
+            assert!(
+                rel_err < 1e-6,
+                "acos({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    /// f32 atan must reach single precision for every finite input.
+    ///
+    /// The Gregory series it used to evaluate on [0, 1] converges like
+    /// 1/(2n+3) at the boundary: seven terms leave ~4e-2 relative error, which
+    /// is where the old peak sat.
+    #[test]
+    fn test_unary_atan_f32_single_precision() {
+        const LEN: usize = 2048;
+        let mut a: Vec<f32> = Vec::with_capacity(LEN);
+
+        // |x| = 1 is the old reduction boundary; the two tan(π/8) and tan(3π/8)
+        // values are the new ones.
+        for &b in &[1.0f32, 0.414_213_56, 2.414_213_6, 0.989_011] {
+            for k in -60i32..=60 {
+                let d = b * (1.0 + (k as f32) * 1e-6);
+                a.push(d);
+                a.push(-d);
+            }
+        }
+
+        // Many magnitudes: atan has to hold from the smallest normal up to the
+        // point where the result is π/2 to the last bit.
+        for k in -35i32..=35 {
+            let d = 10f32.powi(k);
+            a.push(d);
+            a.push(-d);
+        }
+
+        fill_range_f32(&mut a, LEN, -20.0, 20.0);
+
+        let mut out = vec![0.0f32; LEN];
+        unsafe { unary_f32(UnaryOp::Atan, a.as_ptr(), out.as_mut_ptr(), LEN) }
+
+        for i in 0..LEN {
+            let expected = (a[i] as f64).atan() as f32;
+            let rel_err = rel_err_f32(out[i], expected);
+            assert!(
+                rel_err < 1e-6,
+                "atan({}) = {}, expected {}, rel_err = {} at index {}",
+                a[i],
+                out[i],
+                expected,
+                rel_err,
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_unary_trig_f32_domain_edges() {
+        const LEN: usize = 2048;
+
+        // ±inf and NaN have no finite reduction, so all three are NaN there.
+        // ±0 must keep its own sign, which `x - j*π/2` destroys for j = -0.
+        let edges = [
+            0.0f32,
+            -0.0,
+            1.0,
+            -1.0,
+            std::f32::consts::FRAC_PI_2,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+        ];
+        let a: Vec<f32> = (0..LEN).map(|i| edges[i % edges.len()]).collect();
+        let mut out = vec![0.0f32; LEN];
+
+        for (op, reference) in [
+            (UnaryOp::Sin, f64::sin as fn(f64) -> f64),
+            (UnaryOp::Cos, f64::cos as fn(f64) -> f64),
+            (UnaryOp::Tan, f64::tan as fn(f64) -> f64),
+        ] {
+            unsafe { unary_f32(op, a.as_ptr(), out.as_mut_ptr(), LEN) }
+            for i in 0..LEN {
+                if !a[i].is_finite() {
+                    assert!(
+                        out[i].is_nan(),
+                        "{:?}({}) = {}, expected NaN",
+                        op,
+                        a[i],
+                        out[i]
+                    );
+                    continue;
+                }
+                let expected = reference(a[i] as f64) as f32;
+                assert!(
+                    rel_err_f32(out[i], expected) < 1e-6,
+                    "{:?}({}) = {}, expected {}",
+                    op,
+                    a[i],
+                    out[i],
+                    expected
+                );
+                if expected == 0.0 {
+                    assert_eq!(
+                        out[i].is_sign_negative(),
+                        expected.is_sign_negative(),
+                        "{:?}({}) lost the sign of zero",
+                        op,
+                        a[i]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_unary_inverse_trig_f32_domain_edges() {
+        const LEN: usize = 2048;
+
+        // asin/acos are NaN outside [-1, 1] and exact at the endpoints; atan
+        // saturates to ±π/2 at infinity.
+        let edges = [
+            0.0f32,
+            -0.0,
+            1.0,
+            -1.0,
+            0.5,
+            -0.5,
+            1.000_001,
+            -1.000_001,
+            2.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+        ];
+        let a: Vec<f32> = (0..LEN).map(|i| edges[i % edges.len()]).collect();
+        let mut out = vec![0.0f32; LEN];
+
+        for (op, reference) in [
+            (UnaryOp::Asin, f64::asin as fn(f64) -> f64),
+            (UnaryOp::Acos, f64::acos as fn(f64) -> f64),
+            (UnaryOp::Atan, f64::atan as fn(f64) -> f64),
+        ] {
+            unsafe { unary_f32(op, a.as_ptr(), out.as_mut_ptr(), LEN) }
+            for i in 0..LEN {
+                let expected = reference(a[i] as f64) as f32;
+                if expected.is_nan() {
+                    assert!(
+                        out[i].is_nan(),
+                        "{:?}({}) = {}, expected NaN",
+                        op,
+                        a[i],
+                        out[i]
+                    );
+                    continue;
+                }
+                assert!(
+                    rel_err_f32(out[i], expected) < 1e-6,
+                    "{:?}({}) = {}, expected {}",
+                    op,
+                    a[i],
+                    out[i],
+                    expected
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_relu_f32() {
         let a: Vec<f32> = (0..100).map(|x| x as f32 - 50.0).collect();

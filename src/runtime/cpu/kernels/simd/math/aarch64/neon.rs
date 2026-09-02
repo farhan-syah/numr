@@ -10,26 +10,20 @@
 //! | exp      | 4   | 2   | 1 ulp / 1e-12 |
 //! | tanh     | 4   | 2   | < 1e-6 / 2 ulp |
 //! | log      | 4   | 2   | < 1e-6 / 2 ulp |
-//! | sin      | 4   | 2   | < 1e-6 / 4 ulp |
-//! | cos      | 4   | 2   | < 1e-6 / 4 ulp |
-//! | tan      | 4   | 2   | < 2e-4 / 4 ulp |
-//! | atan     | 4   | 2   | see note / 2 ulp |
-//! | asin     | 4   | 2   | see note / 2 ulp |
-//! | acos     | 4   | 2   | see note / 2 ulp |
+//! | sin      | 4   | 2   | 2 ulp / 4 ulp |
+//! | cos      | 4   | 2   | 2 ulp / 4 ulp |
+//! | tan      | 4   | 2   | 2 ulp / 4 ulp |
+//! | atan     | 4   | 2   | 2 ulp / 2 ulp |
+//! | asin     | 4   | 2   | 2 ulp / 2 ulp |
+//! | acos     | 4   | 2   | 2 ulp / 2 ulp |
 //!
-//! Note: the f32 atan/asin/acos paths reduce with `atan(x) = π/2 - atan(1/x)`
-//! and a Gregory series, whose truncation error grows toward the |x| = 1
-//! boundary. The f64 paths use the multi-centre reduction in `common.rs`
-//! instead and hold below 2 ulps everywhere.
+//! The log family is still split: the f64 log/log2/log10/log1p paths hold below
+//! 2 ulps, while their f32 counterparts use a truncated series and are far
+//! coarser than f32 epsilon.
 //!
-//! The same split applies to the log family: the f64 log/log2/log10/log1p
-//! paths hold below 2 ulps, while their f32 counterparts still use a truncated
-//! series and are far coarser than f32 epsilon.
-//!
-//! The f64 sin/cos/tan bounds hold for |x| <= 2^21 * π/2 (about 3.3e6), the
-//! limit of the Cody-Waite reduction in `common.rs`, and for tan away from its
-//! poles. Their f32 counterparts reduce with a single rounded π/2 and use
-//! truncated Taylor series, so they are far coarser than f32 epsilon.
+//! The sin/cos/tan bounds hold for |x| <= 2^21 * π/2 (about 3.3e6) in f64 and
+//! |x| <= 2^17 in f32, the limits of the Cody-Waite reductions in `common.rs`,
+//! and for tan away from its poles.
 //!
 //! exp2, expm1, sinh, tanh, asinh, acosh and atanh hold below 2 ulps in f64.
 //! The f32 exp, exp2, expm1 and cbrt hold below 2 ulps as well, each over its
@@ -46,8 +40,7 @@ use std::arch::aarch64::*;
 
 use super::super::common::{
     asin_coefficients, atan_coefficients, cbrt_constants, exp_coefficients, exp2_coefficients,
-    hyperbolic_breakpoints, inv_hyperbolic_breakpoints, log_coefficients, tan_coefficients,
-    trig_coefficients,
+    hyperbolic_breakpoints, inv_hyperbolic_breakpoints, log_coefficients, trig_coefficients,
 };
 
 // ============================================================================
@@ -516,67 +509,98 @@ pub unsafe fn log_f64(x: float64x2_t) -> float64x2_t {
 // Trigonometric functions: sin, cos, tan
 // ============================================================================
 
+/// Cody-Waite reduction of `x` modulo π/2 for f32.
+///
+/// Returns the quadrant index and the reduced argument in [-π/4, π/4]. See
+/// `common::_TRIG_ALGORITHM_DOC`; the subtraction chain is exact for |j| below
+/// 2^24, and the quadrant index itself stays exact for |x| <= 2^17.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn trig_reduce_f32(x: float32x4_t) -> (int32x4_t, float32x4_t) {
+    use trig_coefficients::{PIO2_1_F32, PIO2_2_F32, PIO2_3_F32};
+
+    let j = vrndnq_f32(vmulq_f32(x, vdupq_n_f32(std::f32::consts::FRAC_2_PI)));
+
+    let y = vfmsq_f32(x, j, vdupq_n_f32(PIO2_1_F32));
+    let y = vfmsq_f32(y, j, vdupq_n_f32(PIO2_2_F32));
+    let y = vfmsq_f32(y, j, vdupq_n_f32(PIO2_3_F32));
+
+    (vcvtq_s32_f32(j), y)
+}
+
+/// Minimax sin kernel on the reduced argument, |y| <= π/4.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn sin_kernel_f32(y: float32x4_t) -> float32x4_t {
+    use trig_coefficients::{SIN0_F32, SIN1_F32, SIN2_F32};
+
+    let z = vmulq_f32(y, y);
+
+    let mut p = vdupq_n_f32(SIN0_F32);
+    p = vfmaq_f32(vdupq_n_f32(SIN1_F32), p, z);
+    p = vfmaq_f32(vdupq_n_f32(SIN2_F32), p, z);
+
+    // y is added last, so a tiny y comes back unchanged and keeps its sign.
+    vfmaq_f32(y, vmulq_f32(z, y), p)
+}
+
+/// Minimax cos kernel on the reduced argument, |y| <= π/4.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn cos_kernel_f32(y: float32x4_t) -> float32x4_t {
+    use trig_coefficients::{COS0_F32, COS1_F32, COS2_F32};
+
+    let one = vdupq_n_f32(1.0);
+    let z = vmulq_f32(y, y);
+
+    let mut p = vdupq_n_f32(COS0_F32);
+    p = vfmaq_f32(vdupq_n_f32(COS1_F32), p, z);
+    p = vfmaq_f32(vdupq_n_f32(COS2_F32), p, z);
+    let r = vmulq_f32(vmulq_f32(z, z), p);
+
+    // `1 - z/2` rounds; `(1 - w) - hz` is exact and returns the rounded bits.
+    let hz = vmulq_f32(vdupq_n_f32(0.5), z);
+    let w = vsubq_f32(one, hz);
+    let correction = vsubq_f32(vsubq_f32(one, w), hz);
+    vaddq_f32(w, vaddq_f32(correction, r))
+}
+
+/// Evaluate sin on quadrant `j + offset`, the shared core of f32 sin and cos.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn sin_quadrant_f32(x: float32x4_t, offset: i32) -> float32x4_t {
+    let (j, y) = trig_reduce_f32(x);
+    let sin_y = sin_kernel_f32(y);
+    let cos_y = cos_kernel_f32(y);
+
+    // j mod 4 = 0: sin(y), 1: cos(y), 2: -sin(y), 3: -cos(y)
+    let j_mod_4 = vandq_s32(vaddq_s32(j, vdupq_n_s32(offset)), vdupq_n_s32(3));
+
+    let use_cos_mask = vceqq_s32(vandq_s32(j_mod_4, vdupq_n_s32(1)), vdupq_n_s32(1));
+    let negate_mask = vceqq_s32(vandq_s32(j_mod_4, vdupq_n_s32(2)), vdupq_n_s32(2));
+
+    let result = vbslq_f32(use_cos_mask, cos_y, sin_y);
+    vbslq_f32(negate_mask, vnegq_f32(result), result)
+}
+
 /// Fast SIMD sin approximation for f32 using NEON
 ///
 /// See `common::_TRIG_ALGORITHM_DOC` for algorithm details.
-///
-/// # Safety
-/// Requires NEON (always available on AArch64)
+/// Relative error stays below 2 ulps for |x| <= 2^17.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn sin_f32(x: float32x4_t) -> float32x4_t {
-    use trig_coefficients::*;
+    let r = sin_quadrant_f32(x, 0);
 
-    let two_over_pi = vdupq_n_f32(std::f32::consts::FRAC_2_PI);
-    let pi_over_2 = vdupq_n_f32(std::f32::consts::FRAC_PI_2);
-
-    let s1 = vdupq_n_f32(S1_F32);
-    let s3 = vdupq_n_f32(S3_F32);
-    let s5 = vdupq_n_f32(S5_F32);
-    let s7 = vdupq_n_f32(S7_F32);
-
-    let c0 = vdupq_n_f32(C0_F32);
-    let c2 = vdupq_n_f32(C2_F32);
-    let c4 = vdupq_n_f32(C4_F32);
-    let c6 = vdupq_n_f32(C6_F32);
-
-    // Range reduction: j = round(x * 2/π), y = x - j * π/2
-    let j = vrndnq_f32(vmulq_f32(x, two_over_pi));
-    let j_int = vcvtq_s32_f32(j);
-
-    // y = x - j * (π/2) using FMA for precision
-    let y = vfmsq_f32(x, j, pi_over_2);
-
-    let y2 = vmulq_f32(y, y);
-    let y3 = vmulq_f32(y2, y);
-    let y4 = vmulq_f32(y2, y2);
-    let y5 = vmulq_f32(y4, y);
-    let y6 = vmulq_f32(y4, y2);
-    let y7 = vmulq_f32(y4, y3);
-
-    // sin(y) polynomial: s1*y + s3*y³ + s5*y⁵ + s7*y⁷
-    let sin_y = vfmaq_f32(
-        vfmaq_f32(vfmaq_f32(vmulq_f32(s1, y), s3, y3), s5, y5),
-        s7,
-        y7,
-    );
-
-    // cos(y) polynomial: c0 + c2*y² + c4*y⁴ + c6*y⁶
-    let cos_y = vfmaq_f32(vfmaq_f32(vfmaq_f32(c0, c2, y2), c4, y4), c6, y6);
-
-    // Select sin or cos based on j mod 4
-    let j_mod_4 = vandq_s32(j_int, vdupq_n_s32(3));
-
-    // Use cos when j mod 4 is 1 or 3
-    let use_cos_mask = vceqq_s32(vandq_s32(j_mod_4, vdupq_n_s32(1)), vdupq_n_s32(1));
-
-    // Negate when j mod 4 is 2 or 3
-    let negate_mask = vceqq_s32(vandq_s32(j_mod_4, vdupq_n_s32(2)), vdupq_n_s32(2));
-
-    let result = vbslq_f32(use_cos_mask, cos_y, sin_y);
-    let negated = vnegq_f32(result);
-    vbslq_f32(negate_mask, negated, result)
+    // sin(±0) = ±0. The reduction computes 0 - (-0 * π/2), which is +0 for both
+    // signed zeros, so the input is restored here.
+    let is_zero = vceqq_f32(x, vdupq_n_f32(0.0));
+    vbslq_f32(is_zero, x, r)
 }
 
 /// Cody-Waite reduction of `x` modulo π/2 for f64.
@@ -693,13 +717,14 @@ pub unsafe fn sin_f64(x: float64x2_t) -> float64x2_t {
 
 /// Fast SIMD cos approximation for f32 using NEON
 ///
-/// Implemented as: cos(x) = sin(x + π/2)
+/// Shifts the quadrant index by one rather than evaluating `sin(x + π/2)`,
+/// which would round the sum before reduction and lose bits proportional to
+/// |x|. Relative error stays below 2 ulps for |x| <= 2^17.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn cos_f32(x: float32x4_t) -> float32x4_t {
-    let pi_over_2 = vdupq_n_f32(std::f32::consts::FRAC_PI_2);
-    sin_f32(vaddq_f32(x, pi_over_2))
+    sin_quadrant_f32(x, 1)
 }
 
 /// Fast SIMD cos approximation for f64 using NEON
@@ -717,45 +742,25 @@ pub unsafe fn cos_f64(x: float64x2_t) -> float64x2_t {
 /// Fast SIMD tan approximation for f32 using NEON
 ///
 /// See `common::_TAN_ALGORITHM_DOC` for algorithm details.
+/// Relative error stays below 2 ulps away from the poles, for |x| <= 2^17.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn tan_f32(x: float32x4_t) -> float32x4_t {
-    use tan_coefficients::*;
+    let (j, y) = trig_reduce_f32(x);
+    let sin_y = sin_kernel_f32(y);
+    let cos_y = cos_kernel_f32(y);
 
-    let two_over_pi = vdupq_n_f32(std::f32::consts::FRAC_2_PI);
-    let pi_over_2 = vdupq_n_f32(std::f32::consts::FRAC_PI_2);
+    // Odd quadrant: tan(x) = -cot(y) = -cos(y)/sin(y). Swapping the ratio costs
+    // one rounding, where inverting an already-rounded tan(y) costs two.
+    let odd_mask = vceqq_s32(vandq_s32(j, vdupq_n_s32(1)), vdupq_n_s32(1));
+    let num = vbslq_f32(odd_mask, vnegq_f32(cos_y), sin_y);
+    let den = vbslq_f32(odd_mask, sin_y, cos_y);
+    let r = vdivq_f32(num, den);
 
-    // Range reduction
-    let j = vrndnq_f32(vmulq_f32(x, two_over_pi));
-    let y = vfmsq_f32(x, j, pi_over_2);
-
-    let t1 = vdupq_n_f32(T1_F32);
-    let t3 = vdupq_n_f32(T3_F32);
-    let t5 = vdupq_n_f32(T5_F32);
-    let t7 = vdupq_n_f32(T7_F32);
-    let t9 = vdupq_n_f32(T9_F32);
-    let t11 = vdupq_n_f32(T11_F32);
-
-    let y2 = vmulq_f32(y, y);
-
-    // Horner's method
-    let mut poly = t11;
-    poly = vfmaq_f32(t9, poly, y2);
-    poly = vfmaq_f32(t7, poly, y2);
-    poly = vfmaq_f32(t5, poly, y2);
-    poly = vfmaq_f32(t3, poly, y2);
-    poly = vfmaq_f32(t1, poly, y2);
-    let tan_y = vmulq_f32(y, poly);
-
-    // For quadrants 1 and 3, tan(y + π/2) = -1/tan(y) = -cot(y)
-    let j_int = vcvtq_s32_f32(j);
-    let use_cot_mask = vceqq_s32(vandq_s32(j_int, vdupq_n_s32(1)), vdupq_n_s32(1));
-
-    let neg_one = vdupq_n_f32(-1.0);
-    let cot_y = vdivq_f32(neg_one, tan_y);
-
-    vbslq_f32(use_cot_mask, cot_y, tan_y)
+    // tan(±0) = ±0; the reduction turns -0 into +0.
+    let is_zero = vceqq_f32(x, vdupq_n_f32(0.0));
+    vbslq_f32(is_zero, x, r)
 }
 
 /// Fast SIMD tan approximation for f64 using NEON
@@ -813,42 +818,44 @@ pub unsafe fn atan_f32(x: float32x4_t) -> float32x4_t {
     use atan_coefficients::*;
 
     let one = vdupq_n_f32(1.0);
-    let pi_over_2 = vdupq_n_f32(std::f32::consts::FRAC_PI_2);
-
-    // Save sign and work with absolute value
-    let sign_mask = vdupq_n_u32(0x80000000);
+    let sign_mask = vdupq_n_u32(0x8000_0000);
     let sign = vandq_u32(vreinterpretq_u32_f32(x), sign_mask);
-    let abs_x = vabsq_f32(x);
+    let ax = vabsq_f32(x);
 
-    // Range reduction: for |x| > 1, compute atan(1/x) then adjust
-    let need_recip = vcgtq_f32(abs_x, one);
-    let recip_x = vdivq_f32(one, abs_x);
-    let y = vbslq_f32(need_recip, recip_x, abs_x);
+    // Pick the reduction centre and the matching atan(c) head/correction. The
+    // breakpoint masks are nested, so blending from the widest bucket inward
+    // leaves each lane holding its tightest match.
+    //
+    // The widest bucket has the centre at infinity: t = -1/|x|. NaN fails every
+    // comparison and stays there, which propagates NaN through the division.
+    let mut t = vdivq_f32(vdupq_n_f32(-1.0), ax);
+    let mut hi = vdupq_n_f32(ATAN_HI1_F32);
+    let mut lo = vdupq_n_f32(ATAN_LO1_F32);
 
-    // Polynomial approximation for atan(y) where y in [0, 1]
-    let a0 = vdupq_n_f32(A0_F32);
-    let a2 = vdupq_n_f32(A2_F32);
-    let a4 = vdupq_n_f32(A4_F32);
-    let a6 = vdupq_n_f32(A6_F32);
-    let a8 = vdupq_n_f32(A8_F32);
-    let a10 = vdupq_n_f32(A10_F32);
-    let a12 = vdupq_n_f32(A12_F32);
+    let in1 = vcltq_f32(ax, vdupq_n_f32(BREAK1_F32));
+    let t_mid = vdivq_f32(vsubq_f32(ax, one), vaddq_f32(ax, one));
+    t = vbslq_f32(in1, t_mid, t);
+    hi = vbslq_f32(in1, vdupq_n_f32(ATAN_HI0_F32), hi);
+    lo = vbslq_f32(in1, vdupq_n_f32(ATAN_LO0_F32), lo);
 
-    let y2 = vmulq_f32(y, y);
+    let zero = vdupq_n_f32(0.0);
+    let in0 = vcltq_f32(ax, vdupq_n_f32(BREAK0_F32));
+    t = vbslq_f32(in0, ax, t);
+    hi = vbslq_f32(in0, zero, hi);
+    lo = vbslq_f32(in0, zero, lo);
 
-    // Horner's method
-    let mut poly = a12;
-    poly = vfmaq_f32(a10, poly, y2);
-    poly = vfmaq_f32(a8, poly, y2);
-    poly = vfmaq_f32(a6, poly, y2);
-    poly = vfmaq_f32(a4, poly, y2);
-    poly = vfmaq_f32(a2, poly, y2);
-    poly = vfmaq_f32(a0, poly, y2);
-    let atan_y = vmulq_f32(y, poly);
+    // t in [-0.4143, 0.4143]; |x| = inf gives t = -0.0, so the result is π/2.
+    let z = vmulq_f32(t, t);
 
-    // Apply range reduction inverse: if |x| > 1, result = π/2 - atan(1/x)
-    let adjusted = vsubq_f32(pi_over_2, atan_y);
-    let result = vbslq_f32(need_recip, adjusted, atan_y);
+    let mut p = vdupq_n_f32(AT0_F32);
+    p = vfmaq_f32(vdupq_n_f32(AT1_F32), p, z);
+    p = vfmaq_f32(vdupq_n_f32(AT2_F32), p, z);
+    p = vfmaq_f32(vdupq_n_f32(AT3_F32), p, z);
+
+    // atan(x) = atan(c) + atan(t), with the correction term added beside the
+    // polynomial rather than beside the head.
+    let poly = vfmaq_f32(t, vmulq_f32(z, t), p);
+    let result = vaddq_f32(hi, vaddq_f32(lo, poly));
 
     // Restore sign
     vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(result), sign))
@@ -1475,17 +1482,61 @@ pub unsafe fn atanh_f64(x: float64x2_t) -> float64x2_t {
     copy_sign_f64(r, x)
 }
 
+/// Shared polynomial correction `t * R(t)` for f32 asin/acos.
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC`. Valid for t in [0, 0.5]; the caller
+/// multiplies by its own argument to form `y * t * R(t)`.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn asin_r_f32(t: float32x4_t) -> float32x4_t {
+    use asin_coefficients::*;
+
+    let mut p = vdupq_n_f32(PS0_F32);
+    p = vfmaq_f32(vdupq_n_f32(PS1_F32), p, t);
+    p = vfmaq_f32(vdupq_n_f32(PS2_F32), p, t);
+    p = vfmaq_f32(vdupq_n_f32(PS3_F32), p, t);
+    p = vfmaq_f32(vdupq_n_f32(PS4_F32), p, t);
+
+    vmulq_f32(t, p)
+}
+
 /// Fast SIMD asin for f32 using NEON
-/// asin(x) = atan(x / sqrt(1 - x^2))
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn asin_f32(x: float32x4_t) -> float32x4_t {
+    use asin_coefficients::*;
+
     let one = vdupq_n_f32(1.0);
-    let x2 = vmulq_f32(x, x);
-    let sqrt_term = vsqrtq_f32(vsubq_f32(one, x2));
-    let ratio = vdivq_f32(x, sqrt_term);
-    atan_f32(ratio)
+    let half = vdupq_n_f32(HALF_F32);
+    let sign_mask = vdupq_n_u32(0x8000_0000);
+    let sign = vandq_u32(vreinterpretq_u32_f32(x), sign_mask);
+    let ax = vabsq_f32(x);
+
+    // |x| > 1 leaves the reflection argument negative, so sqrt yields NaN.
+    // NaN input fails the comparison and takes the same reflection path.
+    let small = vcltq_f32(ax, half);
+    let t_refl = vmulq_f32(vsubq_f32(one, ax), half);
+    let t = vbslq_f32(small, vmulq_f32(ax, ax), t_refl);
+    let s = vsqrtq_f32(t);
+    let v = vbslq_f32(small, ax, s);
+
+    // w is asin(|x|) on the direct branch and asin(sqrt(t)) on the reflection.
+    let w = vfmaq_f32(v, v, asin_r_f32(t));
+
+    // π/2 - 2*asin(sqrt(t)), with the low half of π/2 folded into the
+    // subtracted term so the cancellation keeps the trailing bits.
+    let two_w = vaddq_f32(w, w);
+    let res_refl = vsubq_f32(
+        vdupq_n_f32(PIO2_HI_F32),
+        vsubq_f32(two_w, vdupq_n_f32(PIO2_LO_F32)),
+    );
+
+    let result = vbslq_f32(small, w, res_refl);
+    vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(result), sign))
 }
 
 /// Shared rational correction `R(t) = p(t)/q(t)` for f64 asin/acos.
@@ -1553,13 +1604,48 @@ pub unsafe fn asin_f64(x: float64x2_t) -> float64x2_t {
 }
 
 /// Fast SIMD acos for f32 using NEON
-/// acos(x) = pi/2 - asin(x)
+///
+/// See `common::_ASIN_ACOS_ALGORITHM_DOC` for algorithm details. Built from the
+/// reflection directly, not as π/2 - asin(x): that subtraction cancels away the
+/// whole result as x approaches 1.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
 pub unsafe fn acos_f32(x: float32x4_t) -> float32x4_t {
-    let pi_half = vdupq_n_f32(std::f32::consts::FRAC_PI_2);
-    vsubq_f32(pi_half, asin_f32(x))
+    use asin_coefficients::*;
+
+    let one = vdupq_n_f32(1.0);
+    let half = vdupq_n_f32(HALF_F32);
+    let pio2_lo = vdupq_n_f32(PIO2_LO_F32);
+    let ax = vabsq_f32(x);
+
+    let small = vcltq_f32(ax, half);
+    let t_refl = vmulq_f32(vsubq_f32(one, ax), half);
+    let t = vbslq_f32(small, vmulq_f32(x, x), t_refl);
+    let q = asin_r_f32(t);
+    let s = vsqrtq_f32(t);
+
+    // |x| <= 0.5: π/2 - asin(x), evaluated without forming asin(x) first.
+    let px = vmulq_f32(x, q);
+    let res_small = vsubq_f32(
+        vdupq_n_f32(PIO2_HI_F32),
+        vaddq_f32(x, vsubq_f32(px, pio2_lo)),
+    );
+
+    // x >= 0.5: 2*asin(sqrt(t)), which is small and free of cancellation.
+    let ps = vmulq_f32(s, q);
+    let s_sr = vaddq_f32(s, ps);
+    let res_pos = vaddq_f32(s_sr, s_sr);
+
+    // x <= -0.5: π - 2*asin(sqrt(t)).
+    let w = vaddq_f32(s, vsubq_f32(ps, pio2_lo));
+    let res_neg = vsubq_f32(vdupq_n_f32(PI_HI_F32), vaddq_f32(w, w));
+
+    // NaN fails both comparisons and lands on the negative branch, where the
+    // NaN sqrt argument propagates.
+    let positive = vcgtq_f32(x, vdupq_n_f32(0.0));
+    let res_refl = vbslq_f32(positive, res_pos, res_neg);
+    vbslq_f32(small, res_small, res_refl)
 }
 
 /// Fast SIMD acos for f64 using NEON

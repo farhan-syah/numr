@@ -286,9 +286,13 @@ pub mod log_coefficients {
 
 /// Coefficients for sin(x) and cos(x).
 ///
-/// The f32 set is the truncated Taylor series
-/// `sin(x) ≈ x - x³/3! + x⁵/5! - x⁷/7!`, `cos(x) ≈ 1 - x²/2! + x⁴/4! - x⁶/6!`,
-/// evaluated on the whole reduction interval [-π/4, π/4].
+/// Both precisions use minimax polynomials in `z = y²` of the same shape:
+///   `sin(y) = y + y³ * (SIN_last + z*(... + z*SIN_first))`
+///   `cos(y) = 1 - z/2 + z² * (COS_last + z*(... + z*COS_first))`
+///
+/// The f32 set truncates at y⁷ for sin and y⁸ for cos, leaving under 2^-27
+/// relative error on [-π/4, π/4]. The Taylor series it replaces dropped its
+/// first term at y⁶ for cos: `y⁸/8! ≈ 3.6e-6` at y = π/4, thirty ulps of f32.
 ///
 /// The f64 set is a pair of minimax polynomials in `z = y²`:
 ///   `sin(y) = y + y³ * (SIN1 + z*(SIN2 + ... + z*SIN6))`
@@ -298,17 +302,30 @@ pub mod log_coefficients {
 /// `y¹⁰/10! ≈ 2.6e-8` for cos, eight decimal digits short of double precision,
 /// and that term is exactly what the old `C8`/`S9` cut-off left behind.
 pub mod trig_coefficients {
-    // sin(x) coefficients
-    pub const S1_F32: f32 = 1.0;
-    pub const S3_F32: f32 = -1.0 / 6.0;
-    pub const S5_F32: f32 = 1.0 / 120.0;
-    pub const S7_F32: f32 = -1.0 / 5040.0;
+    // f32 minimax sin kernel, highest power first: y + y³*(S2 + z*(S1 + z*S0)).
+    pub const SIN0_F32: f32 = -1.9515295891e-4;
+    pub const SIN1_F32: f32 = 8.3321608736e-3;
+    pub const SIN2_F32: f32 = -1.6666654611e-1;
 
-    // cos(x) coefficients
-    pub const C0_F32: f32 = 1.0;
-    pub const C2_F32: f32 = -0.5;
-    pub const C4_F32: f32 = 1.0 / 24.0;
-    pub const C6_F32: f32 = -1.0 / 720.0;
+    // f32 minimax cos kernel, highest power first. The y⁰ and y² terms are the
+    // exact 1 and -1/2, carried separately so `1 - z/2` keeps its low bits.
+    pub const COS0_F32: f32 = 2.443315711809948e-5;
+    pub const COS1_F32: f32 = -1.388731625493765e-3;
+    pub const COS2_F32: f32 = 4.166664568298827e-2;
+
+    /// Three-part π/2 for Cody-Waite reduction in f32, the f32 analogue of the
+    /// `PIO2_*_F64` chain below.
+    ///
+    /// `PIO2_1` is π/2 rounded to f32, so `j * PIO2_1` is an exact multiple of
+    /// 2^-23 and `x - j*PIO2_1` is exact whenever it stays below 2 — that holds
+    /// for every |j| under 2^24. The two tails then restore π/2 to about 76
+    /// bits, which keeps the reduced argument accurate in relative terms even
+    /// where it lands near zero. Reducing with `PIO2_1` alone leaves an
+    /// absolute error of `|j| * 4.4e-8` in the reduced argument: at |x| = 1e5
+    /// that is 2.8e-3, and every significant bit of sin or cos is gone.
+    pub const PIO2_1_F32: f32 = std::f32::consts::FRAC_PI_2;
+    pub const PIO2_2_F32: f32 = -4.371_138_828_673_793e-8;
+    pub const PIO2_3_F32: f32 = -1.715_124_510_005_881_9e-15;
 
     // f64 minimax sin kernel, coefficient of y³ upward.
     pub const SIN1_F64: f64 = -1.666_666_666_666_663_2e-1;
@@ -340,26 +357,6 @@ pub mod trig_coefficients {
     pub const PIO2_2_F64: f64 = 6.077_100_506_303_966e-11;
     pub const PIO2_3_F64: f64 = 2.022_266_248_711_166_5e-21;
     pub const PIO2_3T_F64: f64 = 8.478_427_660_368_9e-32;
-}
-
-// ============================================================================
-// Polynomial Coefficients for tan(x)
-// ============================================================================
-
-/// Truncated Taylor series for tan(x) on [-π/4, π/4], f32 only.
-/// `tan(x) ≈ x * (1 + x²*(t3 + x²*(t5 + x²*(t7 + ...))))`
-///
-/// There is no f64 counterpart: the f64 path forms `tan = sin/cos` from the
-/// minimax kernels in `trig_coefficients`, because a fixed-degree polynomial in
-/// `x` is a poor fit for tan near π/4, where the function is already steep. The
-/// f32 series drops a term worth ~1.5e-4 at that boundary.
-pub mod tan_coefficients {
-    pub const T1_F32: f32 = 1.0;
-    pub const T3_F32: f32 = 0.3333333333333333;
-    pub const T5_F32: f32 = 0.13333333333333333;
-    pub const T7_F32: f32 = 0.05396825396825397;
-    pub const T9_F32: f32 = 0.021869488536155203;
-    pub const T11_F32: f32 = 0.008863235529902197;
 }
 
 // ============================================================================
@@ -435,18 +432,17 @@ pub const _LOG_ALGORITHM_DOC: () = ();
 ///
 /// 1. **Range reduction**: Reduce x to y in [-π/4, π/4]
 ///    - j = round(x * 2/π) (quadrant index)
-///    - f32: y = x - j * π/2 with a single rounded π/2
-///    - f64: Cody-Waite, subtracting `j*PIO2_1`, `j*PIO2_2`, `j*PIO2_3` and
-///      `j*PIO2_3T` in turn. Each product is exact and each subtraction cancels
-///      exactly, so `y` keeps full relative precision even where the result is
-///      near a zero of sin or cos.
+///    - Cody-Waite in both precisions, subtracting `j*PIO2_1`, `j*PIO2_2` and
+///      the remaining tails in turn. Each product is exact and each subtraction
+///      cancels exactly, so `y` keeps full relative precision even where the
+///      result is near a zero of sin or cos. f32 uses three parts, f64 four.
+///      Reducing with a single rounded π/2 instead leaves an absolute error of
+///      `|j| * 4.4e-8` in f32 — a total loss of the answer past |x| ~ 1e4.
 ///
-/// 2. **Polynomial approximation**:
-///    - f32: Taylor, `sin(y) ≈ y - y³/6 + y⁵/120 - y⁷/5040` and
-///      `cos(y) ≈ 1 - y²/2 + y⁴/24 - y⁶/720`
-///    - f64: the minimax kernels in `trig_coefficients`. cos is evaluated as
-///      `w + (((1 - w) - z/2) + z²*P(z))` with `w = 1 - z/2`, which recovers the
-///      bits the leading subtraction rounds away.
+/// 2. **Polynomial approximation**: the minimax kernels in
+///    `trig_coefficients`. cos is evaluated as
+///    `w + (((1 - w) - z/2) + z²*P(z))` with `w = 1 - z/2`, which recovers the
+///    bits the leading subtraction rounds away.
 ///
 /// 3. **Quadrant selection**: Based on j mod 4:
 ///    - 0: sin(x) = sin(y)
@@ -459,14 +455,17 @@ pub const _LOG_ALGORITHM_DOC: () = ();
 ///    bits proportional to |x|.
 ///
 /// # Accuracy
-/// - f32: Relative error < 1e-6 near zero, degrading toward the ends of the
-///   reduction interval where the dropped Taylor term is largest
+/// - f32: Relative error below 2 ulps for |x| <= 2^17 (about 1.3e5)
 /// - f64: Relative error below 4 ulps for |x| <= 2^21 * π/2 (about 3.3e6)
 ///
 /// # Input Range Warning
-/// Past |x| = 2^21 * π/2 the products `j * PIO2_k` stop being exact and the
-/// reduction degrades rapidly; correctness beyond that bound requires a
-/// Payne-Hanek reduction, which is not implemented here.
+/// Past |x| = 2^21 * π/2 in f64, and past |x| = 2^17 in f32, the reduction
+/// degrades: the f64 products `j * PIO2_k` stop being exact, and the f32
+/// quadrant index is itself formed in f32, so its rounding pushes `y` outside
+/// [-π/4, π/4] by a widening margin. The f32 degradation is gradual — the
+/// Cody-Waite chain stays exact to |j| = 2^24 — but correctness far beyond
+/// these bounds requires a Payne-Hanek reduction, which is not implemented
+/// here.
 ///
 /// # Edge Cases
 /// - sin(±0) = ±0, cos(±0) = 1
@@ -479,23 +478,38 @@ pub const _TRIG_ALGORITHM_DOC: () = ();
 
 /// Coefficients for atan(x).
 ///
-/// The f32 set is the Gregory series `atan(x) ≈ x * (A0 + x²*(A2 + ...))`,
-/// used on [-1, 1] after the identity `atan(x) = sign(x)*π/2 - atan(1/x)`.
+/// Both sets are minimax polynomials on a reduced argument. The Gregory series
+/// the f32 set replaces is unusable at either precision: its truncation error
+/// at |x| = 1 is on the order of `1/(2n+3)`, so even seven terms leave ~4e-2
+/// relative error at the reduction boundary — which is exactly where the old
+/// f32 peak error sat.
 ///
-/// The f64 set is a minimax polynomial valid only on |x| ≤ 0.4375, paired with
-/// the reduction points below. The Gregory series is unusable at f64 precision:
-/// its truncation error at |x| = 1 is on the order of `1/(2n+3)`, so even 11
-/// terms leave ~2e-2 relative error at the reduction boundary — fourteen decimal
-/// digits short of double precision.
+/// The f64 set is valid only on |x| ≤ 0.4375, paired with four reduction
+/// centres. The f32 set is valid on |t| ≤ tan(π/8) = 0.4142, paired with the
+/// two breakpoints below, and leaves under 2^-26 relative error there.
 pub mod atan_coefficients {
-    // f32 coefficients (7-term polynomial, ~1e-7 accuracy)
-    pub const A0_F32: f32 = 1.0;
-    pub const A2_F32: f32 = -0.333333333;
-    pub const A4_F32: f32 = 0.2;
-    pub const A6_F32: f32 = -0.142857142;
-    pub const A8_F32: f32 = 0.111111111;
-    pub const A10_F32: f32 = -0.0909090909;
-    pub const A12_F32: f32 = 0.0769230769;
+    // f32 minimax coefficients for `atan(t) ≈ t + t*z*(AT3 + z*(AT2 + z*(AT1 +
+    // z*AT0)))` with `z = t²`, highest power first.
+    pub const AT0_F32: f32 = 8.05374449538e-2;
+    pub const AT1_F32: f32 = -1.38776856032e-1;
+    pub const AT2_F32: f32 = 1.99777106478e-1;
+    pub const AT3_F32: f32 = -3.33329491539e-1;
+
+    /// f32 reduction breakpoints on |x|: tan(π/8) and tan(3π/8). Below the
+    /// first, the centre is 0 and `t = |x|`. Between them the centre is 1 and
+    /// `t = (|x| - 1)/(|x| + 1)`. Above the second, `t = -1/|x|` with the
+    /// centre at infinity. Three centres hold |t| inside the interval the
+    /// polynomial covers for every finite input.
+    pub const BREAK0_F32: f32 = 0.414_213_56;
+    pub const BREAK1_F32: f32 = 2.414_213_6;
+
+    /// `atan(centre)` as a head plus a correction, the f32 analogue of
+    /// `ATAN_HI*_F64`/`ATAN_LO*_F64`. Each head is a rounded f32, so adding it
+    /// back alone would cost up to half an ulp of the head.
+    pub const ATAN_HI0_F32: f32 = std::f32::consts::FRAC_PI_4; // atan(1.0)
+    pub const ATAN_HI1_F32: f32 = std::f32::consts::FRAC_PI_2; // atan(inf)
+    pub const ATAN_LO0_F32: f32 = -2.185_569_414_336_896_4e-8;
+    pub const ATAN_LO1_F32: f32 = -4.371_138_828_673_793e-8;
 
     // f64 minimax coefficients for `atan(t) ≈ t - t*(s1 + s2)` on |t| ≤ 0.4375,
     // where `z = t²`, `w = z²`,
@@ -539,6 +553,12 @@ pub mod atan_coefficients {
 // Rational approximation for asin(x) / acos(x)
 // ============================================================================
 
+/// Coefficients for asin(x) and acos(x).
+///
+/// The f32 correction is a plain polynomial `R(t) = PS4 + t*(PS3 + ... + t*PS0)`
+/// with `PS0` first, so that `asin(y) ≈ y + y*t*R(t)` for `t = y²`, |y| ≤ 0.5.
+/// A rational form buys nothing at f32 precision and costs a divide.
+///
 /// f64 coefficients for `R(t) = p(t)/q(t)`, the correction term shared by asin
 /// and acos:
 ///   p(t) = t*(PS0 + t*(PS1 + t*(PS2 + t*(PS3 + t*(PS4 + t*PS5)))))
@@ -549,6 +569,22 @@ pub mod atan_coefficients {
 /// moves the argument back into that interval, where the direct series would
 /// otherwise need unbounded degree as |x| approaches 1.
 pub mod asin_coefficients {
+    pub const PS0_F32: f32 = 4.2163199048e-2;
+    pub const PS1_F32: f32 = 2.4181311049e-2;
+    pub const PS2_F32: f32 = 4.5470025998e-2;
+    pub const PS3_F32: f32 = 7.4953002686e-2;
+    pub const PS4_F32: f32 = 1.6666752422e-1;
+
+    /// π/2 and π split head + correction, the f32 analogue of the `*_F64`
+    /// constants below. `PI_HI_F32` is exactly `2 * PIO2_HI_F32`, so the same
+    /// correction serves both reflections.
+    pub const PIO2_HI_F32: f32 = std::f32::consts::FRAC_PI_2;
+    pub const PIO2_LO_F32: f32 = -4.371_138_828_673_793e-8;
+    pub const PI_HI_F32: f32 = std::f32::consts::PI;
+
+    /// Branch point between the direct series and the reflection.
+    pub const HALF_F32: f32 = 0.5;
+
     pub const PS0_F64: f64 = 1.666_666_666_666_666_6e-1;
     pub const PS1_F64: f64 = -3.255_658_186_224_009e-1;
     pub const PS2_F64: f64 = 2.012_125_321_348_629_3e-1;
@@ -573,23 +609,21 @@ pub mod asin_coefficients {
 
 /// Algorithm for tan(x):
 ///
-/// 1. **Range reduction**: Reduce x to y in [-π/4, π/4]
-///    - f32: j = round(x * 2/π), y = x - j * π/2
-///    - f64: the Cody-Waite chain described in `_TRIG_ALGORITHM_DOC`
+/// 1. **Range reduction**: the Cody-Waite chain described in
+///    `_TRIG_ALGORITHM_DOC`, in both precisions
 ///
-/// 2. **Approximation on the reduced argument**:
-///    - f32: the odd polynomial `tan(y) ≈ y * (1 + y²*(t₃ + y²*(t₅ + ...)))`
-///    - f64: `tan(y) = sin(y)/cos(y)` from the two minimax kernels. A single
-///      polynomial in y is the wrong shape here — tan grows without bound at
-///      π/2, so a fit that is tight near zero is loose at the interval edge.
+/// 2. **Approximation on the reduced argument**: `tan(y) = sin(y)/cos(y)` from
+///    the two minimax kernels. A single polynomial in y is the wrong shape
+///    here — tan grows without bound at π/2, so a fit that is tight near zero
+///    is loose at the interval edge. The Taylor series the f32 path used
+///    dropped a term worth ~1.5e-4 at y = π/4.
 ///
-/// 3. **Quadrant handling**: For odd quadrants, use cotangent
-///    - f32: result = -1/tan(y)
-///    - f64: result = -cos(y)/sin(y), which swaps the two kernels rather than
-///      inverting an already-rounded quotient
+/// 3. **Quadrant handling**: for odd quadrants, `result = -cos(y)/sin(y)`,
+///    which swaps the two kernels rather than inverting an already-rounded
+///    tan(y)
 ///
 /// # Accuracy
-/// - f32: Relative error < 2e-4
+/// - f32: Relative error below 2 ulps away from the poles, for |x| <= 2^17
 /// - f64: Relative error below 4 ulps away from the poles, for
 ///   |x| <= 2^21 * π/2 (about 3.3e6)
 ///
@@ -606,7 +640,10 @@ pub const _TAN_ALGORITHM_DOC: () = ();
 /// 1. **Sign handling**: Save sign of x, work with |x|
 ///
 /// 2. **Range reduction**:
-///    - f32: for |x| > 1, atan(x) = π/2 - atan(1/x)
+///    - f32: pick a centre c from {0, 1, ∞} by the breakpoints in
+///      `atan_coefficients`, giving t = |x|, t = (|x|-1)/(|x|+1) or t = -1/|x|,
+///      all inside [-0.4143, 0.4143]. Reducing only at |x| = 1 instead leaves
+///      the polynomial covering [0, 1], where a series in t converges slowest
 ///    - f64: pick a centre c from {0, 0.5, 1.0, 1.5} by the breakpoints in
 ///      `atan_coefficients`, and evaluate at t = (|x| - c)/(1 + c*|x|), which
 ///      lands in [-0.4375, 0.4375]. Past the last breakpoint use t = -1/|x|
@@ -619,7 +656,7 @@ pub const _TAN_ALGORITHM_DOC: () = ();
 ///    as a head plus a correction term, then the sign restored
 ///
 /// # Accuracy
-/// - f32: Relative error < 1e-6 for all finite inputs
+/// - f32: Relative error below 2 ulps for all finite inputs
 /// - f64: Relative error below 2 ulps for all finite inputs
 ///
 /// # Edge Cases
@@ -628,7 +665,7 @@ pub const _TAN_ALGORITHM_DOC: () = ();
 /// - atan(NaN) = NaN
 pub const _ATAN_ALGORITHM_DOC: () = ();
 
-/// Algorithm for asin(x) and acos(x) in f64:
+/// Algorithm for asin(x) and acos(x):
 ///
 /// 1. **Interval split** at |x| = 0.5. Below it, evaluate the rational
 ///    correction directly at t = x². Above it, reflect through
@@ -648,7 +685,13 @@ pub const _ATAN_ALGORITHM_DOC: () = ();
 ///    acos is built directly rather than as π/2 - asin(x): near x = 1 that
 ///    subtraction cancels away every significant bit of the result.
 ///
+/// Both precisions share this structure. Building asin from atan instead, as
+/// `atan(x / sqrt(1 - x²))`, puts atan's argument at exactly 1 when
+/// |x| = 1/sqrt(2) — the slowest-converging point of any series on [0, 1], and
+/// where the f32 peak error used to sit.
+///
 /// # Accuracy
+/// - f32: Relative error below 2 ulps over [-1, 1]
 /// - f64: Relative error below 2 ulps over [-1, 1]
 ///
 /// # Edge Cases
