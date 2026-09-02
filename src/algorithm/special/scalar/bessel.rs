@@ -208,7 +208,12 @@ pub fn bessel_i0_scalar(x: f64) -> f64 {
             * z
             + I0_ASYMP[0];
 
-        ax.exp() / (2.0 * std::f64::consts::PI * ax).sqrt() * poly
+        // exp overflows past ln(f64::MAX) = 709.7827 while I0 stays finite up
+        // to 713.9869, so forming exp(ax) first returns infinity over that
+        // whole band. t = exp(ax/2) keeps every factor representable; ax/2 is
+        // exact, and the product still overflows to infinity past 713.9869.
+        let t = (0.5 * ax).exp();
+        t / (2.0 * std::f64::consts::PI * ax).sqrt() * t * poly
     }
 }
 
@@ -244,7 +249,12 @@ pub fn bessel_i1_scalar(x: f64) -> f64 {
             * z
             + I1_ASYMP[0];
 
-        ax.exp() / (2.0 * std::f64::consts::PI * ax).sqrt() * poly
+        // exp overflows past ln(f64::MAX) = 709.7827 while I1 stays finite up
+        // to 713.9876, so forming exp(ax) first returns infinity over that
+        // whole band. t = exp(ax/2) keeps every factor representable; ax/2 is
+        // exact, and the product still overflows to infinity past 713.9876.
+        let t = (0.5 * ax).exp();
+        t / (2.0 * std::f64::consts::PI * ax).sqrt() * t * poly
     };
 
     // I1 is an odd function

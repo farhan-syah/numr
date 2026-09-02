@@ -484,7 +484,11 @@ fn bessel_i0_impl(x: f32) -> f32 {
 
         let poly = ((((p5 * z + p4) * z + p3) * z + p2) * z + p1) * z + p0;
 
-        return exp(ax) / sqrt(2.0 * PI * ax) * poly;
+        // exp overflows past ln(f32::MAX) = 88.7228 while I0 stays finite up
+        // to 91.9008, and a division cannot recover an infinity. t = exp(ax/2)
+        // keeps every factor representable; ax/2 is exact.
+        let t = exp(0.5 * ax);
+        return t / sqrt(2.0 * PI * ax) * t * poly;
     }
 }
 
@@ -522,7 +526,11 @@ fn bessel_i1_impl(x: f32) -> f32 {
 
         let poly = ((((q5 * z + q4) * z + q3) * z + q2) * z + q1) * z + q0;
 
-        result = exp(ax) / sqrt(2.0 * PI * ax) * poly;
+        // exp overflows past ln(f32::MAX) = 88.7228 while I1 stays finite up
+        // to 91.9063, and a division cannot recover an infinity. t = exp(ax/2)
+        // keeps every factor representable; ax/2 is exact.
+        let t = exp(0.5 * ax);
+        result = t / sqrt(2.0 * PI * ax) * t * poly;
     }
 
     // I1 is an odd function

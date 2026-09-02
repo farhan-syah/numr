@@ -382,6 +382,7 @@ pub unsafe fn bessel_i0_f32(input: *const f32, output: *mut f32, len: usize) {
     let threshold = _mm256_set1_ps(bessel_i0::THRESHOLD_F32);
     let one = _mm256_set1_ps(1.0);
     let two_pi = _mm256_set1_ps(2.0 * std::f32::consts::PI);
+    let half = _mm256_set1_ps(0.5);
 
     // Asymptotic coefficients
     let ai0 = _mm256_set1_ps(bessel_i0::ASYMP_F32[0]);
@@ -424,10 +425,14 @@ pub unsafe fn bessel_i0_f32(input: *const f32, output: *mut f32, len: usize) {
         poly = _mm256_fmadd_ps(poly, z_inv, ai1);
         poly = _mm256_fmadd_ps(poly, z_inv, ai0);
 
-        // exp(ax) / sqrt(2*pi*ax) * poly
-        let exp_ax = exp_f32(ax);
+        // exp(ax)/sqrt(2*pi*ax) * poly, split as (t*scale)*t with
+        // t = exp(ax/2): exp overflows past ln(f32::MAX) = 88.7228 while I0
+        // stays finite up to 91.9008, and a division cannot recover an
+        // infinity. ax/2 is exact, and past 91.9008 the product still
+        // overflows to infinity.
+        let t = exp_f32(_mm256_mul_ps(half, ax));
         let scale = _mm256_div_ps(one, _mm256_sqrt_ps(_mm256_mul_ps(two_pi, ax)));
-        let asymp_result = _mm256_mul_ps(_mm256_mul_ps(exp_ax, scale), poly);
+        let asymp_result = _mm256_mul_ps(_mm256_mul_ps(_mm256_mul_ps(t, scale), t), poly);
 
         // Blend based on threshold
         let mask = _mm256_cmp_ps::<_CMP_LE_OQ>(ax, threshold);
@@ -456,6 +461,7 @@ pub unsafe fn bessel_i0_f64(input: *const f64, output: *mut f64, len: usize) {
     let threshold = _mm256_set1_pd(bessel_i0::THRESHOLD);
     let one = _mm256_set1_pd(1.0);
     let two_pi = _mm256_set1_pd(2.0 * std::f64::consts::PI);
+    let half = _mm256_set1_pd(0.5);
 
     let ai0 = _mm256_set1_pd(bessel_i0::ASYMP[0]);
     let ai1 = _mm256_set1_pd(bessel_i0::ASYMP[1]);
@@ -495,9 +501,14 @@ pub unsafe fn bessel_i0_f64(input: *const f64, output: *mut f64, len: usize) {
         poly = _mm256_fmadd_pd(poly, z_inv, ai1);
         poly = _mm256_fmadd_pd(poly, z_inv, ai0);
 
-        let exp_ax = exp_f64(ax);
+        // exp(ax)/sqrt(2*pi*ax) * poly, split as (t*scale)*t with
+        // t = exp(ax/2): exp overflows past ln(f64::MAX) = 709.7827 while I0
+        // stays finite up to 713.9869, and a division cannot recover an
+        // infinity. ax/2 is exact, and past 713.9869 the product still
+        // overflows to infinity.
+        let t = exp_f64(_mm256_mul_pd(half, ax));
         let scale = _mm256_div_pd(one, _mm256_sqrt_pd(_mm256_mul_pd(two_pi, ax)));
-        let asymp_result = _mm256_mul_pd(_mm256_mul_pd(exp_ax, scale), poly);
+        let asymp_result = _mm256_mul_pd(_mm256_mul_pd(_mm256_mul_pd(t, scale), t), poly);
 
         let mask = _mm256_cmp_pd::<_CMP_LE_OQ>(ax, threshold);
         let result = _mm256_blendv_pd(asymp_result, small_result, mask);
