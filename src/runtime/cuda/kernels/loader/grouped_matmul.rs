@@ -8,6 +8,7 @@ use cudarc::driver::PushKernelArg;
 use cudarc::driver::safe::{CudaContext, CudaStream};
 use std::sync::Arc;
 
+use crate::dtype::DType;
 use crate::error::{Error, Result};
 
 use super::launch_dims::LaunchConfig;
@@ -36,7 +37,19 @@ fn grouped_block_dim(suffix: &str) -> (u32, u32, u32) {
     }
 }
 
-/// Launch a grouped FP32 GEMM.
+/// Kernel-name dtype suffix. The core accumulates in F32 for all of these.
+fn grouped_dtype_suffix(dtype: DType) -> Result<&'static str> {
+    match dtype {
+        DType::F32 => Ok("f32"),
+        DType::F16 => Ok("f16"),
+        DType::BF16 => Ok("bf16"),
+        other => Err(Error::Internal(format!(
+            "grouped matmul supports F32/F16/BF16, got {other:?}"
+        ))),
+    }
+}
+
+/// Launch a grouped GEMM.
 ///
 /// `activation` selects the fused-epilogue kernel; `None` takes the plain one,
 /// which has no per-element switch.
@@ -45,7 +58,7 @@ fn grouped_block_dim(suffix: &str) -> (u32, u32, u32) {
 ///
 /// All pointers must be valid device memory with the sizes the shapes imply.
 #[allow(clippy::too_many_arguments)]
-pub unsafe fn launch_grouped_matmul_f32(
+pub unsafe fn launch_grouped_matmul(
     context: &Arc<CudaContext>,
     stream: &CudaStream,
     device_index: usize,
@@ -57,15 +70,17 @@ pub unsafe fn launch_grouped_matmul_f32(
     n: usize,
     k: usize,
     num_groups: usize,
+    dtype: DType,
     activation: Option<u32>,
 ) -> Result<()> {
     let (bm, bn, suffix) = grouped_tile(n);
+    let dt = grouped_dtype_suffix(dtype)?;
     let stem = if activation.is_some() {
-        "grouped_matmul_act_f32"
+        "grouped_matmul_act"
     } else {
-        "grouped_matmul_f32"
+        "grouped_matmul"
     };
-    let kernel_fn_name = format!("{stem}_{suffix}");
+    let kernel_fn_name = format!("{stem}_{dt}_{suffix}");
 
     let module = get_or_load_module(context, device_index, kernel_names::GROUPED_MATMUL_MODULE)?;
     let func = get_kernel_function(&module, &kernel_fn_name)?;
@@ -114,6 +129,14 @@ pub unsafe fn launch_grouped_matmul_f32(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dtype_suffixes_cover_the_instantiated_kernels() {
+        assert_eq!(grouped_dtype_suffix(DType::F32).unwrap(), "f32");
+        assert_eq!(grouped_dtype_suffix(DType::F16).unwrap(), "f16");
+        assert_eq!(grouped_dtype_suffix(DType::BF16).unwrap(), "bf16");
+        assert!(grouped_dtype_suffix(DType::I32).is_err());
+    }
 
     #[test]
     fn wide_output_takes_the_large_tile() {

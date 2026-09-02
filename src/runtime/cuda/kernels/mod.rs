@@ -166,7 +166,7 @@ pub(crate) use loader::use_wmma_after_padding;
 pub use loader::{
     BLOCK_SIZE, LaunchConfig, col_transpose1d_has_kernel, im2col_has_kernel, im2col2d_has_kernel,
     int_matmul_has_kernel, int_matmul_output_dtype, kernel_names, launch_col_transpose1d,
-    launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr, launch_grouped_matmul_f32, launch_im2col1d,
+    launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr, launch_grouped_matmul, launch_im2col1d,
     launch_im2col2d, launch_matmul_batched_kernel, launch_matmul_bias_batched_kernel,
     launch_matmul_bias_kernel, launch_matmul_kernel, launch_semiring_matmul_batched_kernel,
     launch_semiring_matmul_kernel, preload_modules,

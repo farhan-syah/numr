@@ -15,6 +15,8 @@
 // The GEMM itself is `matmul_f32_tiled_impl` unchanged — the same
 // compile-time-tiled, double-buffered, register-blocked core the dense matmul
 // entry points use. This file only slices the pointers and picks the group.
+//
+// Storage may be F32, F16 or BF16; the core accumulates in F32 either way.
 
 #include "gemm_activation.cuh"
 #include "matmul_f32_tiled.cuh"
@@ -29,12 +31,12 @@ struct GroupedMatmulEpilogueAct {
     }
 };
 
-template<int BM, int BN, int BK, int TM, int TN, class Epilogue>
-__device__ __forceinline__ void grouped_matmul_f32_impl(
-    const float* __restrict__ A,
-    const float* __restrict__ B,
+template<typename T, int BM, int BN, int BK, int TM, int TN, class Epilogue>
+__device__ __forceinline__ void grouped_matmul_impl(
+    const T* __restrict__ A,
+    const T* __restrict__ B,
     const int* __restrict__ offsets,
-    float* __restrict__ C,
+    T* __restrict__ C,
     unsigned int N,
     unsigned int K,
     int num_groups,
@@ -50,7 +52,7 @@ __device__ __forceinline__ void grouped_matmul_f32_impl(
     // Block-uniform: blockIdx.y and the group's count are both uniform.
     if ((long long)blockIdx.y * BM >= (long long)count) return;
 
-    matmul_f32_tiled_impl<BM, BN, BK, TM, TN, Epilogue>(
+    matmul_f32_tiled_impl<BM, BN, BK, TM, TN, Epilogue, T>(
         A + (size_t)start * K,
         B + (size_t)group * K * N,
         C + (size_t)start * N,
@@ -61,36 +63,41 @@ __device__ __forceinline__ void grouped_matmul_f32_impl(
     );
 }
 
-#define GROUPED_MATMUL_F32_ENTRY(SUFFIX, BM, BN, BK, TM, TN)                 \
-extern "C" __global__ void grouped_matmul_f32_##SUFFIX(                      \
-    const float* __restrict__ A,                                             \
-    const float* __restrict__ B,                                             \
+#define GROUPED_MATMUL_ENTRY(DT, T, SUFFIX, BM, BN, BK, TM, TN)              \
+extern "C" __global__ void grouped_matmul_##DT##_##SUFFIX(                   \
+    const T* __restrict__ A,                                                 \
+    const T* __restrict__ B,                                                 \
     const int* __restrict__ offsets,                                         \
-    float* __restrict__ C,                                                   \
+    T* __restrict__ C,                                                       \
     unsigned int N,                                                          \
     unsigned int K,                                                          \
     int num_groups                                                           \
 ) {                                                                          \
-    grouped_matmul_f32_impl<BM, BN, BK, TM, TN, MatmulEpilogueNone>(         \
+    grouped_matmul_impl<T, BM, BN, BK, TM, TN, MatmulEpilogueNone>(          \
         A, B, offsets, C, N, K, num_groups, MatmulEpilogueNone());           \
 }                                                                            \
                                                                              \
-extern "C" __global__ void grouped_matmul_act_f32_##SUFFIX(                  \
-    const float* __restrict__ A,                                             \
-    const float* __restrict__ B,                                             \
+extern "C" __global__ void grouped_matmul_act_##DT##_##SUFFIX(               \
+    const T* __restrict__ A,                                                 \
+    const T* __restrict__ B,                                                 \
     const int* __restrict__ offsets,                                         \
-    float* __restrict__ C,                                                   \
+    T* __restrict__ C,                                                       \
     unsigned int N,                                                          \
     unsigned int K,                                                          \
     int num_groups,                                                          \
     unsigned int activation_type                                             \
 ) {                                                                          \
     GroupedMatmulEpilogueAct epi{activation_type};                           \
-    grouped_matmul_f32_impl<BM, BN, BK, TM, TN, GroupedMatmulEpilogueAct>(   \
+    grouped_matmul_impl<T, BM, BN, BK, TM, TN, GroupedMatmulEpilogueAct>(    \
         A, B, offsets, C, N, K, num_groups, epi);                            \
 }
 
 // Same two tiles the dense F32 path specialises, so the group case inherits
 // whatever the dense one was tuned to.
-GROUPED_MATMUL_F32_ENTRY(128x128x8_8x8, 128, 128, 8, 8, 8)
-GROUPED_MATMUL_F32_ENTRY(64x64x32_8x4, 64, 64, 32, 8, 4)
+#define GROUPED_MATMUL_TILES(DT, T)                                          \
+GROUPED_MATMUL_ENTRY(DT, T, 128x128x8_8x8, 128, 128, 8, 8, 8)                \
+GROUPED_MATMUL_ENTRY(DT, T, 64x64x32_8x4, 64, 64, 32, 8, 4)
+
+GROUPED_MATMUL_TILES(f32, float)
+GROUPED_MATMUL_TILES(f16, __half)
+GROUPED_MATMUL_TILES(bf16, __nv_bfloat16)

@@ -7,7 +7,7 @@ use crate::dtype::DType;
 use crate::error::{Error, Result};
 use crate::ops::{GemmActivation, GroupedMatmulOps};
 use crate::runtime::Device;
-use crate::runtime::cuda::kernels::launch_grouped_matmul_f32;
+use crate::runtime::cuda::kernels::launch_grouped_matmul;
 use crate::runtime::cuda::{CudaClient, CudaRuntime};
 use crate::tensor::Tensor;
 
@@ -45,14 +45,16 @@ fn validate_grouped(
             reason: format!("expected I32, got {:?}", group_offsets.dtype()),
         });
     }
-    if a.dtype() != DType::F32 || b.dtype() != DType::F32 {
+    if a.dtype() != b.dtype() {
         return Err(Error::InvalidArgument {
             arg: "dtype",
-            reason: format!(
-                "grouped matmul is F32 only, got a={:?} b={:?}",
-                a.dtype(),
-                b.dtype()
-            ),
+            reason: format!("a is {:?} but b is {:?}", a.dtype(), b.dtype()),
+        });
+    }
+    if !matches!(a.dtype(), DType::F32 | DType::F16 | DType::BF16) {
+        return Err(Error::InvalidArgument {
+            arg: "dtype",
+            reason: format!("grouped matmul supports F32/F16/BF16, got {:?}", a.dtype()),
         });
     }
 
@@ -84,7 +86,7 @@ fn grouped_matmul_launch(
     let (total_rows, k, n, num_groups) = validate_grouped(a, b, group_offsets)?;
     let device = a.device();
 
-    let output = Tensor::<CudaRuntime>::empty(&[total_rows, n], DType::F32, device)?;
+    let output = Tensor::<CudaRuntime>::empty(&[total_rows, n], a.dtype(), device)?;
     if total_rows == 0 || num_groups == 0 {
         return Ok(output);
     }
@@ -94,7 +96,7 @@ fn grouped_matmul_launch(
     let o_c = group_offsets.contiguous()?;
 
     unsafe {
-        launch_grouped_matmul_f32(
+        launch_grouped_matmul(
             client.context(),
             client.stream(),
             device.id(),
@@ -106,6 +108,7 @@ fn grouped_matmul_launch(
             n,
             k,
             num_groups,
+            a.dtype(),
             activation.map(GemmActivation::code),
         )?;
     }

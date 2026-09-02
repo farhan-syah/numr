@@ -35,7 +35,7 @@ pub(crate) use gemm_epilogue_wmma::{
     launch_gemm_bias_residual_wmma_batched_kernel, launch_gemm_bias_residual_wmma_kernel,
 };
 pub use gemv::{launch_gemv_kernel_bt, launch_gemv_kernel_bt_mr};
-pub use grouped_matmul::launch_grouped_matmul_f32;
+pub use grouped_matmul::launch_grouped_matmul;
 pub use im2col::{im2col_has_kernel, launch_im2col1d};
 pub use im2col2d::{im2col2d_has_kernel, launch_im2col2d};
 pub use launch_dims::{

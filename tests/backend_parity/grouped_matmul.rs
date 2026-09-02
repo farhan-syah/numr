@@ -6,7 +6,9 @@
 // each block drops out if its row tile is past its group. The shapes here are
 // chosen to put blocks on both sides of that bound.
 //
-// CPU is the reference. F32 only: the kernel reuses the F32 tiled GEMM core.
+// CPU is the reference. F32, F16 and BF16 all run the same tiled core, which
+// accumulates in F32 whatever the storage dtype — so a half run differs from the
+// F32 one only by the rounding of the stored operands and result.
 
 use numr::ops::{GemmActivation, GroupedMatmulOps, MatmulOps};
 use numr::runtime::cpu::CpuRuntime;
@@ -188,4 +190,104 @@ fn grouped_matmul_single_group_matches_dense_matmul() {
             "row-major mismatch at {i}: grouped {x} vs dense {y}"
         );
     }
+}
+
+/// Runs one grouped shape in a half dtype on CUDA and compares against the F32
+/// CUDA result for the SAME values, rounded through that dtype first.
+///
+/// F32 is the reference rather than CPU because the core accumulates in F32
+/// regardless of storage: comparing against a CPU F32 run would fold in the
+/// storage rounding and say nothing about the kernel.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+fn assert_grouped_half_parity(
+    label: &str,
+    dtype: numr::dtype::DType,
+    counts: &[usize],
+    k: usize,
+    n: usize,
+) {
+    use numr::ops::TypeConversionOps;
+
+    let num_groups = counts.len();
+    let total_rows: usize = counts.iter().sum();
+    let offsets = offsets_from(counts);
+    let a_data = values(total_rows * k, 0.0);
+    let b_data = values(num_groups * k * n, 1.3);
+
+    with_cuda_backend(|client, device| {
+        let a32 = Tensor::from_slice(&a_data, &[total_rows, k], &device).unwrap();
+        let b32 = Tensor::from_slice(&b_data, &[num_groups, k, n], &device).unwrap();
+        let o = Tensor::from_slice(&offsets, &[num_groups + 1], &device).unwrap();
+
+        // Round-trip first, so both runs see identical values.
+        let a_h = client.cast(&a32, dtype).unwrap();
+        let b_h = client.cast(&b32, dtype).unwrap();
+        let a_ref = client.cast(&a_h, numr::dtype::DType::F32).unwrap();
+        let b_ref = client.cast(&b_h, numr::dtype::DType::F32).unwrap();
+
+        let reference = client
+            .grouped_matmul(&a_ref, &b_ref, &o)
+            .unwrap_or_else(|e| panic!("F32 reference failed for {label}: {e}"))
+            .to_vec::<f32>();
+
+        let half = client
+            .grouped_matmul(&a_h, &b_h, &o)
+            .unwrap_or_else(|e| panic!("half grouped matmul failed for {label}: {e}"));
+        let got = client
+            .cast(&half, numr::dtype::DType::F32)
+            .unwrap()
+            .to_vec::<f32>();
+
+        // Only the stored output is rounded; BF16 carries 8 mantissa bits.
+        let (rtol, atol) = match dtype {
+            numr::dtype::DType::BF16 => (8e-3f32, 1e-3f32),
+            _ => (1e-3f32, 1e-4f32),
+        };
+        assert_eq!(got.len(), reference.len(), "{label}: length mismatch");
+        for (i, (x, y)) in got.iter().zip(reference.iter()).enumerate() {
+            assert!(
+                (x - y).abs() <= atol + rtol * y.abs(),
+                "{label} at {i}: half {x} vs F32 {y}"
+            );
+        }
+    });
+}
+
+/// F16 with an uneven split, so tiles fall on both sides of each group's bound.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[test]
+fn grouped_matmul_f16_uneven_split_parity() {
+    assert_grouped_half_parity(
+        "grouped_f16_uneven",
+        numr::dtype::DType::F16,
+        &[5, 70, 33, 120],
+        64,
+        160,
+    );
+}
+
+/// BF16 with an uneven split.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[test]
+fn grouped_matmul_bf16_uneven_split_parity() {
+    assert_grouped_half_parity(
+        "grouped_bf16_uneven",
+        numr::dtype::DType::BF16,
+        &[5, 70, 33, 120],
+        64,
+        160,
+    );
+}
+
+/// F16 on the small-tile kernel, which the narrow output selects.
+#[cfg(all(feature = "cuda", feature = "f16"))]
+#[test]
+fn grouped_matmul_f16_narrow_output_parity() {
+    assert_grouped_half_parity(
+        "grouped_f16_narrow",
+        numr::dtype::DType::F16,
+        &[40, 72],
+        48,
+        48,
+    );
 }

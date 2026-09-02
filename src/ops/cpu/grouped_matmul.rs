@@ -7,7 +7,7 @@
 
 use crate::dtype::DType;
 use crate::error::{Error, Result};
-use crate::ops::{GemmActivation, GroupedMatmulOps, MatmulOps};
+use crate::ops::{GemmActivation, GroupedMatmulOps, MatmulOps, ShapeOps};
 use crate::runtime::cpu::{CpuClient, CpuRuntime};
 use crate::tensor::Tensor;
 
@@ -45,14 +45,16 @@ fn validate_grouped(
             reason: format!("expected I32, got {:?}", group_offsets.dtype()),
         });
     }
-    if a.dtype() != DType::F32 || b.dtype() != DType::F32 {
+    if a.dtype() != b.dtype() {
         return Err(Error::InvalidArgument {
             arg: "dtype",
-            reason: format!(
-                "grouped matmul is F32 only, got a={:?} b={:?}",
-                a.dtype(),
-                b.dtype()
-            ),
+            reason: format!("a is {:?} but b is {:?}", a.dtype(), b.dtype()),
+        });
+    }
+    if !matches!(a.dtype(), DType::F32 | DType::F16 | DType::BF16) {
+        return Err(Error::InvalidArgument {
+            arg: "dtype",
+            reason: format!("grouped matmul supports F32/F16/BF16, got {:?}", a.dtype()),
         });
     }
 
@@ -84,9 +86,20 @@ fn grouped_matmul_cpu(
     let (total_rows, _k, n, num_groups) = validate_grouped(a, b, group_offsets)?;
     let device = a.device();
 
-    let offsets = group_offsets.to_vec::<i32>();
-    let mut out = vec![0.0f32; total_rows * n];
+    if total_rows == 0 || num_groups == 0 {
+        return Ok(Tensor::<CpuRuntime>::zeros(
+            &[total_rows, n],
+            a.dtype(),
+            device,
+        )?);
+    }
 
+    let offsets = group_offsets.to_vec::<i32>();
+
+    // The groups partition the rows in order, so concatenating their results is
+    // the output. Building it this way keeps the whole path dtype-generic
+    // rather than routing every dtype through an f32 host buffer.
+    let mut parts: Vec<Tensor<CpuRuntime>> = Vec::with_capacity(num_groups);
     for g in 0..num_groups {
         let start = offsets[g].max(0) as usize;
         let end = offsets[g + 1].max(0) as usize;
@@ -99,19 +112,22 @@ fn grouped_matmul_cpu(
         // `[1, k, n]` down to `[k, n]`: the group's own weight matrix.
         let b_g = b.narrow(0, g, 1)?.squeeze(Some(0));
         let c_g = client.matmul(&a_g, &b_g)?;
-        let c_g = match activation {
+        parts.push(match activation {
             Some(act) => apply_activation(client, &c_g, act)?,
             None => c_g,
-        };
-
-        out[start * n..end * n].copy_from_slice(&c_g.to_vec::<f32>());
+        });
     }
 
-    Ok(Tensor::<CpuRuntime>::from_slice(
-        &out,
-        &[total_rows, n],
-        device,
-    )?)
+    if parts.is_empty() {
+        return Ok(Tensor::<CpuRuntime>::zeros(
+            &[total_rows, n],
+            a.dtype(),
+            device,
+        )?);
+    }
+
+    let refs: Vec<&Tensor<CpuRuntime>> = parts.iter().collect();
+    client.cat(&refs, 0)
 }
 
 /// Applies the activation with the same math every other backend's epilogue
