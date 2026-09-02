@@ -13,14 +13,9 @@ const GEMM_EPILOGUE_BWD_MODULE: &str = "gemm_epilogue_bwd";
 const BLOCK_SIZE: u32 = 256;
 
 fn activation_to_u32(activation: GemmActivation) -> u32 {
-    match activation {
-        GemmActivation::None => 0,
-        GemmActivation::ReLU => 1,
-        GemmActivation::GELU => 2,
-        GemmActivation::SiLU => 3,
-        GemmActivation::Sigmoid => 4,
-        GemmActivation::Tanh => 5,
-    }
+    // The mapping lives on the enum: a launcher and a kernel that
+    // disagreed about a code would silently apply the wrong activation.
+    activation.code()
 }
 
 fn grid_1d(n: u32) -> (u32, u32, u32) {

@@ -24,6 +24,25 @@ pub enum GemmActivation {
     Tanh,
 }
 
+impl GemmActivation {
+    /// Numeric code passed to the kernels.
+    ///
+    /// Every backend's epilogue switches on this value, so the mapping lives
+    /// here once rather than being restated per backend — a kernel and its
+    /// launcher disagreeing about a code would silently apply the wrong
+    /// activation.
+    pub fn code(self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::ReLU => 1,
+            Self::GELU => 2,
+            Self::SiLU => 3,
+            Self::Sigmoid => 4,
+            Self::Tanh => 5,
+        }
+    }
+}
+
 /// Fused GEMM + bias + activation/residual operations.
 ///
 /// These operations fuse post-processing into the GEMM epilogue, avoiding extra

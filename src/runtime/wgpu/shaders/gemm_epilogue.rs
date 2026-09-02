@@ -13,14 +13,9 @@ const GEMM_EPILOGUE_RESIDUAL_SHADER: &str = include_str!("gemm_epilogue_residual
 const TILE_SIZE: u32 = 16;
 
 fn activation_to_u32(act: GemmActivation) -> u32 {
-    match act {
-        GemmActivation::None => 0,
-        GemmActivation::ReLU => 1,
-        GemmActivation::GELU => 2,
-        GemmActivation::SiLU => 3,
-        GemmActivation::Sigmoid => 4,
-        GemmActivation::Tanh => 5,
-    }
+    // The mapping lives on the enum: a launcher and a kernel that
+    // disagreed about a code would silently apply the wrong activation.
+    act.code()
 }
 
 /// Params struct for the activation shader (8 u32s for alignment).

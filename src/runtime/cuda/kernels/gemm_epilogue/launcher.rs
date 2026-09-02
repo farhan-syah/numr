@@ -22,14 +22,9 @@ use crate::runtime::cuda::CudaDevice;
 pub(super) const GEMM_EPILOGUE_MODULE: &str = "gemm_epilogue";
 
 fn activation_to_u32(activation: GemmActivation) -> u32 {
-    match activation {
-        GemmActivation::None => 0,
-        GemmActivation::ReLU => 1,
-        GemmActivation::GELU => 2,
-        GemmActivation::SiLU => 3,
-        GemmActivation::Sigmoid => 4,
-        GemmActivation::Tanh => 5,
-    }
+    // The mapping lives on the enum: a launcher and a kernel that
+    // disagreed about a code would silently apply the wrong activation.
+    activation.code()
 }
 
 /// Launch fused GEMM + bias + activation kernel.
