@@ -361,21 +361,36 @@ unsafe fn fused_add_layer_norm_scalar<T: Element>(
     let eps = eps as f64;
     let weight_slice = std::slice::from_raw_parts(weight, hidden_size);
     let bias_slice = std::slice::from_raw_parts(bias, hidden_size);
+    // An empty row normalizes nothing, and the reference load below would read
+    // past an empty allocation.
+    if hidden_size == 0 {
+        return;
+    }
+
     for batch in 0..batch_size {
         let row = batch * hidden_size;
+
+        // Every element is shifted by the row's first pre-norm value before it
+        // is accumulated. Subtracting the mean cancels catastrophically when a
+        // row sits far from zero relative to its own spread, which is where the
+        // accumulator's precision goes. Mean, variance and the normalized value
+        // are all invariant under the shift in exact arithmetic, and every other
+        // backend shifts by the same element.
+        let reference = (*input.add(row)).to_f64() + (*residual.add(row)).to_f64();
+
         // Pass 1: add + compute mean
         let mut sum = 0.0f64;
         for i in 0..hidden_size {
             let pn = (*input.add(row + i)).to_f64() + (*residual.add(row + i)).to_f64();
             *pre_norm_out.add(row + i) = T::from_f64(pn);
-            sum += pn;
+            sum += pn - reference;
         }
-        let mean = sum / hidden_size as f64;
+        let shifted_mean = sum / hidden_size as f64;
         // Pass 2: variance
         let mut var_sum = 0.0f64;
         for i in 0..hidden_size {
             let pn = (*pre_norm_out.add(row + i)).to_f64();
-            let diff = pn - mean;
+            let diff = (pn - reference) - shifted_mean;
             var_sum += diff * diff;
         }
         let inv_std = 1.0 / (var_sum / hidden_size as f64 + eps).sqrt();
@@ -384,7 +399,7 @@ unsafe fn fused_add_layer_norm_scalar<T: Element>(
             let pn = (*pre_norm_out.add(row + i)).to_f64();
             let w = weight_slice[i].to_f64();
             let b = bias_slice[i].to_f64();
-            *out.add(row + i) = T::from_f64((pn - mean) * inv_std * w + b);
+            *out.add(row + i) = T::from_f64(((pn - reference) - shifted_mean) * inv_std * w + b);
         }
     }
 }
@@ -498,17 +513,32 @@ unsafe fn fused_add_layer_norm_bwd_scalar<T: Element>(
     let eps = eps as f64;
     let weight_slice = std::slice::from_raw_parts(weight, hidden_size);
     // d_weight and d_bias are pre-zeroed
+    // An empty row normalizes nothing, and the reference load below would read
+    // past an empty allocation.
+    if hidden_size == 0 {
+        return;
+    }
+
     for batch in 0..batch_size {
         let row = batch * hidden_size;
+
+        // Every element is shifted by the row's first pre-norm value before it
+        // is accumulated. This pass RECOMPUTES the mean and variance rather than
+        // consuming a saved statistic, so it carries the forward pass's
+        // cancellation exactly. Mean, variance and the normalized value are all
+        // invariant under the shift in exact arithmetic. `mean_gs` needs no
+        // shift: it averages `g * w`, which never sees the mean.
+        let reference = (*pre_norm.add(row)).to_f64();
+
         // Recompute mean and inv_std from pre_norm
         let mut sum = 0.0f64;
         for i in 0..hidden_size {
-            sum += (*pre_norm.add(row + i)).to_f64();
+            sum += (*pre_norm.add(row + i)).to_f64() - reference;
         }
-        let mean = sum / hidden_size as f64;
+        let shifted_mean = sum / hidden_size as f64;
         let mut var_sum = 0.0f64;
         for i in 0..hidden_size {
-            let diff = (*pre_norm.add(row + i)).to_f64() - mean;
+            let diff = ((*pre_norm.add(row + i)).to_f64() - reference) - shifted_mean;
             var_sum += diff * diff;
         }
         let inv_std = 1.0 / (var_sum / hidden_size as f64 + eps).sqrt();
@@ -520,7 +550,7 @@ unsafe fn fused_add_layer_norm_bwd_scalar<T: Element>(
             let g = (*grad.add(row + i)).to_f64();
             let w = weight_slice[i].to_f64();
             let pn = (*pre_norm.add(row + i)).to_f64();
-            let normalized = (pn - mean) * inv_std;
+            let normalized = ((pn - reference) - shifted_mean) * inv_std;
             let gs = g * w;
             mean_gs += gs;
             mean_gs_n += gs * normalized;
@@ -532,7 +562,7 @@ unsafe fn fused_add_layer_norm_bwd_scalar<T: Element>(
             let g = (*grad.add(row + i)).to_f64();
             let w = weight_slice[i].to_f64();
             let pn = (*pre_norm.add(row + i)).to_f64();
-            let normalized = (pn - mean) * inv_std;
+            let normalized = ((pn - reference) - shifted_mean) * inv_std;
             let gs = g * w;
             let d_ir = inv_std * (gs - mean_gs - normalized * mean_gs_n);
             *d_input_residual.add(row + i) = T::from_f64(d_ir);

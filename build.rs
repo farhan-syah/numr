@@ -266,6 +266,7 @@ fn compile_cuda_kernels() {
         "gemm_activation.cuh",
         "matmul_f32_tiled.cuh",
         "rms_norm_regs.cuh",
+        "block_reduce.cuh",
         "matmul_wmma.cuh",
         "matmul_wmma_stage.cuh",
         "matmul_wmma_mma.cuh",

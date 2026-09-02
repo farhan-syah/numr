@@ -20,6 +20,9 @@
 // Single-pass RMSNorm variants; the launcher picks them by row width.
 #include "rms_norm_regs.cuh"
 
+// Block-wide sum reduction shared with fused_add_norm.cu.
+#include "block_reduce.cuh"
+
 // ============================================================================
 // Welford merge helpers
 // ============================================================================
@@ -93,26 +96,6 @@ __device__ __forceinline__ void welford_warp_reduce_f64(
         double o_M2    = __shfl_down_sync(0xffffffff, M2, offset);
         welford_merge_f64(count, mean, M2, o_count, o_mean, o_M2, count, mean, M2);
     }
-}
-
-// Tree-sums `shared[0 .. blockDim.x)` and leaves the total in `shared[0]`,
-// which every thread may read once the call returns.
-//
-// The first stride is the power of two at or above blockDim.x, so a block whose
-// size is not a power of two still folds in the entries a plain `blockDim.x / 2`
-// start would step over.
-template <typename T>
-__device__ __forceinline__ T block_sum_reduce(T* shared) {
-    unsigned int n = blockDim.x;
-    unsigned int s = 1;
-    while (s < n) s <<= 1;
-    for (s >>= 1; s > 0; s >>= 1) {
-        if (threadIdx.x < s && threadIdx.x + s < n) {
-            shared[threadIdx.x] += shared[threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    return shared[0];
 }
 
 extern "C" {

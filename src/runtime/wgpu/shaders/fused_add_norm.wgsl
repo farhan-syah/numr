@@ -124,13 +124,20 @@ fn fused_add_layer_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     let eps = faln_params.eps;
     let base_offset = batch_idx * hidden_size;
 
+    // Shift every element by the row's first pre-norm value before accumulating.
+    // Subtracting the mean cancels catastrophically when a row sits far from zero
+    // relative to its own spread, and that cancellation is where the mantissa
+    // goes. Mean, variance and the normalized value are all invariant under the
+    // shift in exact arithmetic, and f32 is all this backend has.
+    let ref_val = faln_input[base_offset] + faln_residual[base_offset];
+
     // Step 1: Add input + residual -> pre_norm, compute sum for mean
     var sum: f32 = 0.0;
     var i: u32 = tid;
     while (i < hidden_size) {
         let pre_val = faln_input[base_offset + i] + faln_residual[base_offset + i];
         faln_pre_norm[base_offset + i] = pre_val;
-        sum = sum + pre_val;
+        sum = sum + (pre_val - ref_val);
         i = i + WORKGROUP_SIZE;
     }
 
@@ -144,14 +151,14 @@ fn fused_add_layer_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
         workgroupBarrier();
     }
 
-    let mean = faln_shared_mean[0] / f32(hidden_size);
+    let shifted_mean = faln_shared_mean[0] / f32(hidden_size);
     workgroupBarrier();
 
     // Step 2: Compute variance
     var var_sum: f32 = 0.0;
     i = tid;
     while (i < hidden_size) {
-        let diff = faln_pre_norm[base_offset + i] - mean;
+        let diff = (faln_pre_norm[base_offset + i] - ref_val) - shifted_mean;
         var_sum = var_sum + diff * diff;
         i = i + WORKGROUP_SIZE;
     }
@@ -173,7 +180,7 @@ fn fused_add_layer_norm_f32(@builtin(global_invocation_id) global_id: vec3<u32>,
     // Step 3: Normalize and apply affine transformation
     i = tid;
     while (i < hidden_size) {
-        let normalized = (faln_pre_norm[base_offset + i] - mean) * inv_std;
+        let normalized = (faln_pre_norm[base_offset + i] - ref_val - shifted_mean) * inv_std;
         faln_output[base_offset + i] = normalized * faln_weight[i] + faln_bias[i];
         i = i + WORKGROUP_SIZE;
     }
@@ -286,11 +293,18 @@ fn fused_add_layer_norm_bwd_f32(@builtin(global_invocation_id) global_id: vec3<u
     let eps = falnb_params.eps;
     let base_offset = batch_idx * hidden_size;
 
+    // Shift every element by the row's first pre-norm value before accumulating.
+    // This pass RECOMPUTES the mean and variance rather than consuming a saved
+    // statistic, so it carries the forward pass's cancellation exactly. Mean,
+    // variance and the normalized value are all invariant under the shift in
+    // exact arithmetic. `mean_gs` needs no shift: it averages `grad * weight`.
+    let ref_val = falnb_pre_norm[base_offset];
+
     // Phase 1: Compute mean of pre_norm
     var sum: f32 = 0.0;
     var i: u32 = tid;
     while (i < hidden_size) {
-        sum = sum + falnb_pre_norm[base_offset + i];
+        sum = sum + (falnb_pre_norm[base_offset + i] - ref_val);
         i = i + WORKGROUP_SIZE;
     }
 
@@ -304,14 +318,14 @@ fn fused_add_layer_norm_bwd_f32(@builtin(global_invocation_id) global_id: vec3<u
         workgroupBarrier();
     }
 
-    let mean = falnb_shared_mean[0] / f32(hidden_size);
+    let shifted_mean = falnb_shared_mean[0] / f32(hidden_size);
     workgroupBarrier();
 
     // Phase 2: Compute variance
     var var_sum: f32 = 0.0;
     i = tid;
     while (i < hidden_size) {
-        let diff = falnb_pre_norm[base_offset + i] - mean;
+        let diff = (falnb_pre_norm[base_offset + i] - ref_val) - shifted_mean;
         var_sum = var_sum + diff * diff;
         i = i + WORKGROUP_SIZE;
     }
@@ -334,7 +348,7 @@ fn fused_add_layer_norm_bwd_f32(@builtin(global_invocation_id) global_id: vec3<u
     var sum_gs_n: f32 = 0.0;
     i = tid;
     while (i < hidden_size) {
-        let normalized = (falnb_pre_norm[base_offset + i] - mean) * inv_std;
+        let normalized = (falnb_pre_norm[base_offset + i] - ref_val - shifted_mean) * inv_std;
         let gs = falnb_grad[base_offset + i] * falnb_weight[i];
         sum_gs = sum_gs + gs;
         sum_gs_n = sum_gs_n + gs * normalized;
@@ -360,7 +374,7 @@ fn fused_add_layer_norm_bwd_f32(@builtin(global_invocation_id) global_id: vec3<u
     // Phase 3: Compute d_input_residual, d_weight_scratch, d_bias_scratch
     i = tid;
     while (i < hidden_size) {
-        let normalized = (falnb_pre_norm[base_offset + i] - mean) * inv_std;
+        let normalized = (falnb_pre_norm[base_offset + i] - ref_val - shifted_mean) * inv_std;
 
         // d_input_residual = inv_std * (grad*weight - mean_gs - normalized * mean_gs_n)
         let mean_gs_val = total_sum_gs / f32(hidden_size);
