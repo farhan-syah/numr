@@ -10,6 +10,7 @@ mod elementwise;
 mod gemm_epilogue_wmma;
 mod gemv;
 mod grouped_matmul;
+mod grouped_matmul_tile;
 mod im2col;
 mod im2col2d;
 mod launch_dims;
