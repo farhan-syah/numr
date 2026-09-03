@@ -176,6 +176,7 @@ mod tests {
         DeviceCaps {
             dp4a: true,
             int8_mma: true,
+            int8_mma_m16n8k32: false,
             f16_mma: true,
             bf16: false,
         }
@@ -185,6 +186,7 @@ mod tests {
         DeviceCaps {
             dp4a: true,
             int8_mma: true,
+            int8_mma_m16n8k32: true,
             f16_mma: true,
             bf16: true,
         }

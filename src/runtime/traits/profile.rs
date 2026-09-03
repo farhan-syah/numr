@@ -47,6 +47,9 @@ pub struct DeviceCaps {
     pub dp4a: bool,
     /// int8 tensor-core `mma` (CUDA sm_75+).
     pub int8_mma: bool,
+    /// int8 tensor-core `mma` at the `m16n8k32` shape (CUDA sm_80+).
+    /// `int8_mma` alone is sm_75, where only `m8n8k16` exists.
+    pub int8_mma_m16n8k32: bool,
     /// f16 tensor-core `mma` (CUDA sm_70+).
     pub f16_mma: bool,
     /// Native bf16 arithmetic (CUDA sm_80+).
@@ -118,6 +121,7 @@ impl DeviceProfile {
                 DeviceCaps {
                     dp4a: true,
                     int8_mma: false,
+                    int8_mma_m16n8k32: false,
                     f16_mma: false,
                     bf16: false,
                 },
@@ -128,6 +132,7 @@ impl DeviceProfile {
                 DeviceCaps {
                     dp4a: true,
                     int8_mma: false,
+                    int8_mma_m16n8k32: false,
                     f16_mma: true,
                     bf16: false,
                 },
@@ -138,6 +143,7 @@ impl DeviceProfile {
                 DeviceCaps {
                     dp4a: true,
                     int8_mma: true,
+                    int8_mma_m16n8k32: false,
                     f16_mma: true,
                     bf16: false,
                 },
@@ -148,6 +154,7 @@ impl DeviceProfile {
                 DeviceCaps {
                     dp4a: true,
                     int8_mma: true,
+                    int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
                 },
@@ -158,6 +165,7 @@ impl DeviceProfile {
                 DeviceCaps {
                     dp4a: true,
                     int8_mma: true,
+                    int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
                 },
@@ -168,6 +176,7 @@ impl DeviceProfile {
                 DeviceCaps {
                     dp4a: true,
                     int8_mma: true,
+                    int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
                 },
@@ -178,6 +187,7 @@ impl DeviceProfile {
                 DeviceCaps {
                     dp4a: true,
                     int8_mma: true,
+                    int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
                 },
@@ -252,6 +262,7 @@ mod tests {
         assert!(caps.dp4a);
         assert!(!caps.f16_mma);
         assert!(!caps.int8_mma);
+        assert!(!caps.int8_mma_m16n8k32);
         assert!(!caps.bf16);
     }
 
@@ -262,6 +273,7 @@ mod tests {
         assert!(caps.dp4a);
         assert!(caps.f16_mma);
         assert!(!caps.int8_mma);
+        assert!(!caps.int8_mma_m16n8k32);
         assert!(!caps.bf16);
     }
 
@@ -272,6 +284,7 @@ mod tests {
         assert!(caps.dp4a);
         assert!(caps.f16_mma);
         assert!(caps.int8_mma);
+        assert!(!caps.int8_mma_m16n8k32);
         assert!(!caps.bf16);
     }
 
@@ -282,6 +295,7 @@ mod tests {
         assert!(caps.dp4a);
         assert!(caps.f16_mma);
         assert!(caps.int8_mma);
+        assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
     }
 
@@ -289,6 +303,7 @@ mod tests {
     fn ampere_8_6_stays_ampere() {
         let (arch, caps) = DeviceProfile::arch_and_caps_for_compute_capability(8, 6);
         assert_eq!(arch, DeviceArch::CudaAmpere);
+        assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
     }
 
@@ -299,6 +314,7 @@ mod tests {
         assert!(caps.dp4a);
         assert!(caps.f16_mma);
         assert!(caps.int8_mma);
+        assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
     }
 
@@ -309,6 +325,7 @@ mod tests {
         assert!(caps.dp4a);
         assert!(caps.f16_mma);
         assert!(caps.int8_mma);
+        assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
     }
 
@@ -319,6 +336,7 @@ mod tests {
         assert!(caps.dp4a);
         assert!(caps.f16_mma);
         assert!(caps.int8_mma);
+        assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
     }
 
