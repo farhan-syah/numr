@@ -54,7 +54,9 @@ pub struct DeviceCaps {
     pub f16_mma: bool,
     /// Native bf16 arithmetic (CUDA sm_80+).
     pub bf16: bool,
-    /// FP8 e4m3/e5m2 arithmetic (CUDA sm_80+).
+    /// FP8 e4m3/e5m2 conversion intrinsics (CUDA sm_80+).
+    /// Native FP8 tensor-core `mma` is sm_89+ and needs its own flag, the way
+    /// `int8_mma_m16n8k32` is separate from `int8_mma`.
     pub fp8: bool,
 }
 
