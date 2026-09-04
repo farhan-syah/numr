@@ -179,6 +179,7 @@ mod tests {
             int8_mma_m16n8k32: false,
             f16_mma: true,
             bf16: false,
+            fp8: false,
         }
     }
 
@@ -189,6 +190,7 @@ mod tests {
             int8_mma_m16n8k32: true,
             f16_mma: true,
             bf16: true,
+            fp8: true,
         }
     }
 

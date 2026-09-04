@@ -54,6 +54,8 @@ pub struct DeviceCaps {
     pub f16_mma: bool,
     /// Native bf16 arithmetic (CUDA sm_80+).
     pub bf16: bool,
+    /// FP8 e4m3/e5m2 arithmetic (CUDA sm_80+).
+    pub fp8: bool,
 }
 
 /// Device capability snapshot used for kernel and tile selection.
@@ -124,6 +126,7 @@ impl DeviceProfile {
                     int8_mma_m16n8k32: false,
                     f16_mma: false,
                     bf16: false,
+                    fp8: false,
                 },
             )
         } else if cc < (7, 5) {
@@ -135,6 +138,7 @@ impl DeviceProfile {
                     int8_mma_m16n8k32: false,
                     f16_mma: true,
                     bf16: false,
+                    fp8: false,
                 },
             )
         } else if cc < (8, 0) {
@@ -146,6 +150,7 @@ impl DeviceProfile {
                     int8_mma_m16n8k32: false,
                     f16_mma: true,
                     bf16: false,
+                    fp8: false,
                 },
             )
         } else if cc < (8, 9) {
@@ -157,6 +162,7 @@ impl DeviceProfile {
                     int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
+                    fp8: true,
                 },
             )
         } else if cc < (9, 0) {
@@ -168,6 +174,7 @@ impl DeviceProfile {
                     int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
+                    fp8: true,
                 },
             )
         } else if cc < (10, 0) {
@@ -179,6 +186,7 @@ impl DeviceProfile {
                     int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
+                    fp8: true,
                 },
             )
         } else {
@@ -190,6 +198,7 @@ impl DeviceProfile {
                     int8_mma_m16n8k32: true,
                     f16_mma: true,
                     bf16: true,
+                    fp8: true,
                 },
             )
         }
@@ -264,6 +273,7 @@ mod tests {
         assert!(!caps.int8_mma);
         assert!(!caps.int8_mma_m16n8k32);
         assert!(!caps.bf16);
+        assert!(!caps.fp8);
     }
 
     #[test]
@@ -275,6 +285,7 @@ mod tests {
         assert!(!caps.int8_mma);
         assert!(!caps.int8_mma_m16n8k32);
         assert!(!caps.bf16);
+        assert!(!caps.fp8);
     }
 
     #[test]
@@ -286,6 +297,7 @@ mod tests {
         assert!(caps.int8_mma);
         assert!(!caps.int8_mma_m16n8k32);
         assert!(!caps.bf16);
+        assert!(!caps.fp8);
     }
 
     #[test]
@@ -297,6 +309,7 @@ mod tests {
         assert!(caps.int8_mma);
         assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
+        assert!(caps.fp8);
     }
 
     #[test]
@@ -305,6 +318,7 @@ mod tests {
         assert_eq!(arch, DeviceArch::CudaAmpere);
         assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
+        assert!(caps.fp8);
     }
 
     #[test]
@@ -316,6 +330,7 @@ mod tests {
         assert!(caps.int8_mma);
         assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
+        assert!(caps.fp8);
     }
 
     #[test]
@@ -327,6 +342,7 @@ mod tests {
         assert!(caps.int8_mma);
         assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
+        assert!(caps.fp8);
     }
 
     #[test]
@@ -338,6 +354,7 @@ mod tests {
         assert!(caps.int8_mma);
         assert!(caps.int8_mma_m16n8k32);
         assert!(caps.bf16);
+        assert!(caps.fp8);
     }
 
     #[test]
